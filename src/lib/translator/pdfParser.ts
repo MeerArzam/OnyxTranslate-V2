@@ -1,3 +1,16 @@
+// Polyfill Promise.withResolvers for browsers that don't support it yet (ES2024)
+if (typeof (Promise as unknown as Record<string, unknown>).withResolvers === "undefined") {
+  (Promise as unknown as Record<string, (...args: unknown[]) => unknown>).withResolvers = function <T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  };
+}
+
 import * as pdfjsLib from "pdfjs-dist";
 
 // Configure the PDF.js worker from CDN for reliable browser compatibility
@@ -62,7 +75,6 @@ export async function parsePDF(file: File): Promise<PDFParseResult> {
       for (const item of textContent.items) {
         if ("str" in item) {
           pageText += item.str;
-          // Add space between items if needed
           if (item.hasEOL) {
             pageText += "\n";
           } else if (textContent.items.indexOf(item) < textContent.items.length - 1) {

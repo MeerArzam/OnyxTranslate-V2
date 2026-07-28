@@ -357,7 +357,7 @@ export default function Translator() {
             </div>
             <div>
               <span className="text-base font-semibold tracking-tight">
-                Empyrean Translator
+                Onyx Translate
               </span>
               <span className="text-xs text-muted-foreground ml-2 hidden sm:inline">
                 18-Phase Localization Pipeline

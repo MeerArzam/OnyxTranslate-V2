@@ -1,4 +1,7 @@
-import { PDFParse } from "pdf-parse";
+import * as pdfjsLib from "pdfjs-dist";
+
+// Configure the PDF.js worker from CDN for reliable browser compatibility
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/5.4.296/pdf.worker.min.mjs`;
 
 export interface PDFParseResult {
   text: string;
@@ -40,48 +43,58 @@ export async function parsePDF(file: File): Promise<PDFParseResult> {
     throw createError("EMPTY_CONTENT", "The PDF file appears to be empty or too small to contain readable text.");
   }
 
-  let parser: PDFParse | null = null;
-
   try {
     const arrayBuffer = await file.arrayBuffer();
-    const data = new Uint8Array(arrayBuffer);
+    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+    const pdf = await loadingTask.promise;
 
-    parser = new PDFParse({ data });
-
-    // Get metadata first
-    let infoResult: { total: number; info?: Record<string, unknown> } = { total: 0 };
-    try {
-      infoResult = await parser.getInfo();
-    } catch {
-      warnings.push("Could not read PDF metadata.");
-    }
-
-    // Extract text with per-page results
-    const textResult = await parser.getText();
-
-    // Collect per-page text
+    const totalPages = pdf.numPages;
     const pages: Array<{ num: number; text: string }> = [];
     let fullText = "";
 
-    if (textResult.pages && textResult.pages.length > 0) {
-      for (const page of textResult.pages) {
-        const pageText = (page.text || "").trim();
-        pages.push({ num: page.num, text: pageText });
-        if (pageText) {
-          fullText += pageText + "\n\n";
+    // Extract text from each page
+    for (let i = 1; i <= totalPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      
+      // Build page text from text items
+      let pageText = "";
+      for (const item of textContent.items) {
+        if ("str" in item) {
+          pageText += item.str;
+          // Add space between items if needed
+          if (item.hasEOL) {
+            pageText += "\n";
+          } else if (textContent.items.indexOf(item) < textContent.items.length - 1) {
+            pageText += " ";
+          }
         }
+      }
+      
+      const trimmedText = pageText.trim();
+      pages.push({ num: i, text: trimmedText });
+      
+      if (trimmedText) {
+        fullText += trimmedText + "\n\n";
       }
     }
 
-    // Also try the concatenated text if per-page didn't work well
-    if (!fullText.trim() && textResult.text) {
-      fullText = textResult.text;
+    // Also try to get metadata
+    let title: string | undefined;
+    let info: Record<string, unknown> = {};
+    try {
+      const metadata = await pdf.getMetadata();
+      if (metadata.info) {
+        info = metadata.info as Record<string, unknown>;
+        title = (metadata.info as Record<string, unknown>)?.Title as string | undefined;
+      }
+    } catch {
+      warnings.push("Could not read PDF metadata.");
     }
 
     fullText = fullText.trim();
 
     // Check if PDF is mostly images (very little text extracted)
-    const totalPages = infoResult.total || textResult.total || pages.length || 0;
     const pagesWithText = pages.filter(p => p.text.length > 10).length;
 
     if (fullText.length < 10) {
@@ -113,8 +126,8 @@ export async function parsePDF(file: File): Promise<PDFParseResult> {
     return {
       text: fullText,
       numPages: totalPages,
-      title: (infoResult.info as Record<string, unknown>)?.Title as string | undefined,
-      info: (infoResult.info as Record<string, unknown>) || {},
+      title,
+      info,
       wordCount,
       pages,
       hasImages: pagesWithText < totalPages * 0.5,
@@ -143,14 +156,6 @@ export async function parsePDF(file: File): Promise<PDFParseResult> {
       `Could not parse the PDF: ${message}. ` +
       `You can also paste the text content directly into the text area above.`
     );
-  } finally {
-    if (parser) {
-      try {
-        await parser.destroy();
-      } catch {
-        // Ignore cleanup errors
-      }
-    }
   }
 }
 

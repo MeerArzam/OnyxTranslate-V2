@@ -44,7 +44,6 @@ import {
   ChevronUp,
   AlertCircle,
 } from "lucide-react";
-import { useAuth } from "@/hooks/use-auth";
 import { useNavigate } from "react-router";
 import {
   runTranslationPipeline,
@@ -111,7 +110,6 @@ interface BatchResult {
 }
 
 export default function Translator() {
-  const { user } = useAuth();
   const navigate = useNavigate();
 
   // Source text state
@@ -461,16 +459,9 @@ export default function Translator() {
             </button>
           </div>
           <div className="flex items-center gap-3">
-            {user?.name && (
-              <span className="text-sm text-muted-foreground">{user.name}</span>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate("/dashboard")}
-            >
-              Dashboard
-            </Button>
+            <span className="text-sm text-muted-foreground hidden sm:block">
+              Personal Use
+            </span>
           </div>
         </div>
       </header>

@@ -120,7 +120,7 @@ createRoot(document.getElementById("root")!).render(
           <RouteSyncer />
           <Suspense fallback={<RouteLoading />}>
             <Routes>
-              <Route path="/" element={<Landing />} />
+              <Route path="/" element={<Translator />} />
               <Route
                 path="/auth"
                 element={<AuthPage redirectAfterAuth="/dashboard" />}
@@ -130,14 +130,6 @@ createRoot(document.getElementById("root")!).render(
                 element={
                   <RequireAuth>
                     <Dashboard />
-                  </RequireAuth>
-                }
-              />
-              <Route
-                path="/translator"
-                element={
-                  <RequireAuth>
-                    <Translator />
                   </RequireAuth>
                 }
               />

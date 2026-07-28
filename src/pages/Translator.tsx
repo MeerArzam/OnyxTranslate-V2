@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from "react";
+import JSZip from "jszip";
 import {
   Card,
   CardContent,
@@ -8,49 +9,31 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Languages,
-  Play,
   Download,
-  Copy,
-  Check,
   Loader2,
-  AlertTriangle,
   FileText,
-  Volume2,
-  BarChart3,
   Sparkles,
-  Shield,
-  BookOpen,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  Globe,
   Upload,
   FileUp,
   X,
   Package,
   ChevronDown,
-  ChevronUp,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Globe,
   AlertCircle,
+  AlertTriangle,
+  Zap,
 } from "lucide-react";
-import { useNavigate } from "react-router";
 import {
   runTranslationPipeline,
   generateSampleText,
-  type TranslationPhase,
   type TranslationResult,
-  type TranslationReport,
 } from "@/lib/translator/engine";
 import {
   parsePDF,
@@ -60,62 +43,44 @@ import {
 } from "@/lib/translator/pdfParser";
 
 const targetLanguages = [
-  { code: "ar", name: "Arabic", nativeName: "العربية", script: "Arabic" },
-  { code: "ur", name: "Urdu", nativeName: "اردو", script: "Arabic" },
-  { code: "fr", name: "French", nativeName: "Français", script: "Latin" },
-  { code: "ja", name: "Japanese", nativeName: "日本語", script: "Japanese" },
-  { code: "es", name: "Spanish", nativeName: "Español", script: "Latin" },
-  { code: "hi", name: "Hindi", nativeName: "हिन्दी", script: "Devanagari" },
-  { code: "tr", name: "Turkish", nativeName: "Türkçe", script: "Latin" },
-  { code: "zh", name: "Chinese", nativeName: "中文", script: "Chinese" },
-  { code: "ru", name: "Russian", nativeName: "Русский", script: "Cyrillic" },
-  { code: "ko", name: "Korean", nativeName: "한국어", script: "Hangul" },
+  { code: "ur", name: "Urdu", nativeName: "\u0627\u0631\u062f\u0648", script: "Arabic" },
+  { code: "ar", name: "Arabic", nativeName: "\u0627\u0644\u0639\u0631\u0628\u064a\u0629", script: "Arabic" },
+  { code: "fr", name: "French", nativeName: "Fran\u00e7ais", script: "Latin" },
+  { code: "ja", name: "Japanese", nativeName: "\u65e5\u672c\u8a9e", script: "Japanese" },
+  { code: "es", name: "Spanish", nativeName: "Espa\u00f1ol", script: "Latin" },
+  { code: "hi", name: "Hindi", nativeName: "\u0939\u093f\u0928\u094d\u0926\u0940", script: "Devanagari" },
+  { code: "tr", name: "Turkish", nativeName: "T\u00fcrk\u00e7e", script: "Latin" },
+  { code: "zh", name: "Chinese", nativeName: "\u4e2d\u6587", script: "Chinese" },
+  { code: "ru", name: "Russian", nativeName: "\u0420\u0443\u0441\u0441\u043a\u0438\u0439", script: "Cyrillic" },
+  { code: "ko", name: "Korean", nativeName: "\ud55c\uad6d\uc5b4", script: "Hangul" },
   { code: "de", name: "German", nativeName: "Deutsch", script: "Latin" },
-  { code: "ks", name: "Kashmiri", nativeName: "कॉशुर", script: "Arabic" },
-  { code: "ro", name: "Romanian", nativeName: "Română", script: "Latin" },
+  { code: "ks", name: "Kashmiri", nativeName: "\u0915\u0949\u0936\u0941\u0930", script: "Arabic" },
+  { code: "ro", name: "Romanian", nativeName: "Rom\u00e2n\u0103", script: "Latin" },
   { code: "sw", name: "Swahili", nativeName: "Kiswahili", script: "Latin" },
   { code: "it", name: "Italian", nativeName: "Italiano", script: "Latin" },
   { code: "la", name: "Latin", nativeName: "Latina", script: "Latin" },
   { code: "id", name: "Indonesian", nativeName: "Bahasa Indonesia", script: "Latin" },
-  { code: "ne", name: "Nepali", nativeName: "नेपाली", script: "Devanagari" },
-  { code: "bn", name: "Bangla", nativeName: "বাংলা", script: "Bengali" },
-  { code: "pt", name: "Portuguese", nativeName: "Português", script: "Latin" },
-];
-
-const marketContexts = [
-  { id: "standard", name: "Standard", description: "No special filters" },
-  {
-    id: "high-censorship",
-    name: "High Censorship",
-    description: "Turkey, Arabic markets",
-  },
-  {
-    id: "romance-focused",
-    name: "Romance Focused",
-    description: "Korean, Japanese markets",
-  },
-  {
-    id: "conservative",
-    name: "Conservative",
-    description: "Strict cultural norms",
-  },
+  { code: "ne", name: "Nepali", nativeName: "\u0928\u0947\u092a\u093e\u0932\u0940", script: "Devanagari" },
+  { code: "bn", name: "Bangla", nativeName: "\u09ac\u09be\u0982\u09b2\u09be", script: "Bengali" },
+  { code: "pt", name: "Portuguese", nativeName: "Portugu\u00eas", script: "Latin" },
 ];
 
 interface BatchResult {
   languageCode: string;
   languageName: string;
+  nativeName: string;
+  script: string;
   status: "pending" | "translating" | "completed" | "error";
   result?: TranslationResult;
   error?: string;
 }
 
 export default function Translator() {
-  const navigate = useNavigate();
-
   // Source text state
   const [sourceText, setSourceText] = useState("");
   const [pdfFileName, setPdfFileName] = useState<string | null>(null);
   const [pdfPageCount, setPdfPageCount] = useState<number | null>(null);
+  const [pdfWarnings, setPdfWarnings] = useState<string[]>([]);
 
   // PDF upload state
   const [isUploading, setIsUploading] = useState(false);
@@ -123,24 +88,17 @@ export default function Translator() {
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Translation state
-  const [targetLanguage, setTargetLanguage] = useState("");
-  const [marketContext, setMarketContext] = useState("standard");
-  const [isTranslating, setIsTranslating] = useState(false);
-  const [result, setResult] = useState<TranslationResult | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState("translation");
-
   // Batch translation state
   const [translateAll, setTranslateAll] = useState(false);
   const [batchResults, setBatchResults] = useState<BatchResult[]>([]);
   const [currentBatchIndex, setCurrentBatchIndex] = useState<number>(-1);
   const [isBatchRunning, setIsBatchRunning] = useState(false);
-
-  // Collapse state for batch results
   const [expandedLanguages, setExpandedLanguages] = useState<Set<string>>(new Set());
 
-  // --- PDF Upload Handlers ---
+  // ZIP download state
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  // --- PDF Upload ---
 
   const handleFileSelect = useCallback(async (file: File | null) => {
     if (!file) return;
@@ -149,24 +107,22 @@ export default function Translator() {
     setUploadError(null);
     setPdfFileName(null);
     setPdfPageCount(null);
+    setPdfWarnings([]);
 
     try {
       const parsed = await parsePDF(file);
 
-      // Split into chunks if too large
       const chunks = splitTextIntoChunks(parsed.text, 5000);
       const finalText = chunks.length === 1 ? parsed.text : chunks.join("\n\n--- PAGE BREAK ---\n\n");
 
       setSourceText(finalText);
       setPdfFileName(file.name);
       setPdfPageCount(parsed.numPages);
+      setPdfWarnings(parsed.warnings);
 
-      // Validate
       const validation = validateTextForTranslation(finalText);
       if (!validation.valid) {
         setUploadError(validation.errors.join(" "));
-      } else if (validation.warnings.length > 0) {
-        setUploadError(validation.warnings.join(" "));
       }
     } catch (err) {
       const pdfError = err as PDFParseError;
@@ -180,8 +136,7 @@ export default function Translator() {
     (e: React.DragEvent) => {
       e.preventDefault();
       setIsDragOver(false);
-      const file = e.dataTransfer.files[0];
-      handleFileSelect(file);
+      handleFileSelect(e.dataTransfer.files[0]);
     },
     [handleFileSelect]
   );
@@ -200,50 +155,23 @@ export default function Translator() {
     setSourceText("");
     setPdfFileName(null);
     setPdfPageCount(null);
+    setPdfWarnings([]);
     setUploadError(null);
-    setResult(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+    setBatchResults([]);
+    setTranslateAll(false);
+    setCurrentBatchIndex(-1);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
   const loadSample = useCallback(() => {
     setSourceText(generateSampleText());
     setPdfFileName(null);
     setPdfPageCount(null);
+    setPdfWarnings([]);
     setUploadError(null);
   }, []);
 
-  // --- Single Translation ---
-
-  const handleTranslate = useCallback(async () => {
-    if (!sourceText.trim() || !targetLanguage) return;
-
-    setIsTranslating(true);
-    setResult(null);
-
-    const config = {
-      sourceText: sourceText.trim(),
-      targetLanguage,
-      marketContext,
-      chapterNumber: 1,
-    };
-
-    try {
-      const translationResult = await runTranslationPipeline(config);
-      setResult(translationResult);
-      setActiveTab("translation");
-    } catch (error) {
-      console.error("Translation failed:", error);
-      setUploadError(
-        `Translation failed: ${error instanceof Error ? error.message : "Unknown error"}`
-      );
-    } finally {
-      setIsTranslating(false);
-    }
-  }, [sourceText, targetLanguage, marketContext]);
-
-  // --- Batch Translation (All Languages) ---
+  // --- Batch Translation (All 20 Languages) ---
 
   const handleTranslateAll = useCallback(async () => {
     if (!sourceText.trim()) return;
@@ -255,7 +183,9 @@ export default function Translator() {
     const initialResults: BatchResult[] = targetLanguages.map((lang) => ({
       languageCode: lang.code,
       languageName: lang.name,
-      status: "pending",
+      nativeName: lang.nativeName,
+      script: lang.script,
+      status: "pending" as const,
     }));
 
     setBatchResults([...initialResults]);
@@ -274,7 +204,7 @@ export default function Translator() {
         const config = {
           sourceText: sourceText.trim(),
           targetLanguage: lang.code,
-          marketContext,
+          marketContext: "standard",
           chapterNumber: 1,
         };
 
@@ -303,7 +233,97 @@ export default function Translator() {
     }
 
     setIsBatchRunning(false);
-  }, [sourceText, marketContext]);
+  }, [sourceText]);
+
+  // --- ZIP Download ---
+
+  const handleDownloadZIP = useCallback(async () => {
+    const completedResults = batchResults.filter((r) => r.status === "completed" && r.result);
+    if (completedResults.length === 0) return;
+
+    setIsDownloading(true);
+
+    try {
+      const zip = new JSZip();
+      const folderName = pdfFileName
+        ? pdfFileName.replace(/\.pdf$/i, "").replace(/[^a-zA-Z0-9_-]/g, "_")
+        : "translations";
+      const folder = zip.folder(folderName) || zip;
+
+      for (const batchResult of completedResults) {
+        if (!batchResult.result) continue;
+
+        const langCode = batchResult.languageCode;
+        const langName = batchResult.languageName;
+
+        // Add the translated text
+        const fileName = `translated_${langCode}_${langName.toLowerCase().replace(/\s+/g, "_")}.txt`;
+        folder.file(fileName, batchResult.result.translatedText);
+
+        // Add the CSV data if it has content
+        if (batchResult.result.csvData) {
+          const allItems = [
+            ...batchResult.result.csvData.mapNames.map((item) => ({ type: "Map", ...item })),
+            ...batchResult.result.csvData.runeCaptions.map((item) => ({ type: "Rune", ...item })),
+            ...batchResult.result.csvData.endpaperText.map((item) => ({ type: "Endpaper", ...item })),
+          ];
+
+          if (allItems.length > 0) {
+            const csvRows = [
+              ["Type", "Original", "Translated"],
+              ...allItems.map((item) => [item.type, item.original, item.translated]),
+            ];
+            const csv = csvRows.map((r) => r.join(",")).join("\n");
+            folder.file(`localization_${langCode}.csv`, csv);
+          }
+        }
+
+        // Add voice notes if any
+        if (batchResult.result.voiceNotes && batchResult.result.voiceNotes.length > 0) {
+          const voiceNotesText = batchResult.result.voiceNotes
+            .map(
+              (note) =>
+                `Character: ${note.character}\nLine: "${note.line}"\nDirection: ${note.instruction}\nEmotion: ${note.emotionalContext}\n---`
+            )
+            .join("\n\n");
+          folder.file(`voice_notes_${langCode}.txt`, voiceNotesText);
+        }
+      }
+
+      // Add a summary report
+      const summaryLines = [
+        "Empyrean Translator - Batch Translation Report",
+        "=".repeat(50),
+        `Source: ${pdfFileName || "Text input"}`,
+        `Languages: ${completedResults.length}`,
+        `Date: ${new Date().toISOString()}`,
+        "",
+        "Language Summary:",
+        ...completedResults.map((r) => {
+          const score = r.result?.report?.overallScore || 0;
+          return `  ${r.languageName} (${r.languageCode}): Quality ${score}/100`;
+        }),
+        "",
+        "Warnings:",
+        ...pdfWarnings.map((w) => `  - ${w}`),
+      ];
+      folder.file("REPORT.txt", summaryLines.join("\n"));
+
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${folderName}_translations.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("ZIP download failed:", error);
+    } finally {
+      setIsDownloading(false);
+    }
+  }, [batchResults, pdfFileName, pdfWarnings]);
+
+  // --- Helpers ---
 
   const toggleLanguageExpand = useCallback((code: string) => {
     setExpandedLanguages((prev) => {
@@ -314,126 +334,12 @@ export default function Translator() {
     });
   }, []);
 
-  // --- Export Handlers ---
-
-  const handleCopy = useCallback(() => {
-    if (result?.translatedText) {
-      navigator.clipboard.writeText(result.translatedText);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  }, [result]);
-
-  const handleDownloadCSV = useCallback(() => {
-    if (!result?.csvData) return;
-    const allItems = [
-      ...result.csvData.mapNames.map((item) => ({ type: "Map", ...item })),
-      ...result.csvData.runeCaptions.map((item) => ({ type: "Rune", ...item })),
-      ...result.csvData.endpaperText.map((item) => ({ type: "Endpaper", ...item })),
-    ];
-    const rows = [
-      ["Type", "Original", "Translated"],
-      ...allItems.map((item) => [item.type, item.original, item.translated]),
-    ];
-    const csv = rows.map((r) => r.join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `localization-data-${targetLanguage || "all"}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [result, targetLanguage]);
-
-  const handleDownloadText = useCallback(() => {
-    if (!result?.translatedText) return;
-    const blob = new Blob([result.translatedText], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `translated-chapter-${targetLanguage || "unknown"}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [result, targetLanguage]);
-
-  const handleDownloadAllTexts = useCallback(() => {
-    const completedResults = batchResults.filter((r) => r.status === "completed" && r.result);
-    if (completedResults.length === 0) return;
-
-    for (const batchResult of completedResults) {
-      if (!batchResult.result) continue;
-      const blob = new Blob([batchResult.result.translatedText], {
-        type: "text/plain;charset=utf-8",
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `translated-${batchResult.languageName.toLowerCase()}.txt`;
-      a.click();
-      URL.revokeObjectURL(url);
-    }
-  }, [batchResults]);
-
-  const handleDownloadAllCSVs = useCallback(() => {
-    const completedResults = batchResults.filter((r) => r.status === "completed" && r.result);
-    if (completedResults.length === 0) return;
-
-    for (const batchResult of completedResults) {
-      if (!batchResult.result?.csvData) continue;
-      const allItems = [
-        ...batchResult.result.csvData.mapNames.map((item) => ({ type: "Map", ...item })),
-        ...batchResult.result.csvData.runeCaptions.map((item) => ({ type: "Rune", ...item })),
-        ...batchResult.result.csvData.endpaperText.map((item) => ({ type: "Endpaper", ...item })),
-      ];
-      const rows = [
-        ["Type", "Original", "Translated"],
-        ...allItems.map((item) => [item.type, item.original, item.translated]),
-      ];
-      const csv = rows.map((r) => r.join(",")).join("\n");
-      const blob = new Blob([csv], { type: "text/csv" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `localization-${batchResult.languageName.toLowerCase()}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    }
-  }, [batchResults]);
-
-  // --- Helpers ---
-
-  const getPhaseIcon = (status: TranslationPhase["status"]) => {
-    switch (status) {
-      case "completed":
-        return <CheckCircle2 className="size-4 text-green-500" />;
-      case "active":
-        return <Loader2 className="size-4 text-primary animate-spin" />;
-      case "error":
-        return <XCircle className="size-4 text-red-500" />;
-      default:
-        return <Clock className="size-4 text-muted-foreground/40" />;
-    }
-  };
-
-  const getScoreColor = (score: number) => {
-    if (score >= 90) return "text-green-500";
-    if (score >= 75) return "text-yellow-500";
-    return "text-red-500";
-  };
-
-  const wordCount = sourceText
-    .split(/\s+/)
-    .filter((w) => w.length > 0).length;
-
-  const completedBatchCount = batchResults.filter(
-    (r) => r.status === "completed"
-  ).length;
-
+  const wordCount = sourceText.split(/\s+/).filter((w) => w.length > 0).length;
+  const completedBatchCount = batchResults.filter((r) => r.status === "completed").length;
   const errorBatchCount = batchResults.filter((r) => r.status === "error").length;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {/* Hidden file input */}
       <input
         ref={fileInputRef}
         type="file"
@@ -444,849 +350,390 @@ export default function Translator() {
 
       {/* Header */}
       <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-xl border-b border-border/40">
-        <div className="max-w-[1600px] mx-auto px-6 h-14 flex items-center justify-between">
+        <div className="max-w-[1400px] mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigate("/")}
-              className="flex items-center gap-2.5 hover:opacity-80 transition-opacity"
-            >
-              <div className="size-8 rounded-lg bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center">
-                <Languages className="size-4 text-primary-foreground" />
-              </div>
-              <span className="text-base font-semibold tracking-tight hidden sm:block">
+            <div className="size-8 rounded-lg bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center">
+              <Languages className="size-4 text-primary-foreground" />
+            </div>
+            <div>
+              <span className="text-base font-semibold tracking-tight">
                 Empyrean Translator
               </span>
-            </button>
+              <span className="text-xs text-muted-foreground ml-2 hidden sm:inline">
+                18-Phase Localization Pipeline
+              </span>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-muted-foreground hidden sm:block">
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="text-[10px]">
+              20 Languages
+            </Badge>
+            <Badge variant="outline" className="text-[10px]">
               Personal Use
-            </span>
+            </Badge>
           </div>
         </div>
       </header>
 
-      <div className="max-w-[1600px] mx-auto px-6 py-6">
-        <div className="grid grid-cols-1 xl:grid-cols-[380px_1fr] gap-6">
+      <div className="max-w-[1400px] mx-auto px-6 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-6">
           {/* Left Panel - Controls */}
           <div className="space-y-4">
-            {/* PDF Upload */}
+            {/* Step 1: Upload PDF */}
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Upload className="size-4" />
-                  Upload PDF
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <span className="size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">
+                    1
+                  </span>
+                  Upload English PDF
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  Upload an English PDF manuscript (max 20MB)
+                  Upload your manuscript or paste text directly
                 </CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-3">
                 <div
                   onDrop={handleDrop}
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onClick={() => fileInputRef.current?.click()}
-                  className={`
-                    relative flex flex-col items-center justify-center gap-3 p-6 rounded-xl border-2 border-dashed
-                    cursor-pointer transition-all duration-200
-                    ${
-                      isDragOver
-                        ? "border-primary bg-primary/5 scale-[1.02]"
-                        : "border-muted-foreground/20 hover:border-muted-foreground/40 hover:bg-muted/30"
-                    }
-                    ${isUploading ? "pointer-events-none opacity-60" : ""}
-                  `}
+                  className={`relative flex flex-col items-center justify-center gap-2 p-5 rounded-xl border-2 border-dashed cursor-pointer transition-all duration-200 ${
+                    isDragOver
+                      ? "border-primary bg-primary/5 scale-[1.01]"
+                      : "border-muted-foreground/20 hover:border-muted-foreground/40 hover:bg-muted/30"
+                  } ${isUploading ? "pointer-events-none opacity-60" : ""}`}
                 >
                   {isUploading ? (
                     <>
-                      <Loader2 className="size-8 text-primary animate-spin" />
-                      <span className="text-sm text-muted-foreground">
-                        Parsing PDF...
-                      </span>
+                      <Loader2 className="size-6 text-primary animate-spin" />
+                      <span className="text-xs text-muted-foreground">Parsing PDF...</span>
                     </>
                   ) : pdfFileName ? (
                     <>
-                      <div className="size-12 rounded-xl bg-green-500/10 flex items-center justify-center">
-                        <FileUp className="size-6 text-green-500" />
+                      <div className="size-10 rounded-lg bg-green-500/10 flex items-center justify-center">
+                        <FileUp className="size-5 text-green-500" />
                       </div>
                       <div className="text-center">
-                        <p className="text-sm font-medium">{pdfFileName}</p>
+                        <p className="text-xs font-medium">{pdfFileName}</p>
                         {pdfPageCount && (
-                          <p className="text-xs text-muted-foreground">
-                            {pdfPageCount} pages • {wordCount.toLocaleString()} words
+                          <p className="text-[10px] text-muted-foreground">
+                            {pdfPageCount} pages \u2022 {wordCount.toLocaleString()} words
                           </p>
                         )}
                       </div>
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 text-xs"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          clearSource();
-                        }}
+                        className="h-6 text-[10px]"
+                        onClick={(e) => { e.stopPropagation(); clearSource(); }}
                       >
-                        <X className="size-3 mr-1" />
-                        Remove
+                        <X className="size-3 mr-1" /> Remove
                       </Button>
                     </>
                   ) : (
                     <>
-                      <div className="size-12 rounded-xl bg-muted/50 flex items-center justify-center">
-                        <FileUp className="size-6 text-muted-foreground/40" />
-                      </div>
-                      <div className="text-center">
-                        <p className="text-sm font-medium">
-                          Drop a PDF here or click to browse
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Supports text-based PDFs up to 20MB
-                        </p>
-                      </div>
+                      <Upload className="size-6 text-muted-foreground/40" />
+                      <p className="text-xs font-medium">Drop PDF here or click to browse</p>
+                      <p className="text-[10px] text-muted-foreground">Supports text-based PDFs up to 50MB</p>
                     </>
                   )}
                 </div>
 
                 {uploadError && (
-                  <div className="mt-3 flex items-start gap-2 p-3 rounded-lg bg-yellow-500/5 border border-yellow-500/20 text-xs">
-                    <AlertCircle className="size-4 text-yellow-500 shrink-0 mt-0.5" />
+                  <div className="flex items-start gap-2 p-2.5 rounded-lg bg-yellow-500/5 border border-yellow-500/20 text-[11px]">
+                    <AlertCircle className="size-3.5 text-yellow-500 shrink-0 mt-0.5" />
                     <span>{uploadError}</span>
                   </div>
                 )}
+
+                {pdfWarnings.length > 0 && (
+                  <div className="flex items-start gap-2 p-2.5 rounded-lg bg-blue-500/5 border border-blue-500/20 text-[11px]">
+                    <AlertTriangle className="size-3.5 text-blue-500 shrink-0 mt-0.5" />
+                    <div>
+                      {pdfWarnings.map((w, i) => (
+                        <p key={i}>{w}</p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Text area for manual paste / extracted text */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                      Source Text
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={loadSample}
+                      className="text-[10px] h-6"
+                    >
+                      <Sparkles className="size-2.5 mr-1" /> Sample
+                    </Button>
+                  </div>
+                  <Textarea
+                    value={sourceText}
+                    onChange={(e) => {
+                      setSourceText(e.target.value);
+                      if (pdfFileName) setPdfFileName(null);
+                    }}
+                    placeholder="Paste your chapter text here or upload a PDF above..."
+                    className="min-h-[140px] resize-none font-mono text-xs leading-relaxed"
+                  />
+                  <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
+                    <span>{wordCount.toLocaleString()} words</span>
+                    <span>{sourceText.length.toLocaleString()} chars</span>
+                  </div>
+                </div>
               </CardContent>
             </Card>
 
-            {/* Source Text (manual paste / extracted from PDF) */}
+            {/* Step 2: Translate */}
             <Card>
               <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">Source Text</CardTitle>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={loadSample}
-                    className="text-xs h-7"
-                  >
-                    <Sparkles className="size-3 mr-1" />
-                    Load sample
-                  </Button>
-                </div>
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <span className="size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">
+                    2
+                  </span>
+                  Translate to All 20 Languages
+                </CardTitle>
                 <CardDescription className="text-xs">
-                  {pdfFileName
-                    ? "Text extracted from PDF. Edit below if needed."
-                    : "Or paste your English manuscript (max 5,000 words per batch)"}
+                  Runs the full 18-phase pipeline for each language
                 </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Textarea
-                  value={sourceText}
-                  onChange={(e) => {
-                    setSourceText(e.target.value);
-                    if (pdfFileName) setPdfFileName(null);
-                  }}
-                  placeholder="Paste your chapter text here or upload a PDF above..."
-                  className="min-h-[200px] resize-none font-mono text-sm leading-relaxed"
-                />
-                <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{wordCount.toLocaleString()} words</span>
-                  <span>{sourceText.length.toLocaleString()} characters</span>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Target Language */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Target Language</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <Select value={targetLanguage} onValueChange={setTargetLanguage}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a language" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {targetLanguages.map((lang) => (
-                      <SelectItem key={lang.code} value={lang.code}>
-                        <div className="flex items-center gap-2">
-                          <span>{lang.name}</span>
-                          <span className="text-muted-foreground text-xs">
-                            {lang.nativeName}
-                          </span>
-                          <Badge
-                            variant="secondary"
-                            className="text-[10px] ml-auto"
-                          >
-                            {lang.script}
-                          </Badge>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                {targetLanguage && (
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Globe className="size-3" />
-                    <span>
-                      {targetLanguages.find((l) => l.code === targetLanguage)
-                        ?.script}{" "}
-                      script
-                      {["ar", "ur", "ks"].includes(targetLanguage)
-                        ? " • RTL"
-                        : " • LTR"}
-                    </span>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Market Context */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Market Context</CardTitle>
-                <CardDescription className="text-xs">
-                  Adjust sensitivity filters for target markets
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Select
-                  value={marketContext}
-                  onValueChange={setMarketContext}
+                <Button
+                  onClick={handleTranslateAll}
+                  disabled={!sourceText.trim() || isBatchRunning || isUploading}
+                  className="w-full h-10"
+                  size="lg"
                 >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {marketContexts.map((ctx) => (
-                      <SelectItem key={ctx.id} value={ctx.id}>
-                        <div>
-                          <div className="font-medium">{ctx.name}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {ctx.description}
-                          </div>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </CardContent>
-            </Card>
+                  {isBatchRunning ? (
+                    <>
+                      <Loader2 className="size-4 mr-2 animate-spin" />
+                      Translating {currentBatchIndex + 1}/20...
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="size-4 mr-2" />
+                      Start Translation
+                    </>
+                  )}
+                </Button>
 
-            {/* Action Buttons */}
-            <div className="space-y-2">
-              <Button
-                onClick={handleTranslate}
-                disabled={!sourceText.trim() || !targetLanguage || isTranslating || isBatchRunning}
-                className="w-full h-11"
-                size="lg"
-              >
-                {isTranslating ? (
-                  <>
-                    <Loader2 className="size-4 mr-2 animate-spin" />
-                    Translating...
-                  </>
-                ) : (
-                  <>
-                    <Play className="size-4 mr-2" />
-                    Translate to Selected Language
-                  </>
-                )}
-              </Button>
-
-              <Button
-                onClick={handleTranslateAll}
-                disabled={!sourceText.trim() || isTranslating || isBatchRunning}
-                variant="default"
-                className="w-full h-11 bg-gradient-to-r from-primary via-primary/90 to-primary/80 hover:from-primary/90 hover:via-primary/80 hover:to-primary/70"
-                size="lg"
-              >
-                {isBatchRunning ? (
-                  <>
-                    <Loader2 className="size-4 mr-2 animate-spin" />
-                    Translating {currentBatchIndex + 1}/{targetLanguages.length}...
-                  </>
-                ) : (
-                  <>
-                    <Package className="size-4 mr-2" />
-                    Translate to All 20 Languages
-                  </>
-                )}
-              </Button>
-            </div>
-
-            {/* Batch Progress */}
-            {translateAll && (
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    {isBatchRunning ? (
-                      <Loader2 className="size-4 text-primary animate-spin" />
-                    ) : (
-                      <CheckCircle2 className="size-4 text-green-500" />
-                    )}
-                    {isBatchRunning
-                      ? `Translating (${completedBatchCount}/${targetLanguages.length})`
-                      : "Batch Complete"}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {/* Overall progress bar */}
-                  <div className="mb-4">
-                    <div className="h-2 rounded-full bg-muted overflow-hidden">
+                {/* Progress */}
+                {(translateAll || isBatchRunning) && (
+                  <div className="space-y-2">
+                    <div className="h-1.5 rounded-full bg-muted overflow-hidden">
                       <div
                         className="h-full rounded-full bg-primary transition-all duration-500"
-                        style={{
-                          width: `${(completedBatchCount / targetLanguages.length) * 100}%`,
-                        }}
+                        style={{ width: `${(completedBatchCount / 20) * 100}%` }}
                       />
                     </div>
-                    <div className="flex items-center justify-between mt-1 text-xs text-muted-foreground">
+                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
                       <span>
-                        {completedBatchCount} completed
+                        {completedBatchCount}/20 done
                         {errorBatchCount > 0 && (
-                          <span className="text-red-500">
-                            {" • "}
-                            {errorBatchCount} failed
-                          </span>
+                          <span className="text-red-500"> \u2022 {errorBatchCount} failed</span>
                         )}
                       </span>
-                      <span>
-                        {targetLanguages.length - completedBatchCount - errorBatchCount}{" "}
-                        remaining
-                      </span>
+                      <span>{20 - completedBatchCount - errorBatchCount} remaining</span>
                     </div>
-                  </div>
 
-                  {/* Download all buttons */}
-                  {!isBatchRunning && completedBatchCount > 0 && (
-                    <div className="flex gap-2 mb-3">
+                    {/* Download ZIP button */}
+                    {!isBatchRunning && completedBatchCount > 0 && (
                       <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 text-xs flex-1"
-                        onClick={handleDownloadAllTexts}
+                        onClick={handleDownloadZIP}
+                        disabled={isDownloading}
+                        className="w-full h-9"
+                        variant="default"
                       >
-                        <Download className="size-3 mr-1" />
-                        All Texts
+                        {isDownloading ? (
+                          <>
+                            <Loader2 className="size-3.5 mr-2 animate-spin" />
+                            Creating ZIP...
+                          </>
+                        ) : (
+                          <>
+                            <Package className="size-3.5 mr-2" />
+                            Download All as ZIP ({completedBatchCount} languages)
+                          </>
+                        )}
                       </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 text-xs flex-1"
-                        onClick={handleDownloadAllCSVs}
-                      >
-                        <FileText className="size-3 mr-1" />
-                        All CSVs
-                      </Button>
-                    </div>
-                  )}
+                    )}
 
-                  <ScrollArea className="max-h-[240px]">
-                    <div className="space-y-1">
-                      {batchResults.map((br) => {
-                        const lang = targetLanguages.find(
-                          (l) => l.code === br.languageCode
-                        );
-                        const isExpanded = expandedLanguages.has(br.languageCode);
+                    {/* Language list */}
+                    <ScrollArea className="max-h-[280px]">
+                      <div className="space-y-0.5">
+                        {batchResults.map((br) => {
+                          const isExpanded = expandedLanguages.has(br.languageCode);
+                          return (
+                            <div key={br.languageCode}>
+                              <div
+                                className={`flex items-center gap-2 py-1.5 px-2 rounded-md text-[11px] transition-colors ${
+                                  br.status === "translating"
+                                    ? "bg-primary/5"
+                                    : br.status === "completed"
+                                      ? "hover:bg-muted/50 cursor-pointer"
+                                      : br.status === "error"
+                                        ? "bg-red-500/5"
+                                        : ""
+                                }`}
+                                onClick={() => br.status === "completed" && toggleLanguageExpand(br.languageCode)}
+                              >
+                                {br.status === "translating" && <Loader2 className="size-3 text-primary animate-spin shrink-0" />}
+                                {br.status === "completed" && <CheckCircle2 className="size-3 text-green-500 shrink-0" />}
+                                {br.status === "error" && <XCircle className="size-3 text-red-500 shrink-0" />}
+                                {br.status === "pending" && <Clock className="size-3 text-muted-foreground/40 shrink-0" />}
 
-                        return (
-                          <div key={br.languageCode}>
-                            <div
-                              className={`flex items-center gap-2 py-1.5 px-2 rounded-md transition-colors ${
-                                br.status === "translating"
-                                  ? "bg-primary/5"
-                                  : br.status === "completed"
-                                    ? "hover:bg-muted/50 cursor-pointer"
-                                    : br.status === "error"
-                                      ? "bg-red-500/5"
-                                      : ""
-                              }`}
-                              onClick={() => {
-                                if (br.status === "completed") {
-                                  toggleLanguageExpand(br.languageCode);
-                                }
-                              }}
-                            >
-                              {br.status === "translating" && (
-                                <Loader2 className="size-4 text-primary animate-spin shrink-0" />
-                              )}
-                              {br.status === "completed" && (
-                                <CheckCircle2 className="size-4 text-green-500 shrink-0" />
-                              )}
-                              {br.status === "error" && (
-                                <XCircle className="size-4 text-red-500 shrink-0" />
-                              )}
-                              {br.status === "pending" && (
-                                <Clock className="size-4 text-muted-foreground/40 shrink-0" />
-                              )}
+                                <span className="flex-1 min-w-0 truncate">
+                                  {br.languageName}
+                                  <span className="text-muted-foreground ml-1">{br.nativeName}</span>
+                                </span>
 
-                              <div className="flex-1 min-w-0">
-                                <div className="text-xs font-medium">
-                                  {lang?.name}{" "}
-                                  <span className="text-muted-foreground font-normal">
-                                    {lang?.nativeName}
-                                  </span>
-                                </div>
-                                {br.error && (
-                                  <div className="text-[10px] text-red-500 truncate">
-                                    {br.error}
-                                  </div>
+                                <Badge variant="secondary" className="text-[9px] shrink-0">
+                                  {br.script}
+                                </Badge>
+
+                                {br.status === "completed" && (
+                                  <ChevronDown className={`size-3 text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`} />
                                 )}
                               </div>
 
-                              {br.status === "completed" && (
-                                <ChevronDown
-                                  className={`size-3 text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                                />
+                              {isExpanded && br.result && (
+                                <div className="ml-5 mb-1.5 p-2.5 rounded-lg bg-muted/30 border border-border/40">
+                                  <div className="flex items-center gap-2 mb-1.5">
+                                    <Badge variant="secondary" className="text-[9px]">
+                                      Quality: {br.result.report.overallScore}/100
+                                    </Badge>
+                                    <Badge variant="outline" className="text-[9px]">
+                                      {br.result.phases.length} phases
+                                    </Badge>
+                                  </div>
+                                  <div className="text-[10px] text-muted-foreground line-clamp-3 whitespace-pre-wrap leading-relaxed">
+                                    {br.result.translatedText.substring(0, 400)}...
+                                  </div>
+                                </div>
+                              )}
+
+                              {br.error && (
+                                <div className="ml-5 mb-1 text-[10px] text-red-500">
+                                  {br.error}
+                                </div>
                               )}
                             </div>
+                          );
+                        })}
+                      </div>
+                    </ScrollArea>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
 
-                            {/* Expanded view: show result for single language */}
-                            {isExpanded && br.result && (
-                              <div className="ml-6 mb-2 p-3 rounded-lg bg-muted/30 border border-border/40">
-                                <div className="flex items-center gap-2 mb-2">
-                                  <Badge variant="secondary" className="text-[10px]">
-                                    Quality: {br.result.report.overallScore}/100
-                                  </Badge>
-                                </div>
-                                <div className="text-xs text-muted-foreground line-clamp-4 whitespace-pre-wrap leading-relaxed">
-                                  {br.result.translatedText.substring(0, 500)}...
-                                </div>
-                                <div className="flex gap-2 mt-2">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-6 text-[10px]"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const blob = new Blob(
-                                        [br.result!.translatedText],
-                                        { type: "text/plain;charset=utf-8" }
-                                      );
-                                      const url = URL.createObjectURL(blob);
-                                      const a = document.createElement("a");
-                                      a.href = url;
-                                      a.download = `translated-${br.languageName.toLowerCase()}.txt`;
-                                      a.click();
-                                      URL.revokeObjectURL(url);
-                                    }}
-                                  >
-                                    <Download className="size-3 mr-1" />
-                                    .txt
-                                  </Button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </ScrollArea>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Single result phase progress */}
-            {result && !translateAll && (
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <CheckCircle2 className="size-4 text-green-500" />
-                    Pipeline Complete
+          {/* Right Panel - Preview */}
+          <div className="min-h-0">
+            <Card className="h-full min-h-[600px]">
+              <CardHeader className="pb-0">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Globe className="size-4 text-muted-foreground" />
+                    Translation Preview
                   </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ScrollArea className="max-h-[300px]">
-                    <div className="space-y-1">
-                      {result.phases.map((phase) => (
-                        <div
-                          key={phase.id}
-                          className="flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-muted/50 transition-colors"
-                        >
-                          {getPhaseIcon(phase.status)}
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-medium truncate">
-                              {phase.name}
+                  <div className="flex items-center gap-1.5">
+                    {isBatchRunning && (
+                      <Badge variant="secondary" className="text-[10px]">
+                        <Loader2 className="size-2.5 mr-1 animate-spin" />
+                        Translating {targetLanguages[currentBatchIndex]?.name || "..."}
+                      </Badge>
+                    )}
+                    {completedBatchCount === 20 && !isBatchRunning && (
+                      <Badge variant="default" className="text-[10px] bg-green-600">
+                        <CheckCircle2 className="size-2.5 mr-1" />
+                        All Complete
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-3">
+                {completedBatchCount > 0 && !isBatchRunning ? (
+                  <ScrollArea className="h-[calc(100vh-200px)]">
+                    <div className="space-y-6">
+                      {batchResults
+                        .filter((r) => r.status === "completed" && r.result)
+                        .map((br) => (
+                          <div key={br.languageCode} className="space-y-2">
+                            <div className="flex items-center gap-2 sticky top-0 bg-background/95 backdrop-blur-sm py-2 z-10">
+                              <CheckCircle2 className="size-3.5 text-green-500" />
+                              <span className="text-sm font-semibold">{br.languageName}</span>
+                              <span className="text-xs text-muted-foreground">{br.nativeName}</span>
+                              <Badge variant="secondary" className="text-[9px]">{br.script}</Badge>
+                              <Badge variant="outline" className="text-[9px]">
+                                {br.result?.report.overallScore}/100
+                              </Badge>
+                              {["ar", "ur", "ks"].includes(br.languageCode) && (
+                                <Badge variant="outline" className="text-[9px]">RTL</Badge>
+                              )}
                             </div>
-                            {phase.notes && (
-                              <div className="text-[10px] text-muted-foreground truncate">
-                                {phase.notes}
-                              </div>
-                            )}
+                            <div className="whitespace-pre-wrap font-serif text-[13px] leading-[1.8] p-4 rounded-xl bg-muted/20 border border-border/30 text-foreground/90">
+                              {br.result?.translatedText || ""}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
                     </div>
                   </ScrollArea>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-
-          {/* Right Panel - Output */}
-          <div className="min-h-0 relative">
-            {!result && !isTranslating && !isBatchRunning && !translateAll ? (
-              <Card className="h-full min-h-[600px] flex items-center justify-center">
-                <CardContent className="text-center">
-                  <div className="size-16 rounded-2xl bg-muted/50 flex items-center justify-center mx-auto mb-4">
-                    <Languages className="size-8 text-muted-foreground/40" />
-                  </div>
-                  <h3 className="text-lg font-semibold mb-2">Ready to Translate</h3>
-                  <p className="text-sm text-muted-foreground max-w-md">
-                    Upload a PDF manuscript or paste your source text. Then choose
-                    a single target language or translate to all 20 languages at
-                    once. The 18-phase pipeline handles glossary mapping, voice
-                    adaptation, cultural filtering, and script formatting.
-                  </p>
-                  <div className="flex items-center justify-center gap-3 mt-6">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      <Upload className="size-3.5 mr-1.5" />
-                      Upload PDF
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={loadSample}>
-                      <Sparkles className="size-3.5 mr-1.5" />
-                      Load sample
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card className="h-full">
-                <CardHeader className="pb-0">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <CardTitle className="text-base">Translation Output</CardTitle>
-                      {targetLanguage && !translateAll && (
-                        <Badge variant="secondary">
-                          {targetLanguages.find(
-                            (l) => l.code === targetLanguage
-                          )?.name}
-                        </Badge>
-                      )}
-                      {translateAll && (
-                        <Badge variant="secondary">
-                          All 20 Languages
-                        </Badge>
-                      )}
-                      {marketContext !== "standard" && (
-                        <Badge
-                          variant="outline"
-                          className="text-yellow-600 border-yellow-600/30"
-                        >
-                          <Shield className="size-3 mr-1" />
-                          {marketContexts.find((c) => c.id === marketContext)?.name}
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleDownloadText}
-                        className="h-8"
-                        disabled={!result}
-                      >
-                        <Download className="size-3.5 mr-1" />
-                        Text
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleDownloadCSV}
-                        className="h-8"
-                        disabled={!result}
-                      >
-                        <FileText className="size-3.5 mr-1" />
-                        CSV
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleCopy}
-                        className="h-8"
-                        disabled={!result}
-                      >
-                        {copied ? (
-                          <Check className="size-3.5 mr-1 text-green-500" />
-                        ) : (
-                          <Copy className="size-3.5 mr-1" />
-                        )}
-                        {copied ? "Copied" : "Copy"}
-                      </Button>
+                ) : isBatchRunning ? (
+                  <div className="flex items-center justify-center h-[calc(100vh-200px)]">
+                    <div className="text-center">
+                      <div className="relative mb-4">
+                        <div className="size-16 rounded-full border-4 border-primary/20 border-t-primary animate-spin mx-auto" />
+                        <Zap className="size-5 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+                      </div>
+                      <h3 className="text-sm font-semibold mb-1">
+                        Translating to {targetLanguages[currentBatchIndex]?.name || "..."}
+                      </h3>
+                      <p className="text-xs text-muted-foreground">
+                        Running 18-phase pipeline \u2022 {currentBatchIndex + 1}/20 languages
+                      </p>
+                      <div className="mt-3 h-1 w-48 rounded-full bg-muted overflow-hidden mx-auto">
+                        <div
+                          className="h-full rounded-full bg-primary transition-all duration-500"
+                          style={{ width: `${((currentBatchIndex + 1) / 20) * 100}%` }}
+                        />
+                      </div>
                     </div>
                   </div>
-                </CardHeader>
-                <CardContent className="pt-4">
-                  <Tabs
-                    value={activeTab}
-                    onValueChange={setActiveTab}
-                    className="h-full"
-                  >
-                    <TabsList className="mb-4">
-                      <TabsTrigger value="translation">
-                        <FileText className="size-3.5 mr-1.5" />
-                        Translation
-                      </TabsTrigger>
-                      <TabsTrigger value="report">
-                        <BarChart3 className="size-3.5 mr-1.5" />
-                        Report
-                      </TabsTrigger>
-                      <TabsTrigger value="voices">
-                        <Volume2 className="size-3.5 mr-1.5" />
-                        Voice Notes
-                      </TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="translation" className="mt-0">
-                      <ScrollArea className="h-[calc(100vh-320px)]">
-                        <div className="prose prose-sm dark:prose-invert max-w-none">
-                          <div className="whitespace-pre-wrap font-serif text-[15px] leading-[1.8] p-6 rounded-xl bg-muted/30 border border-border/40">
-                            {result?.translatedText || (
-                              <span className="text-muted-foreground italic">
-                                {isBatchRunning
-                                  ? `Translating to ${targetLanguages[currentBatchIndex]?.name || "..."}...`
-                                  : "Translation will appear here..."}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </ScrollArea>
-                    </TabsContent>
-
-                    <TabsContent value="report" className="mt-0">
-                      <ScrollArea className="h-[calc(100vh-320px)]">
-                        {result?.report && (
-                          <div className="space-y-6 p-1">
-                            <ReportSection report={result.report} />
-                          </div>
-                        )}
-                        {!result?.report && (
-                          <div className="text-center py-12 text-muted-foreground">
-                            <BarChart3 className="size-8 mx-auto mb-3 opacity-40" />
-                            <p className="text-sm">Report will appear after translation.</p>
-                          </div>
-                        )}
-                      </ScrollArea>
-                    </TabsContent>
-
-                    <TabsContent value="voices" className="mt-0">
-                      <ScrollArea className="h-[calc(100vh-320px)]">
-                        <div className="space-y-3 p-1">
-                          {result?.voiceNotes.map((note, i) => (
-                            <div
-                              key={i}
-                              className="p-4 rounded-xl bg-muted/30 border border-border/40"
-                            >
-                              <div className="flex items-center gap-2 mb-2">
-                                <Volume2 className="size-4 text-primary" />
-                                <span className="text-sm font-semibold">
-                                  {note.character}
-                                </span>
-                                <Badge
-                                  variant="outline"
-                                  className="text-[10px] ml-auto"
-                                >
-                                  {note.emotionalContext}
-                                </Badge>
-                              </div>
-                              <div className="text-sm italic text-muted-foreground mb-2">
-                                &ldquo;{note.line}&rdquo;
-                              </div>
-                              <div className="text-xs text-foreground bg-background/50 rounded-lg p-2.5">
-                                <strong>Direction:</strong> {note.instruction}
-                              </div>
-                            </div>
-                          ))}
-                          {(!result?.voiceNotes ||
-                            result.voiceNotes.length === 0) && (
-                            <div className="text-center py-12 text-muted-foreground">
-                              <Volume2 className="size-8 mx-auto mb-3 opacity-40" />
-                              <p className="text-sm">
-                                No dialogue detected in this text segment.
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      </ScrollArea>
-                    </TabsContent>
-                  </Tabs>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Single translation overlay */}
-            {isTranslating && (
-              <Card className="absolute inset-0 bg-background/80 backdrop-blur-sm z-10 flex items-center justify-center">
-                <CardContent className="text-center">
-                  <div className="relative">
-                    <div className="size-20 rounded-full border-4 border-primary/20 border-t-primary animate-spin mx-auto" />
-                    <Sparkles className="size-6 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+                ) : (
+                  <div className="flex items-center justify-center h-[calc(100vh-200px)]">
+                    <div className="text-center">
+                      <div className="size-14 rounded-2xl bg-muted/50 flex items-center justify-center mx-auto mb-3">
+                        <Languages className="size-7 text-muted-foreground/40" />
+                      </div>
+                      <h3 className="text-sm font-semibold mb-1.5">Ready to Translate</h3>
+                      <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                        Upload a PDF or paste English text, then click "Start Translation" to
+                        process through all 20 languages with the 18-phase pipeline.
+                      </p>
+                      <div className="flex items-center justify-center gap-2 mt-4">
+                        <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => fileInputRef.current?.click()}>
+                          <Upload className="size-3 mr-1.5" /> Upload PDF
+                        </Button>
+                        <Button variant="outline" size="sm" className="h-8 text-xs" onClick={loadSample}>
+                          <Sparkles className="size-3 mr-1.5" /> Load Sample
+                        </Button>
+                      </div>
+                    </div>
                   </div>
-                  <h3 className="text-lg font-semibold mt-6 mb-2">
-                    Running 18-Phase Pipeline
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    Applying glossary mapping, voice adaptation, cultural
-                    filtering...
-                  </p>
-                </CardContent>
-              </Card>
-            )}
+                )}
+              </CardContent>
+            </Card>
           </div>
         </div>
       </div>
     </div>
   );
-}
-
-function ReportSection({ report }: { report: TranslationReport }) {
-  const scores = [
-    {
-      label: "Overall Quality",
-      value: report.overallScore,
-      icon: BarChart3,
-    },
-    {
-      label: "Character Consistency",
-      value: report.characterConsistency,
-      icon: BookOpen,
-    },
-    {
-      label: "Cultural Compliance",
-      value: report.culturalCompliance,
-      icon: Globe,
-    },
-    {
-      label: "Narrative Flow",
-      value: report.narrativeFlow,
-      icon: FileText,
-    },
-    {
-      label: "Glossary Adherence",
-      value: report.glossaryAdherence,
-      icon: CheckCircle2,
-    },
-  ];
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-sm font-semibold mb-4">Quality Scores</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {scores.map((score) => (
-            <div
-              key={score.label}
-              className="p-4 rounded-xl bg-muted/30 border border-border/40"
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <score.icon className="size-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">{score.label}</span>
-                </div>
-                <span
-                  className={`text-lg font-bold ${getScoreColor(score.value)}`}
-                >
-                  {score.value}
-                </span>
-              </div>
-              <div className="h-2 rounded-full bg-muted overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-primary transition-all duration-1000"
-                  style={{ width: `${score.value}%` }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {report.warnings.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-            <AlertTriangle className="size-4 text-yellow-500" />
-            Warnings
-          </h3>
-          <div className="space-y-2">
-            {report.warnings.map((warning, i) => (
-              <div
-                key={i}
-                className="p-3 rounded-lg bg-yellow-500/5 border border-yellow-500/20 text-sm"
-              >
-                {warning}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {report.recommendations.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-            <CheckCircle2 className="size-4 text-green-500" />
-            Recommendations
-          </h3>
-          <div className="space-y-2">
-            {report.recommendations.map((rec, i) => (
-              <div
-                key={i}
-                className="p-3 rounded-lg bg-green-500/5 border border-green-500/20 text-sm"
-              >
-                {rec}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {report.issues.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-            <XCircle className="size-4 text-red-500" />
-            Issues
-          </h3>
-          <div className="space-y-2">
-            {report.issues.map((issue, i) => (
-              <div
-                key={i}
-                className="p-3 rounded-lg bg-red-500/5 border border-red-500/20 text-sm"
-              >
-                {issue}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div>
-        <h3 className="text-sm font-semibold mb-3">Export Options</h3>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="p-4 rounded-xl bg-muted/30 border border-border/40 text-center">
-            <FileText className="size-6 mx-auto mb-2 text-muted-foreground" />
-            <div className="text-sm font-medium">CSV Export</div>
-            <div className="text-xs text-muted-foreground mt-1">
-              Map names, rune captions, endpaper text
-            </div>
-          </div>
-          <div className="p-4 rounded-xl bg-muted/30 border border-border/40 text-center">
-            <Volume2 className="size-6 mx-auto mb-2 text-muted-foreground" />
-            <div className="text-sm font-medium">Voice Notes</div>
-            <div className="text-xs text-muted-foreground mt-1">
-              Audiobook narrator instructions
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function getScoreColor(score: number) {
-  if (score >= 90) return "text-green-500";
-  if (score >= 75) return "text-yellow-500";
-  return "text-red-500";
 }

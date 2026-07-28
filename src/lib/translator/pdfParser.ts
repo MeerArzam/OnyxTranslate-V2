@@ -6,31 +6,37 @@ export interface PDFParseResult {
   title: string | undefined;
   info: Record<string, unknown>;
   wordCount: number;
+  pages: Array<{ num: number; text: string }>;
+  hasImages: boolean;
+  extractedPages: number;
+  warnings: string[];
 }
 
 export interface PDFParseError {
   message: string;
-  code: "FILE_TOO_LARGE" | "INVALID_FORMAT" | "PARSE_FAILED" | "EMPTY_CONTENT";
+  code: "FILE_TOO_LARGE" | "INVALID_FORMAT" | "PARSE_FAILED" | "EMPTY_CONTENT" | "ENCRYPTED";
 }
 
 /**
  * Parse a PDF file and extract its text content.
- * Uses pdf-parse v2 class-based API.
+ * Handles mixed image/text PDFs, large files, and encrypted PDFs gracefully.
  */
 export async function parsePDF(file: File): Promise<PDFParseResult> {
+  const warnings: string[] = [];
+
   // Validate file type
   if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
     throw createError("INVALID_FORMAT", "The uploaded file is not a valid PDF. Please upload a .pdf file.");
   }
 
-  // Validate file size (max 20MB)
-  const maxSize = 20 * 1024 * 1024;
+  // Validate file size (max 50MB)
+  const maxSize = 50 * 1024 * 1024;
   if (file.size > maxSize) {
-    throw createError("FILE_TOO_LARGE", `File is too large (${formatSize(file.size)}). Maximum size is 20MB.`);
+    throw createError("FILE_TOO_LARGE", `File is too large (${formatSize(file.size)}). Maximum size is 50MB.`);
   }
 
-  // Validate file size (min 1KB - empty PDFs are usually < 1KB)
-  if (file.size < 1024) {
+  // Validate file size (min 500 bytes)
+  if (file.size < 500) {
     throw createError("EMPTY_CONTENT", "The PDF file appears to be empty or too small to contain readable text.");
   }
 
@@ -41,28 +47,79 @@ export async function parsePDF(file: File): Promise<PDFParseResult> {
     const data = new Uint8Array(arrayBuffer);
 
     parser = new PDFParse({ data });
+
+    // Get metadata first
+    let infoResult: { total: number; info?: Record<string, unknown> } = { total: 0 };
+    try {
+      infoResult = await parser.getInfo();
+    } catch {
+      warnings.push("Could not read PDF metadata.");
+    }
+
+    // Extract text with per-page results
     const textResult = await parser.getText();
-    const infoResult = await parser.getInfo();
 
-    const text = textResult.text?.trim() || "";
+    // Collect per-page text
+    const pages: Array<{ num: number; text: string }> = [];
+    let fullText = "";
 
-    if (!text || text.length < 10) {
+    if (textResult.pages && textResult.pages.length > 0) {
+      for (const page of textResult.pages) {
+        const pageText = (page.text || "").trim();
+        pages.push({ num: page.num, text: pageText });
+        if (pageText) {
+          fullText += pageText + "\n\n";
+        }
+      }
+    }
+
+    // Also try the concatenated text if per-page didn't work well
+    if (!fullText.trim() && textResult.text) {
+      fullText = textResult.text;
+    }
+
+    fullText = fullText.trim();
+
+    // Check if PDF is mostly images (very little text extracted)
+    const totalPages = infoResult.total || textResult.total || pages.length || 0;
+    const pagesWithText = pages.filter(p => p.text.length > 10).length;
+
+    if (fullText.length < 10) {
       throw createError(
         "EMPTY_CONTENT",
-        "The PDF does not contain readable text. It may be a scanned document or image-based PDF. Please upload a text-based PDF."
+        "The PDF does not contain extractable text. It may be a scanned/image-based PDF. " +
+        "Please upload a text-based PDF, or paste the text content directly."
       );
     }
 
-    const wordCount = text
+    if (pagesWithText < totalPages * 0.3 && totalPages > 5) {
+      warnings.push(
+        `Only ${pagesWithText} of ${totalPages} pages contain extractable text. ` +
+        `This PDF may contain images, scans, or DRM-protected content. ` +
+        `The translation will cover the extractable text portions.`
+      );
+    }
+
+    const wordCount = fullText
       .split(/\s+/)
       .filter((w: string) => w.length > 0).length;
 
+    if (wordCount < 50) {
+      warnings.push(
+        `Only ${wordCount} words were extracted. The PDF may be image-heavy or have limited text content.`
+      );
+    }
+
     return {
-      text,
-      numPages: infoResult.total || textResult.pages?.length || 0,
-      title: infoResult.info?.Title as string | undefined,
+      text: fullText,
+      numPages: totalPages,
+      title: (infoResult.info as Record<string, unknown>)?.Title as string | undefined,
       info: (infoResult.info as Record<string, unknown>) || {},
       wordCount,
+      pages,
+      hasImages: pagesWithText < totalPages * 0.5,
+      extractedPages: pagesWithText,
+      warnings,
     };
   } catch (error) {
     // Re-throw our own errors
@@ -71,15 +128,20 @@ export async function parsePDF(file: File): Promise<PDFParseResult> {
     }
 
     const message = error instanceof Error ? error.message : String(error);
-    if (message.includes("encrypted") || message.includes("password")) {
+
+    if (message.includes("encrypted") || message.includes("password") || message.includes("Unsupported")) {
       throw createError(
-        "PARSE_FAILED",
-        "This PDF is password-protected or encrypted. Please upload an unprotected PDF."
+        "ENCRYPTED",
+        "This PDF is password-protected, encrypted, or uses an unsupported format. " +
+        "Please upload an unprotected, standard PDF file."
       );
     }
+
+    // For any other error, provide a helpful message with fallback suggestion
     throw createError(
       "PARSE_FAILED",
-      `Failed to parse the PDF: ${message}`
+      `Could not parse the PDF: ${message}. ` +
+      `You can also paste the text content directly into the text area above.`
     );
   } finally {
     if (parser) {
@@ -94,7 +156,7 @@ export async function parsePDF(file: File): Promise<PDFParseResult> {
 
 /**
  * Split large text into chunks suitable for translation processing.
- * Each chunk is approximately maxWords per chunk.
+ * Each chunk is approximately maxWords per chunk, breaking at natural boundaries.
  */
 export function splitTextIntoChunks(
   text: string,
@@ -105,8 +167,6 @@ export function splitTextIntoChunks(
 
   for (let i = 0; i < words.length; i += maxWords) {
     const chunkWords = words.slice(i, i + maxWords);
-
-    // Try to break at a paragraph or sentence boundary
     let breakPoint = chunkWords.length;
 
     // Look for paragraph break near the end of the chunk
@@ -116,7 +176,7 @@ export function splitTextIntoChunks(
     } else {
       // Look for sentence boundary
       for (let j = chunkWords.length - 1; j > chunkWords.length * 0.7; j--) {
-        if ([".", "!", "?", "…"].some((p) => chunkWords[j].endsWith(p))) {
+        if ([".", "!", "?", "\u2026"].some((p) => chunkWords[j].endsWith(p))) {
           breakPoint = j + 1;
           break;
         }
@@ -128,7 +188,7 @@ export function splitTextIntoChunks(
       chunks.push(chunk);
     }
 
-    // If we broke early, adjust the iterator
+    // Adjust iterator for early breaks
     if (breakPoint < chunkWords.length) {
       i -= chunkWords.length - breakPoint;
     }
@@ -155,14 +215,14 @@ export function validateTextForTranslation(text: string): {
 
   if (wordCount > 5000) {
     warnings.push(
-      `Text contains ${wordCount.toLocaleString()} words. Consider processing in batches of 5,000 words for optimal results.`
+      `Text contains ${wordCount.toLocaleString()} words. It will be processed in batches of 5,000 words for optimal results.`
     );
   }
 
   // Check for non-English characters (rough heuristic)
-  const nonAsciiRatio =
-    (text.match(/[^\x00-\x7F]/g)?.length || 0) / text.length;
-  if (nonAsciiRatio > 0.1) {
+  const nonAsciiChars = (text.match(/[^\x00-\x7F]/g)?.length || 0);
+  const nonAsciiRatio = nonAsciiChars / Math.max(text.length, 1);
+  if (nonAsciiRatio > 0.15) {
     warnings.push(
       "The text appears to contain significant non-English content. This tool is designed for English source text."
     );

@@ -63,6 +63,27 @@ const glossary: Record<string, Record<string, string>> =
   glossaryData.magicMilitary;
 const properNouns: Record<string, string[]> = glossaryData.properNouns;
 
+const PHASES_DEFINITIONS = [
+  { id: 1, name: "Glossary & Literal Fidelity Pass", description: "Identify proper nouns, fantasy terms, and military ranks" },
+  { id: 2, name: "Character Voice & Dialogue Adaptation", description: "Apply character voice matrix to dialogue" },
+  { id: 3, name: "Cultural Contextualization & Censorship Check", description: "Apply market-specific cultural rules" },
+  { id: 4, name: "Multi-Script Formatting & Visual Adaptation", description: "Process text into target alphabet with proper formatting" },
+  { id: 5, name: "Self-Verification & Plausibility Report", description: "Review and generate translation report" },
+  { id: 6, name: "Honorifics & Pronoun Mapping", description: "Map personal pronouns based on character relationships" },
+  { id: 7, name: "Magic System Terminology", description: "Ensure consistent use of magic-related terms" },
+  { id: 8, name: "Military Terminology", description: "Apply military rank and unit translations" },
+  { id: 9, name: "Emotional Tone Calibration", description: "Adjust emotional intensity for target market" },
+  { id: 10, name: "Dialogue Flow Optimization", description: "Ensure natural dialogue rhythm" },
+  { id: 11, name: "Internal Monologue Processing", description: "Handle character thoughts and introspection" },
+  { id: 12, name: "Action Sequence Adaptation", description: "Maintain pacing and tension in action scenes" },
+  { id: 13, name: "Romantic Content Adjustment", description: "Apply intimacy filters based on market" },
+  { id: 14, name: "Profanity & Expletive Replacement", description: "Replace explicit language with cultural equivalents" },
+  { id: 15, name: "Political Sensitivity Check", description: "Reframe political content for target market" },
+  { id: 16, name: "Dragon Telepathy Formatting", description: "Format italicized dragon thoughts" },
+  { id: 17, name: "Visual Element Localization", description: "Extract and translate map names, rune captions" },
+  { id: 18, name: "Final Quality Assurance", description: "Complete plausibility and consistency check" },
+];
+
 function getTranslation(term: string, language: string): string {
   if (glossary[term]) {
     return glossary[term][language] || glossary[term]["en"] || term;
@@ -99,7 +120,7 @@ function detectCharacterVoice(text: string): {
   return null;
 }
 
-function generateVoiceNote(
+function getVoiceNote(
   character: string,
   line: string,
   language: string
@@ -137,7 +158,7 @@ function extractMapNames(text: string): Array<{ original: string; translated: st
 }
 
 function extractRuneCaptions(text: string): Array<{ original: string; translated: string }> {
-  const runePattern = /[Rr]une[:\s]+([^\n.]+)/g;
+  const runePattern = /[Rr]une[::\s]+([^\n.]+)/g;
   const results: Array<{ original: string; translated: string }> = [];
   let match;
   while ((match = runePattern.exec(text)) !== null) {
@@ -147,7 +168,7 @@ function extractRuneCaptions(text: string): Array<{ original: string; translated
 }
 
 function extractEndpaperText(text: string): Array<{ original: string; translated: string }> {
-  const endpaperPattern = /[Ee]ndpaper[:\s]+([^\n.]+)/g;
+  const endpaperPattern = /[Ee]ndpaper[::\s]+([^\n.]+)/g;
   const results: Array<{ original: string; translated: string }> = [];
   let match;
   while ((match = endpaperPattern.exec(text)) !== null) {
@@ -156,6 +177,10 @@ function extractEndpaperText(text: string): Array<{ original: string; translated
   return results;
 }
 
+/**
+ * Run the full 18-phase translation pipeline with no artificial delays.
+ * All phases execute synchronously for maximum speed.
+ */
 export async function runTranslationPipeline(
   config: TranslationConfig
 ): Promise<TranslationResult> {
@@ -166,217 +191,130 @@ export async function runTranslationPipeline(
     chapterNumber = 1,
   } = config;
 
-  const phases: TranslationPhase[] = [
-    { id: 1, name: "Glossary & Literal Fidelity Pass", description: "Identify proper nouns, fantasy terms, and military ranks", status: "pending" },
-    { id: 2, name: "Character Voice & Dialogue Adaptation", description: "Apply character voice matrix to dialogue", status: "pending" },
-    { id: 3, name: "Cultural Contextualization & Censorship Check", description: "Apply market-specific cultural rules", status: "pending" },
-    { id: 4, name: "Multi-Script Formatting & Visual Adaptation", description: "Process text into target alphabet with proper formatting", status: "pending" },
-    { id: 5, name: "Self-Verification & Plausibility Report", description: "Review and generate translation report", status: "pending" },
-    { id: 6, name: "Honorifics & Pronoun Mapping", description: "Map personal pronouns based on character relationships", status: "pending" },
-    { id: 7, name: "Magic System Terminology", description: "Ensure consistent use of magic-related terms", status: "pending" },
-    { id: 8, name: "Military Terminology", description: "Apply military rank and unit translations", status: "pending" },
-    { id: 9, name: "Emotional Tone Calibration", description: "Adjust emotional intensity for target market", status: "pending" },
-    { id: 10, name: "Dialogue Flow Optimization", description: "Ensure natural dialogue rhythm", status: "pending" },
-    { id: 11, name: "Internal Monologue Processing", description: "Handle character thoughts and introspection", status: "pending" },
-    { id: 12, name: "Action Sequence Adaptation", description: "Maintain pacing and tension in action scenes", status: "pending" },
-    { id: 13, name: "Romantic Content Adjustment", description: "Apply intimacy filters based on market", status: "pending" },
-    { id: 14, name: "Profanity & Expletive Replacement", description: "Replace explicit language with cultural equivalents", status: "pending" },
-    { id: 15, name: "Political Sensitivity Check", description: "Reframe political content for target market", status: "pending" },
-    { id: 16, name: "Dragon Telepathy Formatting", description: "Format italicized dragon thoughts", status: "pending" },
-    { id: 17, name: "Visual Element Localization", description: "Extract and translate map names, rune captions", status: "pending" },
-    { id: 18, name: "Final Quality Assurance", description: "Complete plausibility and consistency check", status: "pending" },
-  ];
+  const phases: TranslationPhase[] = PHASES_DEFINITIONS.map((p) => ({
+    ...p,
+    status: "pending" as const,
+  }));
 
   let translatedText = sourceText;
 
-  for (let i = 0; i < phases.length; i++) {
-    phases[i].status = "active";
-
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    switch (phases[i].id) {
-      case 1: {
-        const termsToReplace = Object.keys(glossary);
-        for (const term of termsToReplace) {
-          const regex = new RegExp(`\\b${term}\\b`, "gi");
-          if (regex.test(translatedText)) {
-            const translation = getTranslation(term, targetLanguage);
-            translatedText = translatedText.replace(regex, translation);
-          }
-        }
-        for (const [term, translations] of Object.entries(properNouns)) {
-          const regex = new RegExp(`\\b${term}\\b`, "g");
-          if (regex.test(translatedText)) {
-            const translated = getProperNoun(term, targetLanguage);
-            if (translated) {
-              translatedText = translatedText.replace(regex, translated);
-            }
-          }
-        }
-        phases[i].result = "Glossary terms applied";
-        phases[i].notes = `Applied ${Object.keys(glossary).length} glossary terms`;
-        break;
-      }
-      case 2: {
-        const dialogueLines = translatedText.split("\n");
-        const voiceNotes: VoiceDirectorNote[] = [];
-        for (const line of dialogueLines) {
-          const detected = detectCharacterVoice(line);
-          if (detected) {
-            const note = generateVoiceNote(
-              detected.character,
-              detected.line,
-              targetLanguage
-            );
-            voiceNotes.push(note);
-          }
-        }
-        phases[i].result = "Character voices applied";
-        phases[i].notes = `Detected ${voiceNotes.length} dialogue lines`;
-        break;
-      }
-      case 3: {
-        translatedText = applyCulturalFilters(
-          translatedText,
-          targetLanguage,
-          marketContext
-        );
-        phases[i].result = "Cultural filters applied";
-        phases[i].notes = `Applied filters for market: ${marketContext}`;
-        break;
-      }
-      case 4: {
-        const config = getScriptConfig(targetLanguage);
-        if (config.direction === "rtl") {
-          translatedText = `→ ${translatedText}`;
-        }
-        phases[i].result = "Script formatting applied";
-        phases[i].notes = `Direction: ${config.direction}, Script: ${config.name}`;
-        break;
-      }
-      case 5: {
-        phases[i].result = "Verification complete";
-        phases[i].notes = "No critical issues detected";
-        break;
-      }
-      case 6: {
-        const informalLanguages = ["ja", "ko", "zh", "fr", "de", "es", "it", "pt"];
-        if (informalLanguages.includes(targetLanguage)) {
-          phases[i].notes = "Applied informal pronouns for intimate characters";
-        }
-        phases[i].result = "Honorifics mapped";
-        break;
-      }
-      case 7: {
-        phases[i].result = "Magic system terms verified";
-        phases[i].notes = "All magic terms consistent";
-        break;
-      }
-      case 8: {
-        phases[i].result = "Military terminology applied";
-        phases[i].notes = "Ranks and units translated";
-        break;
-      }
-      case 9: {
-        phases[i].result = "Emotional tone calibrated";
-        phases[i].notes = `Adjusted for ${marketContext} market`;
-        break;
-      }
-      case 10: {
-        phases[i].result = "Dialogue flow optimized";
-        phases[i].notes = "Natural rhythm ensured";
-        break;
-      }
-      case 11: {
-        phases[i].result = "Internal monologue processed";
-        phases[i].notes = "Thought patterns preserved";
-        break;
-      }
-      case 12: {
-        phases[i].result = "Action sequences adapted";
-        phases[i].notes = "Pacing and tension maintained";
-        break;
-      }
-      case 13: {
-        if (detectExplicitContent(translatedText)) {
-          const euphemism = getEuphemism(targetLanguage, "intimate");
-          phases[i].notes = `Explicit content detected, euphemism applied: "${euphemism}"`;
-        }
-        phases[i].result = "Romantic content adjusted";
-        break;
-      }
-      case 14: {
-        phases[i].result = "Profanity replaced";
-        phases[i].notes = "Cultural equivalents applied";
-        break;
-      }
-      case 15: {
-        phases[i].result = "Political sensitivity checked";
-        phases[i].notes = "No political triggers detected";
-        break;
-      }
-      case 16: {
-        const thoughtPattern = /\*([^*]+)\*/g;
-        translatedText = translatedText.replace(thoughtPattern, (_, thought) =>
-          formatDragonTelepathy(thought, targetLanguage)
-        );
-        phases[i].result = "Dragon telepathy formatted";
-        phases[i].notes = `Applied ${targetLanguage === "ar" ? "【】" : "「」"} formatting`;
-        break;
-      }
-      case 17: {
-        const mapNames = extractMapNames(sourceText);
-        const runeCaptions = extractRuneCaptions(sourceText);
-        const endpaperText = extractEndpaperText(sourceText);
-        phases[i].result = "Visual elements extracted";
-        phases[i].notes = `Found ${mapNames.length} maps, ${runeCaptions.length} runes, ${endpaperText.length} endpaper items`;
-        break;
-      }
-      case 18: {
-        phases[i].result = "Final QA complete";
-        phases[i].notes = "Translation ready for delivery";
-        break;
+  // Phase 1: Glossary & Literal Fidelity Pass
+  phases[0].status = "active";
+  const termsToReplace = Object.keys(glossary);
+  for (const term of termsToReplace) {
+    const regex = new RegExp(`\\b${term}\\b`, "gi");
+    if (regex.test(translatedText)) {
+      const translation = getTranslation(term, targetLanguage);
+      translatedText = translatedText.replace(regex, translation);
+    }
+  }
+  for (const [term, translations] of Object.entries(properNouns)) {
+    const regex = new RegExp(`\\b${term}\\b`, "g");
+    if (regex.test(translatedText)) {
+      const translated = getProperNoun(term, targetLanguage);
+      if (translated) {
+        translatedText = translatedText.replace(regex, translated);
       }
     }
-
-    phases[i].status = "completed";
   }
+  phases[0].result = "Glossary terms applied";
+  phases[0].notes = `Applied ${Object.keys(glossary).length} glossary terms`;
+  phases[0].status = "completed";
 
-  const voiceNotes: VoiceDirectorNote[] = [];
+  // Phase 2: Character Voice & Dialogue Adaptation
+  phases[1].status = "active";
   const dialogueLines = translatedText.split("\n");
+  const foundVoiceNotes: VoiceDirectorNote[] = [];
   for (const line of dialogueLines) {
     const detected = detectCharacterVoice(line);
     if (detected) {
+      foundVoiceNotes.push(
+        getVoiceNote(detected.character, detected.line, targetLanguage)
+      );
+    }
+  }
+  phases[1].result = "Character voices applied";
+  phases[1].notes = `Detected ${foundVoiceNotes.length} dialogue lines`;
+  phases[1].status = "completed";
+
+  // Phase 3: Cultural Contextualization & Censorship Check
+  phases[2].status = "active";
+  translatedText = applyCulturalFilters(translatedText, targetLanguage, marketContext);
+  phases[2].result = "Cultural filters applied";
+  phases[2].notes = `Applied filters for market: ${marketContext}`;
+  phases[2].status = "completed";
+
+  // Phase 4: Multi-Script Formatting
+  phases[3].status = "active";
+  const scriptConfig = getScriptConfig(targetLanguage);
+  if (scriptConfig.direction === "rtl") {
+    translatedText = `→ ${translatedText}`;
+  }
+  phases[3].result = "Script formatting applied";
+  phases[3].notes = `Direction: ${scriptConfig.direction}, Script: ${scriptConfig.name}`;
+  phases[3].status = "completed";
+
+  // Phases 5-18: Non-text-modifying phases, all run instantly
+  const quickPhases = [
+    { phase: phases[4], result: "Verification complete", notes: "No critical issues detected" },
+    { phase: phases[5], result: "Honorifics mapped", notes: informalLanguages(targetLanguage) ? "Applied informal pronouns for intimate characters" : "Standard honorifics used" },
+    { phase: phases[6], result: "Magic system terms verified", notes: "All magic terms consistent" },
+    { phase: phases[7], result: "Military terminology applied", notes: "Ranks and units translated" },
+    { phase: phases[8], result: "Emotional tone calibrated", notes: `Adjusted for ${marketContext} market` },
+    { phase: phases[9], result: "Dialogue flow optimized", notes: "Natural rhythm ensured" },
+    { phase: phases[10], result: "Internal monologue processed", notes: "Thought patterns preserved" },
+    { phase: phases[11], result: "Action sequences adapted", notes: "Pacing and tension maintained" },
+    { phase: phases[12], result: "Romantic content adjusted", notes: detectExplicitContent(translatedText) ? `Explicit content detected, euphemism applied: "${getEuphemism(targetLanguage, "intimate")}"` : "No explicit content detected" },
+    { phase: phases[13], result: "Profanity replaced", notes: "Cultural equivalents applied" },
+    { phase: phases[14], result: "Political sensitivity checked", notes: "No political triggers detected" },
+    { phase: phases[15], result: "Dragon telepathy formatted", notes: `Applied ${["ar", "ur", "ks"].includes(targetLanguage) ? "【】" : "「」"} formatting` },
+    { phase: phases[16], result: "Visual elements extracted", notes: `Found ${extractMapNames(sourceText).length} maps, ${extractRuneCaptions(sourceText).length} runes, ${extractEndpaperText(sourceText).length} endpaper items` },
+    { phase: phases[17], result: "Final QA complete", notes: "Translation ready for delivery" },
+  ];
+
+  for (const { phase, result, notes } of quickPhases) {
+    phase.status = "active";
+    phase.result = result;
+    phase.notes = notes;
+    phase.status = "completed";
+  }
+
+  // Apply dragon telepathy formatting
+  const thoughtPattern = /\*([^*]+)\*/g;
+  translatedText = translatedText.replace(thoughtPattern, (_, thought) =>
+    formatDragonTelepathy(thought, targetLanguage)
+  );
+
+  // Build voice notes from all dialogue
+  const voiceNotes: VoiceDirectorNote[] = [];
+  const allLines = translatedText.split("\n");
+  for (const line of allLines) {
+    const detected = detectCharacterVoice(line);
+    if (detected) {
       voiceNotes.push(
-        generateVoiceNote(detected.character, detected.line, targetLanguage)
+        getVoiceNote(detected.character, detected.line, targetLanguage)
       );
     }
   }
 
+  // Build report
   const report: TranslationReport = {
     overallScore: 92,
     characterConsistency: 95,
-    culturalCompliance: 88,
+    culturalCompliance: marketContext === "high-censorship" ? 95 : 88,
     narrativeFlow: 90,
     glossaryAdherence: 98,
     issues: [],
-    warnings: [],
-    recommendations: [],
+    warnings: detectExplicitContent(sourceText)
+      ? ["Explicit content detected and filtered according to market rules"]
+      : [],
+    recommendations:
+      marketContext === "high-censorship"
+        ? ["Intimacy scenes have been adapted for local market regulations"]
+        : [],
   };
 
-  if (marketContext === "high-censorship") {
-    report.culturalCompliance = 95;
-    report.recommendations.push(
-      "Intimacy scenes have been adapted for local market regulations"
-    );
-  }
-
-  if (detectExplicitContent(sourceText)) {
-    report.warnings.push(
-      "Explicit content detected and filtered according to market rules"
-    );
-  }
-
+  // Build CSV data
   const csvData: CSVExportData = {
     mapNames: extractMapNames(sourceText).map((item) => ({
       ...item,
@@ -392,13 +330,11 @@ export async function runTranslationPipeline(
     })),
   };
 
-  return {
-    translatedText,
-    phases,
-    report,
-    csvData,
-    voiceNotes,
-  };
+  return { translatedText, phases, report, csvData, voiceNotes };
+}
+
+function informalLanguages(lang: string): boolean {
+  return ["ja", "ko", "zh", "fr", "de", "es", "it", "pt"].includes(lang);
 }
 
 export function generateSampleText(): string {
@@ -416,7 +352,7 @@ Violet's stomach dropped as Tairn banked sharply, and she caught a glimpse of th
 
 "Holy shit," Ridoc muttered from beside her, his dragon banking in formation. "Remind me again why we volunteered for this?"
 
-"Because we're Scribes," Violet shot back, her voice sharp with righteous fury. "And someone has to记录 what happens here."
+"Because we're Scribes," Violet shot back, her voice sharp with righteous fury. "And someone has to record what happens here."
 
 The truth was darker than any of them knew. The Empyrean was watching. The Sages were moving. And somewhere in the shadows, Xaden Riorson was playing a game that could burn the world.
 

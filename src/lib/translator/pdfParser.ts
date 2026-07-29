@@ -16,6 +16,23 @@ import * as pdfjsLib from "pdfjs-dist";
 // Configure the PDF.js worker from CDN for reliable browser compatibility
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/5.4.296/pdf.worker.min.mjs`;
 
+export interface PDFTextItem {
+  str: string;
+  x: number;
+  y: number;       // Canvas Y coordinate (top-left origin)
+  width: number;    // Width in canvas pixels
+  height: number;   // Height in canvas pixels
+  fontName: string;
+}
+
+export interface PDFPageData {
+  num: number;
+  text: string;
+  textItems: PDFTextItem[];
+  pageWidth: number;   // Canvas pixel width at scale 1
+  pageHeight: number;  // Canvas pixel height at scale 1
+}
+
 export interface PDFParseResult {
   text: string;
   numPages: number;
@@ -23,9 +40,12 @@ export interface PDFParseResult {
   info: Record<string, unknown>;
   wordCount: number;
   pages: Array<{ num: number; text: string }>;
+  pageData: PDFPageData[];
   hasImages: boolean;
   extractedPages: number;
   warnings: string[];
+  /** Original PDF ArrayBuffer for re-rendering pages to canvas */
+  arrayBuffer: ArrayBuffer;
 }
 
 export interface PDFParseError {
@@ -35,27 +55,57 @@ export interface PDFParseError {
 
 type ProgressCallback = (currentPage: number, totalPages: number) => void;
 
-// Maximum number of pages to extract in parallel
 const PARALLEL_BATCH_SIZE = 10;
 
 /**
- * Extract text from a single PDF page efficiently.
+ * Extract text items with positions from a single PDF page.
  */
-async function extractPageText(
+async function extractPageData(
   pdf: pdfjsLib.PDFDocumentProxy,
-  pageNum: number
-): Promise<{ num: number; text: string }> {
+  pageNum: number,
+  renderScale: number
+): Promise<PDFPageData> {
   const page = await pdf.getPage(pageNum);
+  const viewport = page.getViewport({ scale: 1 });
+  const pageWidth = viewport.width;
+  const pageHeight = viewport.height;
+
   const textContent = await page.getTextContent();
 
-  // Build text efficiently using map/join (much faster than string concat in loops)
-  const text = textContent.items
+  // Extract text items with canvas pixel positions
+  const rawItems = textContent.items.filter((item) => "str" in item) as Array<{ str: string; transform?: number[]; width?: number; height?: number; fontName?: string; hasEOL?: boolean }>;
+
+  const textItems: PDFTextItem[] = rawItems
+    .filter((item) => item.str.trim().length > 0)
+    .map((item) => {
+      const transform = item.transform || [1, 0, 0, 1, 0, 0];
+      const width = item.width || 0;
+      const height = item.height || 0;
+      const fontName = item.fontName || "";
+
+      // PDF coordinates: (transform[4], transform[5]) with bottom-left origin
+      // Convert to canvas coordinates (top-left origin)
+      const pdfX = transform[4];
+      const pdfY = transform[5];
+      const canvasX = pdfX * renderScale;
+      const canvasY = (pageHeight - pdfY) * renderScale;
+
+      return {
+        str: item.str,
+        x: canvasX,
+        y: canvasY,
+        width: width * renderScale,
+        height: height * renderScale,
+        fontName,
+      };
+    });
+
+  // Build plain text from items
+  const text = rawItems
     .map((item, i, arr) => {
-      if (!("str" in item)) return "";
       const str = item.str;
-      // Add appropriate spacing based on positioning
       const nextItem = arr[i + 1];
-      if (item.hasEOL || (nextItem && "str" in nextItem && nextItem.transform?.[4] !== item.transform?.[4])) {
+      if (item.hasEOL || (nextItem && nextItem.transform?.[5] !== item.transform?.[5])) {
         return str + "\n";
       }
       return str + (str.endsWith("-") ? "" : " ");
@@ -63,12 +113,18 @@ async function extractPageText(
     .join("")
     .trim();
 
-  return { num: pageNum, text };
+  return {
+    num: pageNum,
+    text,
+    textItems,
+    pageWidth,
+    pageHeight,
+  };
 }
 
 /**
- * Parse a PDF file and extract its text content with maximum speed.
- * Uses parallel page extraction and performance-optimized PDF.js settings.
+ * Parse a PDF file and extract text content with position data.
+ * Stores the original ArrayBuffer for later page rendering.
  */
 export async function parsePDF(
   file: File,
@@ -76,7 +132,6 @@ export async function parsePDF(
 ): Promise<PDFParseResult> {
   const warnings: string[] = [];
 
-  // Fast validation checks
   if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
     throw createError("INVALID_FORMAT", "The uploaded file is not a valid PDF.");
   }
@@ -91,53 +146,52 @@ export async function parsePDF(
   }
 
   try {
-    // Read file as ArrayBuffer once
     const arrayBuffer = await file.arrayBuffer();
 
-    // Load PDF with performance-optimized settings
     const loadingTask = pdfjsLib.getDocument({
       data: arrayBuffer,
-      disableFontFace: true,          // Skip font downloads (we only need text)
-      disableRange: true,             // Disable range requests (faster for local files)
-      disableAutoFetch: true,         // Don't pre-fetch remaining pages
-      useSystemFonts: false,          // Don't use system fonts (we only need text)
+      disableFontFace: true,
+      disableRange: true,
+      disableAutoFetch: true,
+      useSystemFonts: false,
     });
 
     const pdf = await loadingTask.promise;
     const totalPages = pdf.numPages;
 
-    // Extract pages in parallel batches for maximum speed
+    // We'll render at 1x for text extraction (positions), 2x for final PDF image
+    const renderScale = 1;
+
+    const pageData: PDFPageData[] = [];
     const pages: Array<{ num: number; text: string }> = [];
 
     for (let batchStart = 1; batchStart <= totalPages; batchStart += PARALLEL_BATCH_SIZE) {
       const batchEnd = Math.min(batchStart + PARALLEL_BATCH_SIZE - 1, totalPages);
       const batchPageNums: number[] = [];
-
       for (let i = batchStart; i <= batchEnd; i++) {
         batchPageNums.push(i);
       }
 
-      // Extract pages in parallel within each batch
       const batchResults = await Promise.all(
-        batchPageNums.map((pageNum) => extractPageText(pdf, pageNum))
+        batchPageNums.map((pageNum) => extractPageData(pdf, pageNum, renderScale))
       );
 
-      pages.push(...batchResults);
+      for (const result of batchResults) {
+        pageData.push(result);
+        pages.push({ num: result.num, text: result.text });
+      }
 
-      // Report progress after each batch
       if (onProgress) {
         onProgress(batchEnd, totalPages);
       }
     }
 
-    // Build full text from pages (fast join)
     const fullText = pages
       .map((p) => p.text)
       .filter(Boolean)
       .join("\n\n")
       .trim();
 
-    // Get metadata in parallel (fire-and-forget, not blocking)
     let title: string | undefined;
     let info: Record<string, unknown> = {};
     try {
@@ -147,10 +201,9 @@ export async function parsePDF(
         title = (metadata.info as Record<string, unknown>)?.Title as string | undefined;
       }
     } catch {
-      // Metadata failure is non-critical
+      // Non-critical
     }
 
-    // Quick checks
     const pagesWithText = pages.filter((p) => p.text.length > 10).length;
 
     if (fullText.length < 10) {
@@ -181,9 +234,11 @@ export async function parsePDF(
       info,
       wordCount,
       pages,
+      pageData,
       hasImages: pagesWithText < totalPages * 0.5,
       extractedPages: pagesWithText,
       warnings,
+      arrayBuffer,
     };
   } catch (error) {
     if (error && typeof error === "object" && "code" in error) throw error;
@@ -205,24 +260,14 @@ export async function parsePDF(
   }
 }
 
-/**
- * Split large text into chunks suitable for translation processing.
- * Uses fast word-boundary splitting.
- */
-export function splitTextIntoChunks(
-  text: string,
-  maxWords: number = 5000
-): string[] {
+export function splitTextIntoChunks(text: string, maxWords: number = 5000): string[] {
   const words = text.split(/\s+/);
   if (words.length <= maxWords) return [text];
 
   const chunks: string[] = [];
   let start = 0;
-
   while (start < words.length) {
     let end = Math.min(start + maxWords, words.length);
-
-    // Try to break at paragraph or sentence boundary
     if (end < words.length) {
       const segment = words.slice(start, end);
       const paraBreak = segment.lastIndexOf("\n\n");
@@ -237,17 +282,12 @@ export function splitTextIntoChunks(
         }
       }
     }
-
     chunks.push(words.slice(start, end).join(" "));
     start = end;
   }
-
   return chunks;
 }
 
-/**
- * Fast validation that text is suitable for translation
- */
 export function validateTextForTranslation(text: string): {
   valid: boolean;
   errors: string[];
@@ -260,20 +300,13 @@ export function validateTextForTranslation(text: string): {
   if (wordCount < 10) {
     errors.push("Text is too short for translation (minimum 10 words).");
   }
-
   if (wordCount > 5000) {
-    warnings.push(
-      `Text contains ${wordCount.toLocaleString()} words. It will be processed in batches of 5,000 words.`
-    );
+    warnings.push(`Text contains ${wordCount.toLocaleString()} words. It will be processed in batches of 5,000 words.`);
   }
-
   return { valid: errors.length === 0, errors, warnings };
 }
 
-function createError(
-  code: PDFParseError["code"],
-  message: string
-): PDFParseError {
+function createError(code: PDFParseError["code"], message: string): PDFParseError {
   const error = new Error(message) as PDFParseError & Error;
   error.code = code;
   return error;

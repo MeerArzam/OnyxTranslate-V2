@@ -11,10 +11,8 @@ if (typeof (Promise as unknown as Record<string, unknown>).withResolvers === "un
   };
 }
 
-import * as pdfjsLib from "pdfjs-dist";
-
-// Configure the PDF.js worker from CDN for reliable browser compatibility
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/5.4.296/pdf.worker.min.mjs`;
+// pdfjs-dist is imported dynamically only when needed (when user uploads a PDF)
+// This avoids bundling its ~25MB into the initial page load, making the tool open instantly.
 
 export interface PDFTextItem {
   str: string;
@@ -57,11 +55,27 @@ type ProgressCallback = (currentPage: number, totalPages: number) => void;
 
 const PARALLEL_BATCH_SIZE = 10;
 
+type PDFJS = typeof import("pdfjs-dist");
+
+let pdfjsPromise: Promise<PDFJS> | null = null;
+
+/** Lazy-load pdfjs-dist only when first needed */
+async function getPDFJS(): Promise<PDFJS> {
+  if (!pdfjsPromise) {
+    pdfjsPromise = import("pdfjs-dist").then((mod) => {
+      const pdfjs = mod as unknown as PDFJS;
+      pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/5.4.296/pdf.worker.min.mjs`;
+      return pdfjs;
+    });
+  }
+  return pdfjsPromise;
+}
+
 /**
  * Extract text items with positions from a single PDF page.
  */
 async function extractPageData(
-  pdf: pdfjsLib.PDFDocumentProxy,
+  pdf: import("pdfjs-dist").PDFDocumentProxy,
   pageNum: number,
   renderScale: number
 ): Promise<PDFPageData> {
@@ -147,6 +161,8 @@ export async function parsePDF(
 
   try {
     const arrayBuffer = await file.arrayBuffer();
+
+    const pdfjsLib = await getPDFJS();
 
     const loadingTask = pdfjsLib.getDocument({
       data: arrayBuffer,

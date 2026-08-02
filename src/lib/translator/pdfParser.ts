@@ -17,9 +17,9 @@ if (typeof (Promise as unknown as Record<string, unknown>).withResolvers === "un
 export interface PDFTextItem {
   str: string;
   x: number;
-  y: number;       // Canvas Y coordinate (top-left origin)
-  width: number;    // Width in canvas pixels
-  height: number;   // Height in canvas pixels
+  y: number;
+  width: number;
+  height: number;
   fontName: string;
 }
 
@@ -27,8 +27,8 @@ export interface PDFPageData {
   num: number;
   text: string;
   textItems: PDFTextItem[];
-  pageWidth: number;   // Canvas pixel width at scale 1
-  pageHeight: number;  // Canvas pixel height at scale 1
+  pageWidth: number;
+  pageHeight: number;
 }
 
 export interface PDFParseResult {
@@ -42,7 +42,6 @@ export interface PDFParseResult {
   hasImages: boolean;
   extractedPages: number;
   warnings: string[];
-  /** Original PDF ArrayBuffer for re-rendering pages to canvas */
   arrayBuffer: ArrayBuffer;
 }
 
@@ -53,14 +52,15 @@ export interface PDFParseError {
 
 type ProgressCallback = (currentPage: number, totalPages: number) => void;
 
-const PARALLEL_BATCH_SIZE = 20;
+// ──────────────────────────────────────────────
+// Lazy pdfjs-dist loader (shared with pdfGenerator)
+// ──────────────────────────────────────────────
 
 type PDFJS = typeof import("pdfjs-dist");
 
 let pdfjsPromise: Promise<PDFJS> | null = null;
 
-/** Lazy-load pdfjs-dist only when first needed */
-async function getPDFJS(): Promise<PDFJS> {
+export async function getPDFJS(): Promise<PDFJS> {
   if (!pdfjsPromise) {
     pdfjsPromise = import("pdfjs-dist").then((mod) => {
       const pdfjs = mod as unknown as PDFJS;
@@ -71,9 +71,10 @@ async function getPDFJS(): Promise<PDFJS> {
   return pdfjsPromise;
 }
 
-/**
- * Extract text items with positions from a single PDF page.
- */
+// ──────────────────────────────────────────────
+// Single page extraction
+// ──────────────────────────────────────────────
+
 async function extractPageData(
   pdf: import("pdfjs-dist").PDFDocumentProxy,
   pageNum: number,
@@ -86,8 +87,14 @@ async function extractPageData(
 
   const textContent = await page.getTextContent();
 
-  // Extract text items with canvas pixel positions
-  const rawItems = textContent.items.filter((item) => "str" in item) as Array<{ str: string; transform?: number[]; width?: number; height?: number; fontName?: string; hasEOL?: boolean }>;
+  const rawItems = textContent.items.filter((item) => "str" in item) as Array<{
+    str: string;
+    transform?: number[];
+    width?: number;
+    height?: number;
+    fontName?: string;
+    hasEOL?: boolean;
+  }>;
 
   const textItems: PDFTextItem[] = rawItems
     .filter((item) => item.str.trim().length > 0)
@@ -97,8 +104,6 @@ async function extractPageData(
       const height = item.height || 0;
       const fontName = item.fontName || "";
 
-      // PDF coordinates: (transform[4], transform[5]) with bottom-left origin
-      // Convert to canvas coordinates (top-left origin)
       const pdfX = transform[4];
       const pdfY = transform[5];
       const canvasX = pdfX * renderScale;
@@ -114,7 +119,6 @@ async function extractPageData(
       };
     });
 
-  // Build plain text from items
   const text = rawItems
     .map((item, i, arr) => {
       const str = item.str;
@@ -127,25 +131,28 @@ async function extractPageData(
     .join("")
     .trim();
 
-  return {
-    num: pageNum,
-    text,
-    textItems,
-    pageWidth,
-    pageHeight,
-  };
+  return { num: pageNum, text, textItems, pageWidth, pageHeight };
+}
+
+// ──────────────────────────────────────────────
+// Incremental / Chunked PDF Parser
+// ──────────────────────────────────────────────
+
+export const PARSE_BATCH_SIZE = 3; // Pages per batch — keeps each batch fast (~5-10s)
+
+export interface PDFHeader {
+  pdf: import("pdfjs-dist").PDFDocumentProxy;
+  totalPages: number;
+  title: string | undefined;
+  info: Record<string, unknown>;
+  arrayBuffer: ArrayBuffer;
 }
 
 /**
- * Parse a PDF file and extract text content with position data.
- * Stores the original ArrayBuffer for later page rendering.
+ * Open a PDF and return just the header (metadata + page count).
+ * This is fast — no page processing.
  */
-export async function parsePDF(
-  file: File,
-  onProgress?: ProgressCallback
-): Promise<PDFParseResult> {
-  const warnings: string[] = [];
-
+export async function parsePDFHeader(file: File): Promise<PDFHeader> {
   if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
     throw createError("INVALID_FORMAT", "The uploaded file is not a valid PDF.");
   }
@@ -159,124 +166,142 @@ export async function parsePDF(
     throw createError("EMPTY_CONTENT", "The PDF file appears to be empty.");
   }
 
+  const arrayBuffer = await file.arrayBuffer();
+  const pdfjsLib = await getPDFJS();
+
+  const loadingTask = pdfjsLib.getDocument({
+    data: arrayBuffer,
+    disableFontFace: true,
+    disableRange: true,
+    disableAutoFetch: true,
+    useSystemFonts: false,
+  });
+
+  const pdf = await loadingTask.promise;
+  const totalPages = pdf.numPages;
+
+  let title: string | undefined;
+  let info: Record<string, unknown> = {};
   try {
-    const arrayBuffer = await file.arrayBuffer();
+    const metadata = await pdf.getMetadata();
+    if (metadata.info) {
+      info = metadata.info as Record<string, unknown>;
+      title = (metadata.info as Record<string, unknown>)?.Title as string | undefined;
+    }
+  } catch {
+    // Non-critical
+  }
 
-    const pdfjsLib = await getPDFJS();
+  return { pdf, totalPages, title, info, arrayBuffer };
+}
 
-    const loadingTask = pdfjsLib.getDocument({
-      data: arrayBuffer,
-      disableFontFace: true,
-      disableRange: true,
-      disableAutoFetch: true,
-      useSystemFonts: false,
-    });
+/**
+ * Parse a single batch of pages from an already-opened PDF.
+ * Returns the page data for pages [startPage..endPage] (1-based).
+ */
+export async function parsePDFBatch(
+  pdf: import("pdfjs-dist").PDFDocumentProxy,
+  startPage: number,
+  endPage: number
+): Promise<PDFPageData[]> {
+  const renderScale = 1;
+  const results: PDFPageData[] = [];
 
-    const pdf = await loadingTask.promise;
-    const totalPages = pdf.numPages;
+  // Process pages in this batch concurrently
+  const pageNums: number[] = [];
+  for (let i = startPage; i <= endPage; i++) {
+    pageNums.push(i);
+  }
+
+  const batchResults = await Promise.all(
+    pageNums.map((pageNum) => extractPageData(pdf, pageNum, renderScale))
+  );
+
+  for (const result of batchResults) {
+    results.push(result);
+  }
+
+  return results;
+}
+
+/**
+ * One-shot parse (kept for backwards compat and small PDFs).
+ */
+export async function parsePDF(
+  file: File,
+  onProgress?: ProgressCallback
+): Promise<PDFParseResult> {
+  const warnings: string[] = [];
+  const { pdf, totalPages, title, info, arrayBuffer } = await parsePDFHeader(file);
+
+  if (onProgress) {
+    onProgress(0, totalPages);
+  }
+
+  const renderScale = 1;
+  const pageData: PDFPageData[] = [];
+  const pages: Array<{ num: number; text: string }> = [];
+
+  for (let batchStart = 1; batchStart <= totalPages; batchStart += PARSE_BATCH_SIZE) {
+    const batchEnd = Math.min(batchStart + PARSE_BATCH_SIZE - 1, totalPages);
+    const batchResults = await parsePDFBatch(pdf, batchStart, batchEnd);
+
+    for (const result of batchResults) {
+      pageData.push(result);
+      pages.push({ num: result.num, text: result.text });
+    }
+
     if (onProgress) {
-      onProgress(0, totalPages);
+      onProgress(batchEnd, totalPages);
     }
+  }
 
-    // We'll render at 1x for text extraction (positions), 2x for final PDF image
-    const renderScale = 1;
+  // Sort by page number
+  pageData.sort((a, b) => a.num - b.num);
+  pages.sort((a, b) => a.num - b.num);
 
-    const pageData: PDFPageData[] = [];
-    const pages: Array<{ num: number; text: string }> = [];
+  const fullText = pages
+    .map((p) => p.text)
+    .filter(Boolean)
+    .join("\n\n")
+    .trim();
 
-    for (let batchStart = 1; batchStart <= totalPages; batchStart += PARALLEL_BATCH_SIZE) {
-      const batchEnd = Math.min(batchStart + PARALLEL_BATCH_SIZE - 1, totalPages);
-      const batchPageNums: number[] = [];
-      for (let i = batchStart; i <= batchEnd; i++) {
-        batchPageNums.push(i);
-      }
+  const pagesWithText = pages.filter((p) => p.text.length > 10).length;
 
-      const batchResults = await Promise.all(
-        batchPageNums.map((pageNum) => extractPageData(pdf, pageNum, renderScale))
-      );
-
-      for (const result of batchResults) {
-        pageData.push(result);
-        pages.push({ num: result.num, text: result.text });
-      }
-
-      if (onProgress) {
-        onProgress(batchEnd, totalPages);
-      }
-    }
-
-    const fullText = pages
-      .map((p) => p.text)
-      .filter(Boolean)
-      .join("\n\n")
-      .trim();
-
-    let title: string | undefined;
-    let info: Record<string, unknown> = {};
-    try {
-      const metadata = await pdf.getMetadata();
-      if (metadata.info) {
-        info = metadata.info as Record<string, unknown>;
-        title = (metadata.info as Record<string, unknown>)?.Title as string | undefined;
-      }
-    } catch {
-      // Non-critical
-    }
-
-    const pagesWithText = pages.filter((p) => p.text.length > 10).length;
-
-    if (fullText.length < 10) {
-      throw createError(
-        "EMPTY_CONTENT",
-        "The PDF does not contain extractable text. It may be a scanned/image-based PDF. " +
-        "Please upload a text-based PDF, or paste the text content directly."
-      );
-    }
-
-    if (pagesWithText < totalPages * 0.3 && totalPages > 5) {
-      warnings.push(
-        `Only ${pagesWithText} of ${totalPages} pages contain extractable text. ` +
-        `This PDF may contain images, scans, or DRM-protected content.`
-      );
-    }
-
-    const wordCount = fullText.split(/\s+/).filter(Boolean).length;
-
-    if (wordCount < 50) {
-      warnings.push(`Only ${wordCount} words were extracted. The PDF may be image-heavy.`);
-    }
-
-    return {
-      text: fullText,
-      numPages: totalPages,
-      title,
-      info,
-      wordCount,
-      pages,
-      pageData,
-      hasImages: pagesWithText < totalPages * 0.5,
-      extractedPages: pagesWithText,
-      warnings,
-      arrayBuffer,
-    };
-  } catch (error) {
-    if (error && typeof error === "object" && "code" in error) throw error;
-
-    const message = error instanceof Error ? error.message : String(error);
-
-    if (message.includes("encrypted") || message.includes("password") || message.includes("Unsupported")) {
-      throw createError(
-        "ENCRYPTED",
-        "This PDF is password-protected or encrypted. Please upload an unprotected PDF."
-      );
-    }
-
+  if (fullText.length < 10) {
     throw createError(
-      "PARSE_FAILED",
-      `Could not parse the PDF: ${message}. ` +
-      `You can also paste the text content directly into the text area above.`
+      "EMPTY_CONTENT",
+      "The PDF does not contain extractable text. It may be a scanned/image-based PDF. " +
+      "Please upload a text-based PDF, or paste the text content directly."
     );
   }
+
+  if (pagesWithText < totalPages * 0.3 && totalPages > 5) {
+    warnings.push(
+      `Only ${pagesWithText} of ${totalPages} pages contain extractable text. ` +
+      `This PDF may contain images, scans, or DRM-protected content.`
+    );
+  }
+
+  const wordCount = fullText.split(/\s+/).filter(Boolean).length;
+
+  if (wordCount < 50) {
+    warnings.push(`Only ${wordCount} words were extracted. The PDF may be image-heavy.`);
+  }
+
+  return {
+    text: fullText,
+    numPages: totalPages,
+    title,
+    info,
+    wordCount,
+    pages,
+    pageData,
+    hasImages: pagesWithText < totalPages * 0.5,
+    extractedPages: pagesWithText,
+    warnings,
+    arrayBuffer,
+  };
 }
 
 export function splitTextIntoChunks(text: string, maxWords: number = 5000): string[] {

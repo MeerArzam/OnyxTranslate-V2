@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import JSZip from "jszip";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -6,11 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Languages,
-  Download,
   Loader2,
-  FileText,
-  Sparkles,
-  Upload,
   FileUp,
   X,
   Package,
@@ -18,8 +14,7 @@ import {
   XCircle,
   Globe,
   AlertCircle,
-  ArrowRight,
-  StepForward,
+  Upload,
   RotateCcw,
   ChevronRight,
   BookOpen,
@@ -33,16 +28,31 @@ import {
   type TranslationResult,
 } from "@/lib/translator/engine";
 import {
-  parsePDF,
+  parsePDFHeader,
+  parsePDFBatch,
   validateTextForTranslation,
+  PARSE_BATCH_SIZE,
   type PDFParseError,
   type PDFPageData,
+  getPDFJS,
 } from "@/lib/translator/pdfParser";
 import {
   generateTranslatedPDF,
   extractPageTexts,
   type PDFGenerationProgress,
 } from "@/lib/translator/pdfGenerator";
+import {
+  saveProject,
+  getProject,
+  deleteProject,
+  saveTranslationChunk,
+  getAllTranslations,
+  mergeChunkTexts,
+  chunkPageTexts,
+  type TranslationChunk,
+  type LanguageProgress,
+  type ProjectData,
+} from "@/lib/translator/storage";
 
 const targetLanguages = [
   { code: "ur", name: "Urdu", nativeName: "اردو", script: "Arabic" },
@@ -74,79 +84,315 @@ interface CompletedLanguage {
   nativeName: string;
   translatedText: string;
   pdfBlob?: Blob;
-  result?: TranslationResult;
 }
 
 export default function Translator() {
-  // Source state
-  const [sourceText, setSourceText] = useState("");
+  // ─── Source state ───
   const [pdfFileName, setPdfFileName] = useState<string | null>(null);
   const [pdfPageCount, setPdfPageCount] = useState<number | null>(null);
   const [pdfWarnings, setPdfWarnings] = useState<string[]>([]);
-  const [originalArrayBuffer, setOriginalArrayBuffer] = useState<ArrayBuffer | null>(null);
   const [pageData, setPageData] = useState<PDFPageData[]>([]);
   const [originalPageTexts, setOriginalPageTexts] = useState<string[]>([]);
+  const [sourceText, setSourceText] = useState("");
+  const [originalArrayBuffer, setOriginalArrayBuffer] = useState<ArrayBuffer | null>(null);
 
-  // Upload state
+  // ─── Upload state ───
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [parseProgress, setParseProgress] = useState<{ current: number; total: number } | null>(null);
+  const [parsePhase, setParsePhase] = useState<"idle" | "loading" | "parsing" | "done">("idle");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Translation flow state
+  // ─── Translation flow ───
   const [currentLanguageIndex, setCurrentLanguageIndex] = useState<number>(-1);
   const [isTranslating, setIsTranslating] = useState(false);
-  const [currentTranslation, setCurrentTranslation] = useState<TranslationResult | null>(null);
+  const [currentTranslation, setCurrentTranslation] = useState<string | null>(null);
   const [translationError, setTranslationError] = useState<string | null>(null);
   const [completedLanguages, setCompletedLanguages] = useState<CompletedLanguage[]>([]);
-  const [flowPhase, setFlowPhase] = useState<"idle" | "translating" | "translation-done" | "generating-pdf" | "all-complete">("idle");
+  const [flowPhase, setFlowPhase] = useState<
+    "idle" | "translating" | "translation-done" | "generating-pdf" | "all-complete"
+  >("idle");
+  const [translationProgress, setTranslationProgress] = useState<{
+    current: number;
+    total: number;
+    phase: string;
+  } | null>(null);
 
-  // PDF generation state
+  // ─── PDF generation ───
   const [pdfProgress, setPdfProgress] = useState<PDFGenerationProgress | null>(null);
   const [currentPdfBlob, setCurrentPdfBlob] = useState<Blob | null>(null);
 
-  // ZIP download state
+  // ─── ZIP ───
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
 
-  // --- PDF Upload ---
+  // ─── Resume state ───
+  const [hasSavedProgress, setHasSavedProgress] = useState(false);
+  const [savedFileName, setSavedFileName] = useState<string | null>(null);
 
+  // ─── Check for saved progress on mount ───
+  useEffect(() => {
+    (async () => {
+      try {
+        const project = await getProject();
+        if (project && project.parsedPages > 0) {
+          setHasSavedProgress(true);
+          setSavedFileName(project.fileName);
+        }
+      } catch {
+        // IndexedDB not available or corrupted — ignore
+      }
+    })();
+  }, []);
+
+  // ─── Resume saved progress ───
+  const handleResume = useCallback(async () => {
+    try {
+      const project = await getProject();
+      if (!project) {
+        setHasSavedProgress(false);
+        return;
+      }
+
+      setIsUploading(true);
+      setParsePhase("loading");
+      setParseProgress({ current: project.parsedPages, total: project.pageCount });
+
+      // Restore project state
+      setSourceText(project.fullText);
+      setPdfFileName(project.fileName);
+      setPdfPageCount(project.pageCount);
+      setPdfWarnings(project.warnings);
+      setPageData(project.pageData);
+      setOriginalPageTexts(project.pageTexts);
+      setOriginalArrayBuffer(project.arrayBuffer);
+
+      // If parsing was incomplete, resume parsing
+      if (project.parsedPages < project.pageCount) {
+        setParsePhase("parsing");
+        const pdfjsLib = await getPDFJS();
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/5.4.296/pdf.worker.min.mjs`;
+        const loadingTask = pdfjsLib.getDocument({
+          data: project.arrayBuffer,
+          disableFontFace: true,
+          disableRange: true,
+          disableAutoFetch: true,
+          useSystemFonts: false,
+        });
+        const pdf = await loadingTask.promise;
+
+        let updatedPageData = [...project.pageData];
+        let updatedPageTexts = [...project.pageTexts];
+
+        for (
+          let batchStart = project.parsedPages + 1;
+          batchStart <= project.pageCount;
+          batchStart += PARSE_BATCH_SIZE
+        ) {
+          const batchEnd = Math.min(batchStart + PARSE_BATCH_SIZE - 1, project.pageCount);
+          const batchResults = await parsePDFBatch(pdf, batchStart, batchEnd);
+
+          for (const result of batchResults) {
+            updatedPageData.push(result);
+            updatedPageTexts.push(result.text);
+          }
+
+          updatedPageData.sort((a, b) => a.num - b.num);
+
+          setParseProgress({ current: batchEnd, total: project.pageCount });
+          setPageData([...updatedPageData]);
+          setOriginalPageTexts([...updatedPageTexts]);
+
+          // Save after each batch
+          await saveProject({
+            id: "current",
+            fileName: project.fileName,
+            pageCount: project.pageCount,
+            wordCount: project.fullText.split(/\s+/).filter(Boolean).length,
+            warnings: project.warnings,
+            arrayBuffer: project.arrayBuffer,
+            pageData: updatedPageData,
+            pageTexts: updatedPageTexts,
+            fullText: project.fullText,
+            parsedPages: batchEnd,
+            createdAt: project.createdAt,
+          });
+        }
+      }
+
+      // Load saved translations
+      const translations = await getAllTranslations();
+      const completed: CompletedLanguage[] = [];
+      for (const lang of targetLanguages) {
+        const data = translations[lang.code];
+        if (data?.progress?.complete) {
+          completed.push({
+            index: targetLanguages.indexOf(lang),
+            code: lang.code,
+            name: lang.name,
+            nativeName: lang.nativeName,
+            translatedText: data.progress.mergedText || mergeChunkTexts(data.chunks),
+          });
+        }
+      }
+
+      if (completed.length > 0) {
+        setCompletedLanguages(completed);
+        if (completed.length >= targetLanguages.length) {
+          setFlowPhase("all-complete");
+          setCurrentLanguageIndex(targetLanguages.length);
+        } else {
+          // Find first incomplete language
+          const nextIncomplete = targetLanguages.findIndex(
+            (lang) => !completed.some((c) => c.code === lang.code)
+          );
+          if (nextIncomplete >= 0) {
+            setFlowPhase("idle");
+            setCurrentLanguageIndex(-1);
+          }
+        }
+      } else {
+        setFlowPhase("idle");
+        setCurrentLanguageIndex(-1);
+      }
+
+      setParsePhase("done");
+      setParseProgress(null);
+      setIsUploading(false);
+      setHasSavedProgress(false);
+    } catch (err) {
+      console.error("Failed to resume:", err);
+      setUploadError("Failed to resume saved progress. Starting fresh.");
+      setHasSavedProgress(false);
+      setIsUploading(false);
+    }
+  }, []);
+
+  // ─── PDF Upload (chunked) ───
   const handleFileSelect = useCallback(async (file: File | null) => {
     if (!file) return;
 
     setIsUploading(true);
     setUploadError(null);
-    setPdfFileName(null);
-    setPdfPageCount(null);
-    setPdfWarnings([]);
     setParseProgress(null);
-    setOriginalArrayBuffer(null);
-    setPageData([]);
-    setOriginalPageTexts([]);
+    setParsePhase("loading");
     resetFlow();
 
     try {
-      const parsed = await parsePDF(file, (current, total) => {
-        setParseProgress({ current, total });
+      // Step 1: Parse header (fast — no page processing)
+      const header = await parsePDFHeader(file);
+
+      setPdfFileName(file.name);
+      setPdfPageCount(header.totalPages);
+      setOriginalArrayBuffer(header.arrayBuffer);
+
+      // Initial save with header only
+      await saveProject({
+        id: "current",
+        fileName: file.name,
+        pageCount: header.totalPages,
+        wordCount: 0,
+        warnings: [],
+        arrayBuffer: header.arrayBuffer,
+        pageData: [],
+        pageTexts: [],
+        fullText: "",
+        parsedPages: 0,
+        createdAt: new Date().toISOString(),
       });
 
-      setSourceText(parsed.text);
-      setPdfFileName(file.name);
-      setPdfPageCount(parsed.numPages);
-      setPdfWarnings(parsed.warnings);
-      setOriginalArrayBuffer(parsed.arrayBuffer);
-      setPageData(parsed.pageData);
-      setOriginalPageTexts(extractPageTexts(parsed.pageData));
-      setParseProgress(null);
+      setParsePhase("parsing");
+      setParseProgress({ current: 0, total: header.totalPages });
 
-      const validation = validateTextForTranslation(parsed.text);
+      // Step 2: Parse pages in batches of PARSE_BATCH_SIZE
+      const allPageData: PDFPageData[] = [];
+      const allPageTexts: string[] = [];
+
+      for (
+        let batchStart = 1;
+        batchStart <= header.totalPages;
+        batchStart += PARSE_BATCH_SIZE
+      ) {
+        const batchEnd = Math.min(batchStart + PARSE_BATCH_SIZE - 1, header.totalPages);
+        const batchResults = await parsePDFBatch(header.pdf, batchStart, batchEnd);
+
+        for (const result of batchResults) {
+          allPageData.push(result);
+          allPageTexts.push(result.text);
+        }
+
+        allPageData.sort((a, b) => a.num - b.num);
+
+        setParseProgress({ current: batchEnd, total: header.totalPages });
+        setPageData([...allPageData]);
+        setOriginalPageTexts([...allPageTexts]);
+
+        // Save to IndexedDB after each batch
+        const fullText = allPageTexts.filter(Boolean).join("\n\n").trim();
+        await saveProject({
+          id: "current",
+          fileName: file.name,
+          pageCount: header.totalPages,
+          wordCount: fullText.split(/\s+/).filter(Boolean).length,
+          warnings: [],
+          arrayBuffer: header.arrayBuffer,
+          pageData: allPageData,
+          pageTexts: allPageTexts,
+          fullText,
+          parsedPages: batchEnd,
+          createdAt: new Date().toISOString(),
+        });
+      }
+
+      // Final text
+      const fullText = allPageTexts.filter(Boolean).join("\n\n").trim();
+      setSourceText(fullText);
+
+      // Update warnings
+      const warnings: string[] = [];
+      const pagesWithText = allPageTexts.filter((t) => t.length > 10).length;
+      if (fullText.length < 10) {
+        setUploadError(
+          "The PDF does not contain extractable text. It may be a scanned/image-based PDF."
+        );
+        setIsUploading(false);
+        setParsePhase("idle");
+        return;
+      }
+      if (pagesWithText < header.totalPages * 0.3 && header.totalPages > 5) {
+        warnings.push(
+          `Only ${pagesWithText} of ${header.totalPages} pages contain extractable text.`
+        );
+      }
+      setPdfWarnings(warnings);
+
+      // Final save with complete data
+      await saveProject({
+        id: "current",
+        fileName: file.name,
+        pageCount: header.totalPages,
+        wordCount: fullText.split(/\s+/).filter(Boolean).length,
+        warnings,
+        arrayBuffer: header.arrayBuffer,
+        pageData: allPageData,
+        pageTexts: allPageTexts,
+        fullText,
+        parsedPages: header.totalPages,
+        createdAt: new Date().toISOString(),
+      });
+
+      const validation = validateTextForTranslation(fullText);
       if (!validation.valid) {
         setUploadError(validation.errors.join(" "));
       }
+
+      setParsePhase("done");
+      setParseProgress(null);
     } catch (err) {
       const pdfError = err as PDFParseError;
       setUploadError(pdfError.message || "Failed to parse PDF.");
       setParseProgress(null);
+      setParsePhase("idle");
     } finally {
       setIsUploading(false);
     }
@@ -171,7 +417,8 @@ export default function Translator() {
     setIsDragOver(false);
   }, []);
 
-  const clearSource = useCallback(() => {
+  const clearSource = useCallback(async () => {
+    await deleteProject();
     setSourceText("");
     setPdfFileName(null);
     setPdfPageCount(null);
@@ -180,6 +427,8 @@ export default function Translator() {
     setOriginalArrayBuffer(null);
     setPageData([]);
     setOriginalPageTexts([]);
+    setParsePhase("idle");
+    setHasSavedProgress(false);
     resetFlow();
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
@@ -193,6 +442,7 @@ export default function Translator() {
     setOriginalArrayBuffer(null);
     setPageData([]);
     setOriginalPageTexts([]);
+    setParsePhase("done");
     resetFlow();
   }, []);
 
@@ -205,54 +455,133 @@ export default function Translator() {
     setFlowPhase("idle");
     setPdfProgress(null);
     setCurrentPdfBlob(null);
+    setTranslationProgress(null);
   }, []);
 
-  // --- Step-by-Step Translation ---
+  // ─── Step-by-Step Translation ───
 
   const startTranslation = useCallback(async () => {
     if (!sourceText.trim() || currentLanguageIndex >= 0) return;
-
-    setIsTranslating(true);
-    setFlowPhase("translating");
-    setCurrentLanguageIndex(0);
-    setTranslationError(null);
-
     await translateCurrentLanguage(0);
   }, [sourceText, currentLanguageIndex]);
 
-  const translateCurrentLanguage = useCallback(async (langIndex: number) => {
-    if (langIndex >= targetLanguages.length) {
-      setFlowPhase("all-complete");
-      setIsTranslating(false);
-      return;
-    }
+  const translateCurrentLanguage = useCallback(
+    async (langIndex: number) => {
+      if (langIndex >= targetLanguages.length) {
+        setFlowPhase("all-complete");
+        return;
+      }
 
-    setIsTranslating(true);
-    setFlowPhase("translating");
-    setCurrentLanguageIndex(langIndex);
-    setTranslationError(null);
-    setCurrentPdfBlob(null);
+      setIsTranslating(true);
+      setFlowPhase("translating");
+      setCurrentLanguageIndex(langIndex);
+      setTranslationError(null);
+      setCurrentPdfBlob(null);
 
-    const lang = targetLanguages[langIndex];
+      const lang = targetLanguages[langIndex];
 
-    try {
-      const config = {
-        sourceText: sourceText.trim(),
-        targetLanguage: lang.code,
-        marketContext: "standard",
-        chapterNumber: 1,
-      };
+      try {
+        // Check if we already have saved translations for this language
+        const allTranslations = await getAllTranslations();
+        const saved = allTranslations[lang.code];
 
-      const result = await runTranslationPipeline(config);
-      setCurrentTranslation(result);
-      setFlowPhase("translation-done");
-    } catch (error) {
-      setTranslationError(error instanceof Error ? error.message : "Translation failed");
-      setFlowPhase("translation-done");
-    } finally {
-      setIsTranslating(false);
-    }
-  }, [sourceText]);
+        if (saved?.progress?.complete && saved.progress.mergedText) {
+          // Use saved translation
+          setCurrentTranslation(saved.progress.mergedText);
+          setTranslationProgress({
+            current: saved.progress.totalChunks,
+            total: saved.progress.totalChunks,
+            phase: "Complete (restored from save)",
+          });
+        } else {
+          // Translate in chunks
+          const pageTexts = originalPageTexts.length > 0
+            ? originalPageTexts
+            : sourceText.split("\n\n");
+
+          const pageRanges = chunkPageTexts(pageTexts, 2000);
+          const totalChunks = pageRanges.length;
+          const chunks: TranslationChunk[] = [];
+          let mergedText = "";
+
+          // Determine starting chunk (resume from saved partial)
+          let startChunk = 0;
+          if (saved?.chunks) {
+            const completedChunks = saved.chunks.filter((c) => c.complete);
+            for (const sc of completedChunks) {
+              chunks.push(sc);
+            }
+            startChunk = completedChunks.length;
+            mergedText = mergeChunkTexts(chunks);
+          }
+
+          for (let ci = startChunk; ci < totalChunks; ci++) {
+            const range = pageRanges[ci];
+            setTranslationProgress({
+              current: ci,
+              total: totalChunks,
+              phase: `Translating pages ${range.pageStart + 1}-${range.pageEnd + 1}`,
+            });
+
+            // Combine text for this chunk
+            const chunkText = pageTexts
+              .slice(range.pageStart, range.pageEnd + 1)
+              .join("\n\n");
+
+            const result = await runTranslationPipeline({
+              sourceText: chunkText,
+              targetLanguage: lang.code,
+              marketContext: "standard",
+              chapterNumber: 1,
+            });
+
+            const chunk: TranslationChunk = {
+              langCode: lang.code,
+              langName: lang.name,
+              langNativeName: lang.nativeName,
+              translatedText: result.translatedText,
+              pageStart: range.pageStart,
+              pageEnd: range.pageEnd,
+              chunkIndex: ci,
+              complete: true,
+            };
+
+            chunks.push(chunk);
+
+            // Save to IndexedDB after each chunk
+            const merged = mergeChunkTexts(chunks);
+            mergedText = merged;
+            await saveTranslationChunk(
+              lang.code,
+              lang.name,
+              lang.nativeName,
+              chunks,
+              merged,
+              ci === totalChunks - 1
+            );
+
+            setTranslationProgress({
+              current: ci + 1,
+              total: totalChunks,
+              phase: `Chunk ${ci + 1}/${totalChunks} saved`,
+            });
+          }
+
+          setCurrentTranslation(mergedText);
+        }
+
+        setFlowPhase("translation-done");
+      } catch (error) {
+        setTranslationError(
+          error instanceof Error ? error.message : "Translation failed"
+        );
+        setFlowPhase("translation-done");
+      } finally {
+        setIsTranslating(false);
+      }
+    },
+    [sourceText, originalPageTexts]
+  );
 
   const handleContinue = useCallback(async () => {
     // Save current translation to completed list
@@ -265,9 +594,8 @@ export default function Translator() {
           code: lang.code,
           name: lang.name,
           nativeName: lang.nativeName,
-          translatedText: currentTranslation.translatedText,
+          translatedText: currentTranslation,
           pdfBlob: currentPdfBlob || undefined,
-          result: currentTranslation,
         },
       ]);
     }
@@ -275,6 +603,7 @@ export default function Translator() {
     setCurrentTranslation(null);
     setCurrentPdfBlob(null);
     setPdfProgress(null);
+    setTranslationProgress(null);
 
     const nextIndex = currentLanguageIndex + 1;
     if (nextIndex >= targetLanguages.length) {
@@ -283,12 +612,13 @@ export default function Translator() {
     } else {
       await translateCurrentLanguage(nextIndex);
     }
-  }, [currentTranslation, currentLanguageIndex, currentPdfBlob]);
+  }, [currentTranslation, currentLanguageIndex, currentPdfBlob, translateCurrentLanguage]);
 
-  // --- PDF Generation ---
+  // ─── PDF Generation ───
 
   const handleDownloadPDF = useCallback(async () => {
-    if (!currentTranslation || !originalArrayBuffer || !pageData.length || !originalPageTexts.length) return;
+    if (!currentTranslation || !originalArrayBuffer || !pageData.length || !originalPageTexts.length)
+      return;
 
     setFlowPhase("generating-pdf");
     setPdfProgress(null);
@@ -299,7 +629,7 @@ export default function Translator() {
         originalArrayBuffer,
         pageData,
         originalPageTexts,
-        currentTranslation.translatedText,
+        currentTranslation,
         lang.code,
         (progress) => {
           setPdfProgress({ ...progress });
@@ -308,7 +638,6 @@ export default function Translator() {
 
       setCurrentPdfBlob(blob);
 
-      // Trigger download
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -323,26 +652,38 @@ export default function Translator() {
       setPdfProgress(null);
     } catch (error) {
       console.error("PDF generation failed:", error);
-      setTranslationError(error instanceof Error ? error.message : "PDF generation failed");
+      setTranslationError(
+        error instanceof Error ? error.message : "PDF generation failed"
+      );
       setFlowPhase("translation-done");
     }
-  }, [currentTranslation, originalArrayBuffer, pageData, originalPageTexts, currentLanguageIndex, pdfFileName]);
+  }, [
+    currentTranslation,
+    originalArrayBuffer,
+    pageData,
+    originalPageTexts,
+    currentLanguageIndex,
+    pdfFileName,
+  ]);
 
-  // --- ZIP Download (Final) ---
+  // ─── ZIP Download ───
 
   const handleDownloadAllZIP = useCallback(async () => {
     const allCompleted = [
       ...completedLanguages,
-      ...(currentTranslation && currentLanguageIndex >= 0 && currentLanguageIndex < targetLanguages.length
-        ? [{
-            index: currentLanguageIndex,
-            code: targetLanguages[currentLanguageIndex].code,
-            name: targetLanguages[currentLanguageIndex].name,
-            nativeName: targetLanguages[currentLanguageIndex].nativeName,
-            translatedText: currentTranslation.translatedText,
-            pdfBlob: currentPdfBlob || undefined,
-            result: currentTranslation,
-          }]
+      ...(currentTranslation &&
+      currentLanguageIndex >= 0 &&
+      currentLanguageIndex < targetLanguages.length
+        ? [
+            {
+              index: currentLanguageIndex,
+              code: targetLanguages[currentLanguageIndex].code,
+              name: targetLanguages[currentLanguageIndex].name,
+              nativeName: targetLanguages[currentLanguageIndex].nativeName,
+              translatedText: currentTranslation,
+              pdfBlob: currentPdfBlob || undefined,
+            },
+          ]
         : []),
     ];
 
@@ -361,14 +702,18 @@ export default function Translator() {
         const langCode = completed.code;
         const langName = completed.name;
 
-        // Add text translation
-        folder.file(`translated_${langCode}_${langName.toLowerCase().replace(/\s+/g, "_")}.txt`, completed.translatedText);
+        folder.file(
+          `translated_${langCode}_${langName.toLowerCase().replace(/\s+/g, "_")}.txt`,
+          completed.translatedText
+        );
 
-        // Add PDF if available
         if (completed.pdfBlob) {
           folder.file(`${folderName}_${langCode}.pdf`, completed.pdfBlob);
-        } else if (originalArrayBuffer && pageData.length && originalPageTexts.length) {
-          // Generate PDF on-the-fly
+        } else if (
+          originalArrayBuffer &&
+          pageData.length &&
+          originalPageTexts.length
+        ) {
           try {
             const pdfBlob = await generateTranslatedPDF(
               originalArrayBuffer,
@@ -376,43 +721,15 @@ export default function Translator() {
               originalPageTexts,
               completed.translatedText,
               langCode,
-              () => {} // silent progress
+              () => {}
             );
             folder.file(`${folderName}_${langCode}.pdf`, pdfBlob);
-            // Update cached blob
-            setCompletedLanguages((prev) =>
-              prev.map((c) => (c.code === langCode ? { ...c, pdfBlob } : c))
-            );
           } catch {
             // PDF generation failed, include text only
           }
         }
-
-        // Add CSV data
-        if (completed.result?.csvData) {
-          const csvRows = [["Type", "Original", "Translated"]];
-          for (const item of completed.result.csvData.mapNames) {
-            csvRows.push(["Map", item.original, item.translated]);
-          }
-          for (const item of completed.result.csvData.runeCaptions) {
-            csvRows.push(["Rune", item.original, item.translated]);
-          }
-          for (const item of completed.result.csvData.endpaperText) {
-            csvRows.push(["Endpaper", item.original, item.translated]);
-          }
-          folder.file(`localization_${langCode}.csv`, csvRows.map((r) => r.join(",")).join("\n"));
-        }
-
-        // Voice notes
-        if (completed.result?.voiceNotes?.length) {
-          const notesText = completed.result.voiceNotes
-            .map((n) => `Character: ${n.character}\nLine: "${n.line}"\nDirection: ${n.instruction}\nEmotion: ${n.emotionalContext}\n---`)
-            .join("\n\n");
-          folder.file(`voice_notes_${langCode}.txt`, notesText);
-        }
       }
 
-      // Summary report
       const summary = [
         "Onyx Translate - Complete Batch Report",
         "=".repeat(50),
@@ -428,7 +745,6 @@ export default function Translator() {
           return `  [${c.index + 1}/${targetLanguages.length}] ${c.name} (${c.code}) - ${lang?.script || ""}${c.pdfBlob ? " ✓ PDF" : " ✓ Text"}`;
         }),
         "",
-        ...(pdfWarnings.length ? ["Warnings:", ...pdfWarnings.map((w) => `  - ${w}`), ""] : []),
         "Generated by Onyx Translate",
       ];
       folder.file("REPORT.txt", summary.join("\n"));
@@ -445,16 +761,31 @@ export default function Translator() {
     } finally {
       setIsDownloadingZip(false);
     }
-  }, [completedLanguages, currentTranslation, currentLanguageIndex, currentPdfBlob, originalArrayBuffer, pageData, originalPageTexts, pdfFileName, pdfPageCount, pdfWarnings, sourceText]);
+  }, [
+    completedLanguages,
+    currentTranslation,
+    currentLanguageIndex,
+    currentPdfBlob,
+    originalArrayBuffer,
+    pageData,
+    originalPageTexts,
+    pdfFileName,
+    pdfPageCount,
+    sourceText,
+  ]);
 
-  // --- Helpers ---
+  // ─── Helpers ───
 
   const wordCount = sourceText.split(/\s+/).filter((w) => w.length > 0).length;
-  const currentLang = currentLanguageIndex >= 0 && currentLanguageIndex < targetLanguages.length
-    ? targetLanguages[currentLanguageIndex]
-    : null;
+  const currentLang =
+    currentLanguageIndex >= 0 && currentLanguageIndex < targetLanguages.length
+      ? targetLanguages[currentLanguageIndex]
+      : null;
   const nextLangIndex = currentLanguageIndex >= 0 ? currentLanguageIndex + 1 : 0;
-  const nextLang = nextLangIndex < targetLanguages.length ? targetLanguages[nextLangIndex] : null;
+  const nextLang =
+    nextLangIndex < targetLanguages.length ? targetLanguages[nextLangIndex] : null;
+
+  // ─── Render ───
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -474,28 +805,40 @@ export default function Translator() {
               <Languages className="size-4 text-primary-foreground" />
             </div>
             <div>
-              <span className="text-base font-semibold tracking-tight">Onyx Translate</span>
-              <span className="text-xs text-muted-foreground ml-2 hidden sm:inline">PDF Localization Tool</span>
+              <span className="text-base font-semibold tracking-tight">
+                Onyx Translate
+              </span>
+              <span className="text-xs text-muted-foreground ml-2 hidden sm:inline">
+                PDF Localization Tool
+              </span>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="text-[10px]">Images Preserved</Badge>
-            <Badge variant="outline" className="text-[10px]">{targetLanguages.length} Languages</Badge>
+            <Badge variant="secondary" className="text-[10px]">
+              Images Preserved
+            </Badge>
+            <Badge variant="outline" className="text-[10px]">
+              {targetLanguages.length} Languages
+            </Badge>
           </div>
         </div>
       </header>
 
       <div className="max-w-[1200px] mx-auto px-6 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6">
-          {/* Left Panel - Controls */}
+          {/* Left Panel */}
           <div className="space-y-4">
             {/* Step 1: Upload */}
             <div className="rounded-xl border border-border/50 bg-card overflow-hidden">
               <div className="px-4 py-3 border-b border-border/30 bg-muted/30">
                 <div className="flex items-center gap-2">
-                  <span className="size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold shrink-0">1</span>
+                  <span className="size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold shrink-0">
+                    1
+                  </span>
                   <span className="text-xs font-semibold">Upload English PDF</span>
-                  {pdfFileName && <CheckCircle2 className="size-3.5 text-green-500 ml-auto" />}
+                  {pdfFileName && (
+                    <CheckCircle2 className="size-3.5 text-green-500 ml-auto" />
+                  )}
                 </div>
               </div>
               <div className="p-3 space-y-3">
@@ -514,17 +857,26 @@ export default function Translator() {
                     <div className="flex flex-col items-center gap-2">
                       <Loader2 className="size-6 text-primary animate-spin" />
                       <span className="text-xs text-muted-foreground">
-                        {parseProgress && parseProgress.total > 0
-                          ? `Extracting text from page ${parseProgress.current} of ${parseProgress.total}...`
-                          : "Loading PDF..."}
+                        {parsePhase === "loading"
+                          ? "Loading PDF..."
+                          : parseProgress && parseProgress.total > 0
+                            ? `Parsing page ${parseProgress.current} of ${parseProgress.total}...`
+                            : "Preparing..."}
                       </span>
                       {parseProgress && parseProgress.total > 0 && (
                         <div className="w-40 h-1.5 rounded-full bg-muted overflow-hidden">
-                          <div className="h-full rounded-full bg-primary transition-all duration-200" style={{ width: `${Math.min((parseProgress.current / parseProgress.total) * 100, 100)}%` }} />
+                          <div
+                            className="h-full rounded-full bg-primary transition-all duration-200"
+                            style={{
+                              width: `${Math.min((parseProgress.current / parseProgress.total) * 100, 100)}%`,
+                            }}
+                          />
                         </div>
                       )}
                       {parseProgress && parseProgress.total > 0 && (
-                        <span className="text-[10px] text-muted-foreground/70">{parseProgress.current} / {parseProgress.total} pages</span>
+                        <span className="text-[10px] text-muted-foreground/70">
+                          {parseProgress.current} / {parseProgress.total} pages
+                        </span>
                       )}
                     </div>
                   ) : pdfFileName ? (
@@ -534,10 +886,20 @@ export default function Translator() {
                       </div>
                       <div className="text-center">
                         <p className="text-xs font-medium">{pdfFileName}</p>
-                        <p className="text-[10px] text-muted-foreground">{pdfPageCount} pages • {wordCount.toLocaleString()} words</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {pdfPageCount} pages • {wordCount.toLocaleString()} words
+                        </p>
                       </div>
                       <div className="flex gap-1">
-                        <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={(e) => { e.stopPropagation(); clearSource(); }}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 text-[10px]"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            clearSource();
+                          }}
+                        >
                           <X className="size-3 mr-1" /> Remove
                         </Button>
                       </div>
@@ -545,8 +907,12 @@ export default function Translator() {
                   ) : (
                     <>
                       <Upload className="size-6 text-muted-foreground/40" />
-                      <p className="text-xs font-medium">Drop PDF here or click to browse</p>
-                      <p className="text-[10px] text-muted-foreground">All images preserved in output PDFs</p>
+                      <p className="text-xs font-medium">
+                        Drop PDF here or click to browse
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        All images preserved in output PDFs
+                      </p>
                     </>
                   )}
                 </div>
@@ -561,20 +927,69 @@ export default function Translator() {
                 {pdfWarnings.length > 0 && (
                   <div className="flex items-start gap-2 p-2.5 rounded-lg bg-blue-500/5 border border-blue-500/20 text-[11px]">
                     <Image className="size-3.5 text-blue-500 shrink-0 mt-0.5" />
-                    <div className="text-[10px]">{pdfWarnings.map((w, i) => (<p key={i}>{w}</p>))}</div>
+                    <div className="text-[10px]">
+                      {pdfWarnings.map((w, i) => (
+                        <p key={i}>{w}</p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Resume saved progress */}
+                {hasSavedProgress && !isUploading && !pdfFileName && (
+                  <div className="space-y-2">
+                    <div className="flex items-start gap-2 p-2.5 rounded-lg bg-green-500/5 border border-green-500/20 text-[11px]">
+                      <CheckCircle2 className="size-3.5 text-green-500 shrink-0 mt-0.5" />
+                      <span>
+                        Found saved progress for <strong>{savedFileName}</strong>.
+                        Resume where you left off?
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={handleResume}
+                        className="flex-1 h-8 text-[11px]"
+                        size="sm"
+                      >
+                        <Loader2 className="size-3 mr-1" /> Resume
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          deleteProject();
+                          setHasSavedProgress(false);
+                        }}
+                        variant="outline"
+                        className="h-8 text-[11px]"
+                        size="sm"
+                      >
+                        Start Fresh
+                      </Button>
+                    </div>
                   </div>
                 )}
 
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Or Paste Text</span>
-                    <Button variant="ghost" size="sm" onClick={loadSample} className="text-[10px] h-6">
-                      <Sparkles className="size-2.5 mr-1" /> Sample
+                    <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                      Or Paste Text
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={loadSample}
+                      className="text-[10px] h-6"
+                    >
+                      Sample
                     </Button>
                   </div>
                   <Textarea
                     value={sourceText}
-                    onChange={(e) => { setSourceText(e.target.value); if (pdfFileName) { clearSource(); } }}
+                    onChange={(e) => {
+                      setSourceText(e.target.value);
+                      if (pdfFileName) {
+                        clearSource();
+                      }
+                    }}
                     placeholder="Paste your text here or upload a PDF..."
                     className="min-h-[100px] resize-none font-mono text-xs leading-relaxed"
                   />
@@ -585,7 +1000,11 @@ export default function Translator() {
                 </div>
 
                 {sourceText.trim() && flowPhase === "idle" && (
-                  <Button onClick={startTranslation} className="w-full h-9" size="default">
+                  <Button
+                    onClick={startTranslation}
+                    className="w-full h-9"
+                    size="default"
+                  >
                     <Globe className="size-3.5 mr-2" />
                     Begin Translation Journey
                   </Button>
@@ -598,29 +1017,45 @@ export default function Translator() {
               <div className="rounded-xl border border-border/50 bg-card overflow-hidden">
                 <div className="px-4 py-3 border-b border-border/30 bg-muted/30">
                   <div className="flex items-center gap-2">
-                    <span className="size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold shrink-0">2</span>
-                    <span className="text-xs font-semibold">Translation Progress</span>
+                    <span className="size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold shrink-0">
+                      2
+                    </span>
+                    <span className="text-xs font-semibold">
+                      Translation Progress
+                    </span>
                     <span className="text-[10px] text-muted-foreground ml-auto font-mono">
                       {completedLanguages.length}/{targetLanguages.length}
                     </span>
                   </div>
                 </div>
                 <div className="p-3 space-y-2">
-                  {/* Progress bar */}
                   <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                    <div className="h-full rounded-full bg-primary transition-all duration-300" style={{ width: `${(completedLanguages.length / targetLanguages.length) * 100}%` }} />
+                    <div
+                      className="h-full rounded-full bg-primary transition-all duration-300"
+                      style={{
+                        width: `${(completedLanguages.length / targetLanguages.length) * 100}%`,
+                      }}
+                    />
                   </div>
 
-                  {/* Current language status */}
                   <div className="space-y-1.5">
                     {isTranslating && currentLang && (
                       <div className="flex items-center gap-2 p-2 rounded-lg bg-primary/5 border border-primary/20">
                         <Loader2 className="size-3.5 text-primary animate-spin shrink-0" />
                         <div className="min-w-0">
-                          <p className="text-[11px] font-medium truncate">{currentLang.name}</p>
-                          <p className="text-[9px] text-muted-foreground">Translating...</p>
+                          <p className="text-[11px] font-medium truncate">
+                            {currentLang.name}
+                          </p>
+                          <p className="text-[9px] text-muted-foreground">
+                            {translationProgress?.phase || "Translating..."}
+                          </p>
                         </div>
-                        <Badge variant="secondary" className="text-[9px] shrink-0 ml-auto">{currentLang.nativeName}</Badge>
+                        <Badge
+                          variant="secondary"
+                          className="text-[9px] shrink-0 ml-auto"
+                        >
+                          {currentLang.nativeName}
+                        </Badge>
                       </div>
                     )}
 
@@ -628,28 +1063,36 @@ export default function Translator() {
                       <div className="flex items-center gap-2 p-2 rounded-lg bg-blue-500/5 border border-blue-500/20">
                         <Loader2 className="size-3.5 text-blue-500 animate-spin shrink-0" />
                         <div className="min-w-0">
-                          <p className="text-[11px] font-medium truncate">Generating PDF...</p>
+                          <p className="text-[11px] font-medium truncate">
+                            Generating PDF...
+                          </p>
                           <p className="text-[9px] text-muted-foreground">
                             {pdfProgress?.message || `Processing ${currentLang.name}`}
                           </p>
                         </div>
                         {pdfProgress && (
-                          <div className="text-[9px] text-muted-foreground shrink-0 font-mono">{pdfProgress.currentPage}/{pdfProgress.totalPages}</div>
+                          <div className="text-[9px] text-muted-foreground shrink-0 font-mono">
+                            {pdfProgress.currentPage}/{pdfProgress.totalPages}
+                          </div>
                         )}
                       </div>
                     )}
                   </div>
 
-                  {/* Completed languages list */}
                   {completedLanguages.length > 0 && (
                     <ScrollArea className="max-h-[200px]">
                       <div className="space-y-0.5">
-                        {completedLanguages.map((cl, idx) => (
-                          <div key={cl.code} className="flex items-center gap-2 py-1.5 px-2 rounded-md text-[11px] bg-green-500/5">
+                        {completedLanguages.map((cl) => (
+                          <div
+                            key={cl.code}
+                            className="flex items-center gap-2 py-1.5 px-2 rounded-md text-[11px] bg-green-500/5"
+                          >
                             <CheckCircle2 className="size-3 text-green-500 shrink-0" />
                             <span className="min-w-0 truncate flex-1">
                               <span className="font-medium">{cl.name}</span>
-                              <span className="text-muted-foreground ml-1">{cl.nativeName}</span>
+                              <span className="text-muted-foreground ml-1">
+                                {cl.nativeName}
+                              </span>
                             </span>
                             <Badge variant="outline" className="text-[8px] shrink-0">
                               {cl.pdfBlob ? "PDF" : "Text"}
@@ -660,47 +1103,51 @@ export default function Translator() {
                     </ScrollArea>
                   )}
 
-                  {/* Action buttons */}
                   <div className="space-y-1.5 pt-1">
-                    {flowPhase === "translation-done" && currentLang && !isTranslating && (
-                      <>
-                        {/* Download PDF button */}
-                        <Button
-                          onClick={handleDownloadPDF}
-                          className="w-full h-9 text-xs"
-                          variant="default"
-                        >
-                          <FileDown className="size-3.5 mr-2" /> Download {currentLang.name} PDF
-                        </Button>
+                    {flowPhase === "translation-done" &&
+                      currentLang &&
+                      !isTranslating && (
+                        <>
+                          <Button
+                            onClick={handleDownloadPDF}
+                            className="w-full h-9 text-xs"
+                            variant="default"
+                          >
+                            <FileDown className="size-3.5 mr-2" /> Download{" "}
+                            {currentLang.name} PDF
+                          </Button>
 
-                        {/* Continue button */}
-                        {nextLang ? (
-                          <Button
-                            onClick={handleContinue}
-                            className="w-full h-9 text-xs"
-                            variant="outline"
-                          >
-                            Continue to {nextLang.name}
-                            <ChevronRight className="size-3.5 ml-2" />
-                            <Badge variant="secondary" className="text-[9px] ml-1">{nextLang.nativeName}</Badge>
-                          </Button>
-                        ) : (
-                          <Button
-                            onClick={handleContinue}
-                            className="w-full h-9 text-xs"
-                            variant="outline"
-                          >
-                            <CheckCheck className="size-3.5 mr-2" /> Finalize All Translations
-                          </Button>
-                        )}
-                      </>
-                    )}
+                          {nextLang ? (
+                            <Button
+                              onClick={handleContinue}
+                              className="w-full h-9 text-xs"
+                              variant="outline"
+                            >
+                              Continue to {nextLang.name}
+                              <ChevronRight className="size-3.5 ml-2" />
+                              <Badge variant="secondary" className="text-[9px] ml-1">
+                                {nextLang.nativeName}
+                              </Badge>
+                            </Button>
+                          ) : (
+                            <Button
+                              onClick={handleContinue}
+                              className="w-full h-9 text-xs"
+                              variant="outline"
+                            >
+                              <CheckCheck className="size-3.5 mr-2" /> Finalize All
+                            </Button>
+                          )}
+                        </>
+                      )}
 
                     {flowPhase === "all-complete" && (
                       <>
                         <div className="flex items-center gap-2 p-2 rounded-lg bg-green-500/10 border border-green-500/20">
                           <CheckCheck className="size-4 text-green-500 shrink-0" />
-                          <span className="text-[11px] font-medium">All {targetLanguages.length} languages completed!</span>
+                          <span className="text-[11px] font-medium">
+                            All {targetLanguages.length} languages completed!
+                          </span>
                         </div>
 
                         <Button
@@ -711,9 +1158,15 @@ export default function Translator() {
                           size="lg"
                         >
                           {isDownloadingZip ? (
-                            <><Loader2 className="size-4 mr-2 animate-spin" /> Creating ZIP...</>
+                            <>
+                              <Loader2 className="size-4 mr-2 animate-spin" /> Creating
+                              ZIP...
+                            </>
                           ) : (
-                            <><Package className="size-4 mr-2" /> Download All PDFs as ZIP</>
+                            <>
+                              <Package className="size-4 mr-2" /> Download All PDFs as
+                              ZIP
+                            </>
                           )}
                         </Button>
 
@@ -747,9 +1200,15 @@ export default function Translator() {
                   <BookOpen className="size-3.5 text-muted-foreground" />
                   <span className="text-xs font-semibold">
                     {flowPhase === "idle" && "Translation Preview"}
-                    {flowPhase === "translating" && currentLang && `Translating to ${currentLang.name}`}
-                    {flowPhase === "translation-done" && currentLang && `${currentLang.name} Translation`}
-                    {flowPhase === "generating-pdf" && currentLang && `Generating ${currentLang.name} PDF`}
+                    {flowPhase === "translating" &&
+                      currentLang &&
+                      `Translating to ${currentLang.name}`}
+                    {flowPhase === "translation-done" &&
+                      currentLang &&
+                      `${currentLang.name} Translation`}
+                    {flowPhase === "generating-pdf" &&
+                      currentLang &&
+                      `Generating ${currentLang.name} PDF`}
                     {flowPhase === "all-complete" && "All Translations Complete"}
                   </span>
                 </div>
@@ -779,24 +1238,41 @@ export default function Translator() {
                       <div className="size-14 rounded-2xl bg-muted/50 flex items-center justify-center mx-auto mb-3">
                         <Languages className="size-7 text-muted-foreground/40" />
                       </div>
-                      <h3 className="text-sm font-semibold mb-1.5">Onyx Translate</h3>
+                      <h3 className="text-sm font-semibold mb-1.5">
+                        Onyx Translate
+                      </h3>
                       <p className="text-xs text-muted-foreground">
-                        Upload your English PDF, and we'll translate it step-by-step into all 20 languages — preserving every image, illustration, and visual element from the original.
+                        Upload your English PDF, and we'll translate it step-by-step
+                        into all 20 languages — preserving every image, illustration,
+                        and visual element from the original.
                       </p>
                       <div className="flex items-center justify-center gap-2 mt-4">
-                        <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => fileInputRef.current?.click()}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={() => fileInputRef.current?.click()}
+                        >
                           <Upload className="size-3 mr-1.5" /> Upload PDF
                         </Button>
-                        <Button variant="outline" size="sm" className="h-8 text-xs" onClick={loadSample}>
-                          <Sparkles className="size-3 mr-1.5" /> Load Sample
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={loadSample}
+                        >
+                          Load Sample
                         </Button>
                       </div>
                       <div className="flex items-center gap-1.5 justify-center mt-3 text-[10px] text-muted-foreground">
-                        <CheckCircle2 className="size-2.5 text-green-500" /> Images preserved
+                        <CheckCircle2 className="size-2.5 text-green-500" /> Images
+                        preserved
                         <span className="mx-1">•</span>
-                        <CheckCircle2 className="size-2.5 text-green-500" /> 18-phase localization
+                        <CheckCircle2 className="size-2.5 text-green-500" /> 18-phase
+                        localization
                         <span className="mx-1">•</span>
-                        <CheckCircle2 className="size-2.5 text-green-500" /> PDF download per language
+                        <CheckCircle2 className="size-2.5 text-green-500" /> PDF
+                        download per language
                       </div>
                     </div>
                   </div>
@@ -809,11 +1285,38 @@ export default function Translator() {
                         <div className="size-16 rounded-full border-4 border-primary/20 border-t-primary animate-spin mx-auto" />
                         <Globe className="size-5 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
                       </div>
-                      <h3 className="text-sm font-semibold mb-1">Translating to {currentLang.name}</h3>
-                      <p className="text-[11px] text-muted-foreground mb-2">{currentLang.nativeName}</p>
-                      <div className="flex items-center justify-center gap-2 flex-wrap">
-                        <Badge variant="secondary" className="text-[9px]">18-Phase Pipeline</Badge>
-                        <Badge variant="outline" className="text-[9px]">{currentLang.script} Script</Badge>
+                      <h3 className="text-sm font-semibold mb-1">
+                        Translating to {currentLang.name}
+                      </h3>
+                      <p className="text-[11px] text-muted-foreground mb-2">
+                        {currentLang.nativeName}
+                      </p>
+                      {translationProgress && (
+                        <div className="space-y-2">
+                          <div className="w-48 h-1.5 rounded-full bg-muted overflow-hidden mx-auto">
+                            <div
+                              className="h-full rounded-full bg-primary transition-all duration-300"
+                              style={{
+                                width: `${(translationProgress.current / Math.max(translationProgress.total, 1)) * 100}%`,
+                              }}
+                            />
+                          </div>
+                          <p className="text-[10px] text-muted-foreground">
+                            {translationProgress.phase}
+                          </p>
+                          <p className="text-[9px] text-muted-foreground font-mono">
+                            Chunk {translationProgress.current + 1} of{" "}
+                            {translationProgress.total}
+                          </p>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-center gap-2 flex-wrap mt-3">
+                        <Badge variant="secondary" className="text-[9px]">
+                          18-Phase Pipeline
+                        </Badge>
+                        <Badge variant="outline" className="text-[9px]">
+                          {currentLang.script} Script
+                        </Badge>
                       </div>
                     </div>
                   </div>
@@ -823,30 +1326,50 @@ export default function Translator() {
                   <div className="flex items-center justify-center h-[400px]">
                     <div className="text-center">
                       <Loader2 className="size-8 text-blue-500 animate-spin mx-auto mb-3" />
-                      <h3 className="text-sm font-semibold mb-1">{pdfProgress.message}</h3>
+                      <h3 className="text-sm font-semibold mb-1">
+                        {pdfProgress.message}
+                      </h3>
                       <div className="w-40 h-1.5 rounded-full bg-muted overflow-hidden mx-auto mt-2">
-                        <div className="h-full rounded-full bg-blue-500 transition-all duration-200" style={{ width: `${(pdfProgress.currentPage / pdfProgress.totalPages) * 100}%` }} />
+                        <div
+                          className="h-full rounded-full bg-blue-500 transition-all duration-200"
+                          style={{
+                            width: `${(pdfProgress.currentPage / pdfProgress.totalPages) * 100}%`,
+                          }}
+                        />
                       </div>
-                      <p className="text-[10px] text-muted-foreground mt-1">Rendering pages with original images + translated text overlay</p>
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        Rendering pages with original images + translated text
+                        overlay
+                      </p>
                     </div>
                   </div>
                 )}
 
-                {flowPhase === "translation-done" && currentTranslation && currentLang && !isTranslating && (
-                  <ScrollArea className="h-[calc(100vh-220px)]">
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <Badge variant="default" className="text-[10px]">{currentLang.name} {currentLang.nativeName}</Badge>
-                        <Badge variant="secondary" className="text-[9px]">{currentLang.script} Script</Badge>
-                        {["ar", "ur", "ks"].includes(currentLang.code) && <Badge variant="outline" className="text-[9px]">RTL</Badge>}
-                        <Badge variant="outline" className="text-[9px]">Quality: {currentTranslation.report.overallScore}/100</Badge>
+                {flowPhase === "translation-done" &&
+                  currentTranslation &&
+                  currentLang &&
+                  !isTranslating && (
+                    <ScrollArea className="h-[calc(100vh-220px)]">
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Badge variant="default" className="text-[10px]">
+                            {currentLang.name} {currentLang.nativeName}
+                          </Badge>
+                          <Badge variant="secondary" className="text-[9px]">
+                            {currentLang.script} Script
+                          </Badge>
+                          {["ar", "ur", "ks"].includes(currentLang.code) && (
+                            <Badge variant="outline" className="text-[9px]">
+                              RTL
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="whitespace-pre-wrap font-serif text-[13px] leading-[1.8] p-4 rounded-xl bg-muted/20 border border-border/30 text-foreground/90">
+                          {currentTranslation}
+                        </div>
                       </div>
-                      <div className="whitespace-pre-wrap font-serif text-[13px] leading-[1.8] p-4 rounded-xl bg-muted/20 border border-border/30 text-foreground/90">
-                        {currentTranslation.translatedText}
-                      </div>
-                    </div>
-                  </ScrollArea>
-                )}
+                    </ScrollArea>
+                  )}
 
                 {flowPhase === "all-complete" && (
                   <div className="flex items-center justify-center h-[400px]">
@@ -854,16 +1377,25 @@ export default function Translator() {
                       <div className="size-16 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-4">
                         <CheckCheck className="size-8 text-green-500" />
                       </div>
-                      <h3 className="text-lg font-bold mb-1">All Translations Complete!</h3>
+                      <h3 className="text-lg font-bold mb-1">
+                        All Translations Complete!
+                      </h3>
                       <p className="text-xs text-muted-foreground mb-2">
-                        {sourceText.split(/\s+/).filter(Boolean).length.toLocaleString()} words translated into {targetLanguages.length} languages
+                        {sourceText
+                          .split(/\s+/)
+                          .filter(Boolean)
+                          .length.toLocaleString()}{" "}
+                        words translated into {targetLanguages.length} languages
                       </p>
                       <div className="flex items-center justify-center gap-1.5 text-[10px]">
-                        <CheckCircle2 className="size-2.5 text-green-500" /> {completedLanguages.length + 1} languages
+                        <CheckCircle2 className="size-2.5 text-green-500" />{" "}
+                        {completedLanguages.length} languages
                         <span className="mx-1">•</span>
-                        <CheckCircle2 className="size-2.5 text-green-500" /> Download individual PDFs
+                        <CheckCircle2 className="size-2.5 text-green-500" /> Download
+                        individual PDFs
                         <span className="mx-1">•</span>
-                        <CheckCircle2 className="size-2.5 text-green-500" /> or all as ZIP
+                        <CheckCircle2 className="size-2.5 text-green-500" /> or all as
+                        ZIP
                       </div>
                     </div>
                   </div>

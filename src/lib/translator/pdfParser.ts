@@ -53,7 +53,7 @@ export interface PDFParseError {
 
 type ProgressCallback = (currentPage: number, totalPages: number) => void;
 
-const PARALLEL_BATCH_SIZE = 10;
+const PARALLEL_BATCH_SIZE = 20;
 
 type PDFJS = typeof import("pdfjs-dist");
 
@@ -174,6 +174,9 @@ export async function parsePDF(
 
     const pdf = await loadingTask.promise;
     const totalPages = pdf.numPages;
+    if (onProgress) {
+      onProgress(0, totalPages);
+    }
 
     // We'll render at 1x for text extraction (positions), 2x for final PDF image
     const renderScale = 1;

@@ -119,7 +119,7 @@ export default function Translator() {
     setPdfFileName(null);
     setPdfPageCount(null);
     setPdfWarnings([]);
-    setParseProgress({ current: 0, total: 0 });
+    setParseProgress(null);
     setOriginalArrayBuffer(null);
     setPageData([]);
     setOriginalPageTexts([]);
@@ -514,14 +514,17 @@ export default function Translator() {
                     <div className="flex flex-col items-center gap-2">
                       <Loader2 className="size-6 text-primary animate-spin" />
                       <span className="text-xs text-muted-foreground">
-                        {parseProgress
-                          ? `Parsing page ${parseProgress.current} of ${parseProgress.total}...`
-                          : "Reading PDF..."}
+                        {parseProgress && parseProgress.total > 0
+                          ? `Extracting text from page ${parseProgress.current} of ${parseProgress.total}...`
+                          : "Loading PDF..."}
                       </span>
                       {parseProgress && parseProgress.total > 0 && (
-                        <div className="w-40 h-1 rounded-full bg-muted overflow-hidden">
-                          <div className="h-full rounded-full bg-primary transition-all duration-200" style={{ width: `${(parseProgress.current / parseProgress.total) * 100}%` }} />
+                        <div className="w-40 h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div className="h-full rounded-full bg-primary transition-all duration-200" style={{ width: `${Math.min((parseProgress.current / parseProgress.total) * 100, 100)}%` }} />
                         </div>
+                      )}
+                      {parseProgress && parseProgress.total > 0 && (
+                        <span className="text-[10px] text-muted-foreground/70">{parseProgress.current} / {parseProgress.total} pages</span>
                       )}
                     </div>
                   ) : pdfFileName ? (

@@ -166,11 +166,15 @@ export async function parsePDFHeader(file: File): Promise<PDFHeader> {
     throw createError("EMPTY_CONTENT", "The PDF file appears to be empty.");
   }
 
-  const arrayBuffer = await file.arrayBuffer();
+  const rawBuffer = await file.arrayBuffer();
+  // CRITICAL: Clone the ArrayBuffer before passing to pdfjs-dist.
+  // pdfjs-dist v5 detaches/transfers the buffer internally during getDocument(),
+  // which makes the original unusable for IndexedDB, PDF generation, and resume.
+  const arrayBuffer = rawBuffer.slice(0);
   const pdfjsLib = await getPDFJS();
 
   const loadingTask = pdfjsLib.getDocument({
-    data: arrayBuffer,
+    data: rawBuffer,
     disableFontFace: true,
     disableRange: true,
     disableAutoFetch: true,

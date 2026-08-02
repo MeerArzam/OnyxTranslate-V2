@@ -323,12 +323,16 @@ export default function Translator() {
 
         allPageData.sort((a, b) => a.num - b.num);
 
+        // Build incremental full text for live word count
+        const incrementalText = allPageTexts.filter(Boolean).join("\n\n").trim();
+
         setParseProgress({ current: batchEnd, total: header.totalPages });
         setPageData([...allPageData]);
         setOriginalPageTexts([...allPageTexts]);
+        setSourceText(incrementalText);
 
         // Save to IndexedDB after each batch
-        const fullText = allPageTexts.filter(Boolean).join("\n\n").trim();
+        const fullText = incrementalText;
         await saveProject({
           id: "current",
           fileName: file.name,
@@ -776,7 +780,20 @@ export default function Translator() {
 
   // ─── Helpers ───
 
-  const wordCount = sourceText.split(/\s+/).filter((w) => w.length > 0).length;
+  // Compute word count from whatever text source is available.
+  // During PDF upload, sourceText may not be set yet, so fall back to pageTexts.
+  const wordCount = (() => {
+    if (sourceText.trim()) {
+      return sourceText.split(/\s+/).filter((w) => w.length > 0).length;
+    }
+    if (originalPageTexts.length > 0) {
+      return originalPageTexts
+        .join(" ")
+        .split(/\s+/)
+        .filter((w) => w.length > 0).length;
+    }
+    return 0;
+  })();
   const currentLang =
     currentLanguageIndex >= 0 && currentLanguageIndex < targetLanguages.length
       ? targetLanguages[currentLanguageIndex]

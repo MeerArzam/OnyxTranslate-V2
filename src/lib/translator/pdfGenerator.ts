@@ -1,10 +1,20 @@
 import { jsPDF } from "jspdf";
-import * as pdfjsLib from "pdfjs-dist";
 import type { PDFPageData, PDFTextItem } from "./pdfParser";
-import { getScriptConfig } from "./formatters";
 
-// Configure the PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/5.4.296/pdf.worker.min.mjs`;
+// Lazy-load pdfjs-dist (same as pdfParser) to avoid bundling ~25MB into initial page load
+type PDFJS = typeof import("pdfjs-dist");
+let pdfjsPromise: Promise<PDFJS> | null = null;
+
+async function getPDFJS(): Promise<PDFJS> {
+  if (!pdfjsPromise) {
+    pdfjsPromise = import("pdfjs-dist").then((mod) => {
+      const pdfjs = mod as unknown as PDFJS;
+      pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/5.4.296/pdf.worker.min.mjs`;
+      return pdfjs;
+    });
+  }
+  return pdfjsPromise;
+}
 
 export interface PDFGenerationProgress {
   phase: "rendering" | "text-overlay" | "compiling";
@@ -32,6 +42,9 @@ export async function generateTranslatedPDF(
   onProgress?: ProgressCallback
 ): Promise<Blob> {
   const totalPages = pageData.length;
+
+  // Lazy-load pdfjs-dist on first use
+  const pdfjsLib = await getPDFJS();
 
   // Load the PDF document for re-rendering
   const loadingTask = pdfjsLib.getDocument({
@@ -65,7 +78,6 @@ export async function generateTranslatedPDF(
   }
 
   const isRTL = ["ar", "ur", "ks"].includes(languageCode);
-  const scriptConfig = getScriptConfig(languageCode);
 
   // Create the new PDF document
   const firstPage = await pdf.getPage(1);

@@ -155,10 +155,13 @@ export default function Translator() {
       }
 
       setIsUploading(true);
+      setUploadError(null);
       setParsePhase("loading");
       setParseProgress({ current: project.parsedPages, total: project.pageCount });
 
       // Restore project state
+      // NOTE: project.arrayBuffer comes freshly decoded from IndexedDB —
+      // it has NOT been touched by pdfjs-dist yet, so it's fully usable.
       setSourceText(project.fullText);
       setPdfFileName(project.fileName);
       setPdfPageCount(project.pageCount);
@@ -167,56 +170,73 @@ export default function Translator() {
       setOriginalPageTexts(project.pageTexts);
       setOriginalArrayBuffer(project.arrayBuffer);
 
-      // If parsing was incomplete, resume parsing
+      // If parsing was incomplete, resume parsing from the saved page.
+      // This is wrapped in its own try/catch so a failure here NEVER wipes
+      // out the restored state — the user can still translate/download
+      // whatever pages were already parsed and saved.
       if (project.parsedPages < project.pageCount) {
         setParsePhase("parsing");
-        const pdfjsLib = await getPDFJS();
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/5.4.296/pdf.worker.min.mjs`;
-        const loadingTask = pdfjsLib.getDocument({
-          data: project.arrayBuffer,
-          disableFontFace: true,
-          disableRange: true,
-          disableAutoFetch: true,
-          useSystemFonts: false,
-        });
-        const pdf = await loadingTask.promise;
-
-        let updatedPageData = [...project.pageData];
-        let updatedPageTexts = [...project.pageTexts];
-
-        for (
-          let batchStart = project.parsedPages + 1;
-          batchStart <= project.pageCount;
-          batchStart += PARSE_BATCH_SIZE
-        ) {
-          const batchEnd = Math.min(batchStart + PARSE_BATCH_SIZE - 1, project.pageCount);
-          const batchResults = await parsePDFBatch(pdf, batchStart, batchEnd);
-
-          for (const result of batchResults) {
-            updatedPageData.push(result);
-            updatedPageTexts.push(result.text);
-          }
-
-          updatedPageData.sort((a, b) => a.num - b.num);
-
-          setParseProgress({ current: batchEnd, total: project.pageCount });
-          setPageData([...updatedPageData]);
-          setOriginalPageTexts([...updatedPageTexts]);
-
-          // Save after each batch
-          await saveProject({
-            id: "current",
-            fileName: project.fileName,
-            pageCount: project.pageCount,
-            wordCount: project.fullText.split(/\s+/).filter(Boolean).length,
-            warnings: project.warnings,
-            arrayBuffer: project.arrayBuffer,
-            pageData: updatedPageData,
-            pageTexts: updatedPageTexts,
-            fullText: project.fullText,
-            parsedPages: batchEnd,
-            createdAt: project.createdAt,
+        try {
+          const pdfjsLib = await getPDFJS();
+          pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/5.4.296/pdf.worker.min.mjs`;
+          // CRITICAL: pdfjs-dist v5 detaches/transfers any ArrayBuffer passed
+          // to getDocument(). Pass a CLONE so the saved buffer stays intact
+          // for IndexedDB saves and later PDF generation. Without this, the
+          // next saveProject() throws "attempting to access detached ArrayBuffer"
+          // and resume fails with "try fresh" every single time.
+          const bufferForPdfjs = project.arrayBuffer.slice(0);
+          const loadingTask = pdfjsLib.getDocument({
+            data: bufferForPdfjs,
+            disableFontFace: true,
+            disableRange: true,
+            disableAutoFetch: true,
+            useSystemFonts: false,
           });
+          const pdf = await loadingTask.promise;
+
+          let updatedPageData = [...project.pageData];
+          let updatedPageTexts = [...project.pageTexts];
+
+          for (
+            let batchStart = project.parsedPages + 1;
+            batchStart <= project.pageCount;
+            batchStart += PARSE_BATCH_SIZE
+          ) {
+            const batchEnd = Math.min(batchStart + PARSE_BATCH_SIZE - 1, project.pageCount);
+            const batchResults = await parsePDFBatch(pdf, batchStart, batchEnd);
+
+            for (const result of batchResults) {
+              updatedPageData.push(result);
+              updatedPageTexts.push(result.text);
+            }
+
+            updatedPageData.sort((a, b) => a.num - b.num);
+
+            const incrementalText = updatedPageTexts.filter(Boolean).join("\n\n").trim();
+
+            setParseProgress({ current: batchEnd, total: project.pageCount });
+            setPageData([...updatedPageData]);
+            setOriginalPageTexts([...updatedPageTexts]);
+            setSourceText(incrementalText);
+
+            // Save after each batch — uses the untouched original buffer
+            await saveProject({
+              id: "current",
+              fileName: project.fileName,
+              pageCount: project.pageCount,
+              wordCount: incrementalText.split(/\s+/).filter(Boolean).length,
+              warnings: project.warnings,
+              arrayBuffer: project.arrayBuffer,
+              pageData: updatedPageData,
+              pageTexts: updatedPageTexts,
+              fullText: incrementalText,
+              parsedPages: batchEnd,
+              createdAt: project.createdAt,
+            });
+          }
+        } catch (parseErr) {
+          // Non-fatal: keep whatever pages were already parsed & saved.
+          console.error("Failed to continue parsing during resume:", parseErr);
         }
       }
 

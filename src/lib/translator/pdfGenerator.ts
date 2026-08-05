@@ -78,12 +78,16 @@ export async function generateTranslatedPDF(
   }
 
   const isRTL = ["ar", "ur", "ks"].includes(languageCode);
+  const isCJK = ["ja", "zh", "ko"].includes(languageCode);
 
   // Create the new PDF document
   const firstPage = await pdf.getPage(1);
   const firstViewport = firstPage.getViewport({ scale: RENDER_SCALE });
-  const pdfWidth = (firstViewport.width / RENDER_SCALE) * 72 / 96; // Convert to points (~96 DPI)
-  const pdfHeight = (firstViewport.height / RENDER_SCALE) * 72 / 96;
+  // pdf.js viewport units at scale 1 are PDF points (1/72"), so dividing by the
+  // render scale gives the true page size in points. (The old `* 72 / 96` factor
+  // silently shrank every output page to 75% of its real physical size.)
+  const pdfWidth = firstViewport.width / RENDER_SCALE;
+  const pdfHeight = firstViewport.height / RENDER_SCALE;
 
   const doc = new jsPDF({
     orientation: pdfWidth > pdfHeight ? "landscape" : "portrait",
@@ -130,7 +134,18 @@ export async function generateTranslatedPDF(
       message: `Applying translation to page ${pageNum} of ${totalPages}`,
     });
 
-    const pageItems = pageData[pageIdx]?.textItems || [];
+    const rawPageItems = pageData[pageIdx]?.textItems || [];
+    // Text item coordinates from the parser are in scale-1 PDF space, but the
+    // canvas below is rendered at RENDER_SCALE. Scale the items once so the
+    // white-out rectangles, text areas, and font sizing line up exactly with
+    // the rendered page. (Without this, erasure and overlay were offset ~33%.)
+    const pageItems: PDFTextItem[] = rawPageItems.map((i) => ({
+      ...i,
+      x: i.x * RENDER_SCALE,
+      y: i.y * RENDER_SCALE,
+      width: i.width * RENDER_SCALE,
+      height: i.height * RENDER_SCALE,
+    }));
 
     // Group text items into lines (items on same Y within tolerance)
     const Y_TOLERANCE = 4 * RENDER_SCALE;
@@ -189,7 +204,9 @@ export async function generateTranslatedPDF(
         }
       }
 
-      const fontSize = Math.max(8, Math.min(16, avgFontSize / RENDER_SCALE));
+      // Heights are now in canvas pixels (already scaled), so draw the
+      // translated text at the same visual size as the original.
+      const fontSize = Math.max(8, Math.min(28, avgFontSize));
 
       // Get the text bounding area from original items
       let textAreaTop = 0;
@@ -222,7 +239,7 @@ export async function generateTranslatedPDF(
       }
 
       // Simple line-by-line text wrapping
-      const linesToDraw = wrapText(ctx, pageTranslatedText, textWidth, fontSize, isRTL);
+      const linesToDraw = wrapText(ctx, pageTranslatedText, textWidth, fontSize, isRTL, isCJK);
       const lineHeight = fontSize * 1.4;
       let cursorY = textAreaTop;
 
@@ -287,7 +304,8 @@ function wrapText(
   text: string,
   maxPixelWidth: number,
   fontSize: number,
-  isRTL: boolean
+  isRTL: boolean,
+  isCJK: boolean
 ): string[] {
   if (!text.trim()) return [""];
 
@@ -302,10 +320,21 @@ function wrapText(
 
     const words = paragraph.split(/\s+/).filter(Boolean);
     let currentLine = "";
-    const estimatedCharWidth = fontSize * 0.6;
+    // CJK glyphs are roughly square (fontSize wide); Latin scripts ~0.6em.
+    const estimatedCharWidth = isCJK ? fontSize : fontSize * 0.6;
     const maxCharsPerLine = Math.max(1, Math.floor(maxPixelWidth / estimatedCharWidth));
 
     for (const word of words) {
+      // Hard-break overlong tokens (common in CJK text, which has no spaces)
+      // so they never overflow the text column.
+      if (word.length > maxCharsPerLine) {
+        if (currentLine) result.push(currentLine);
+        currentLine = "";
+        for (let k = 0; k < word.length; k += maxCharsPerLine) {
+          result.push(word.slice(k, k + maxCharsPerLine));
+        }
+        continue;
+      }
       const separator = currentLine ? " " : "";
       const testLine = isRTL ? word + separator + currentLine : currentLine + separator + word;
 

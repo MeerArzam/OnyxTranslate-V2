@@ -491,6 +491,16 @@ export default function Translator() {
 
   const translateCurrentLanguage = useCallback(
     async (langIndex: number) => {
+      // Skip languages already completed in this session (e.g. restored after
+      // a resume) so they are never re-translated or added twice to the list.
+      const completedCodes = new Set(completedLanguages.map((c) => c.code));
+      while (
+        langIndex < targetLanguages.length &&
+        completedCodes.has(targetLanguages[langIndex].code)
+      ) {
+        langIndex++;
+      }
+
       if (langIndex >= targetLanguages.length) {
         setFlowPhase("all-complete");
         return;
@@ -604,7 +614,7 @@ export default function Translator() {
         setIsTranslating(false);
       }
     },
-    [sourceText, originalPageTexts]
+    [sourceText, originalPageTexts, completedLanguages]
   );
 
   const handleContinue = useCallback(async () => {
@@ -1145,14 +1155,21 @@ export default function Translator() {
                       currentLang &&
                       !isTranslating && (
                         <>
-                          <Button
-                            onClick={handleDownloadPDF}
-                            className="w-full h-9 text-xs"
-                            variant="default"
-                          >
-                            <FileDown className="size-3.5 mr-2" /> Download{" "}
-                            {currentLang.name} PDF
-                          </Button>
+                          {originalArrayBuffer && pageData.length > 0 ? (
+                            <Button
+                              onClick={handleDownloadPDF}
+                              className="w-full h-9 text-xs"
+                              variant="default"
+                            >
+                              <FileDown className="size-3.5 mr-2" /> Download{" "}
+                              {currentLang.name} PDF
+                            </Button>
+                          ) : (
+                            <div className="text-center text-[10px] text-muted-foreground py-1.5 rounded-lg bg-muted/30">
+                              PDF download needs a PDF source — upload your PDF to
+                              get image-preserved translated PDFs
+                            </div>
+                          )}
 
                           {nextLang ? (
                             <Button
@@ -1342,8 +1359,9 @@ export default function Translator() {
                             {translationProgress.phase}
                           </p>
                           <p className="text-[9px] text-muted-foreground font-mono">
-                            Chunk {translationProgress.current + 1} of{" "}
-                            {translationProgress.total}
+                            Chunk{" "}
+                            {Math.min(translationProgress.current + 1, translationProgress.total)}{" "}
+                            of {translationProgress.total}
                           </p>
                         </div>
                       )}

@@ -12,6 +12,7 @@ const DB_VERSION = 1;
 // Object store names
 const STORE_PROJECT = "project";
 const STORE_TRANSLATIONS = "translations";
+const STORE_MEMORY = "translation-memory";
 
 // Project-level metadata stored under a fixed key
 export interface ProjectData {
@@ -78,6 +79,9 @@ function openDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORE_TRANSLATIONS)) {
         db.createObjectStore(STORE_TRANSLATIONS);
+      }
+      if (!db.objectStoreNames.contains(STORE_MEMORY)) {
+        db.createObjectStore(STORE_MEMORY);
       }
     };
 
@@ -161,6 +165,72 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
 
 const PROJECT_KEY = "current";
 const CHUNK_SEPARATOR = "|||CHUNK_SEP|||";
+
+// ──────────────────────────────────────────────
+// Translation Memory (Phase 13)
+// Saves finalized terminology choices so they are enforced consistently
+// across large PDF batches and future sequel uploads.
+// ──────────────────────────────────────────────
+
+export interface TerminologyEntry {
+  source: string;
+  translation: string;
+  langCode: string;
+  category: "proper-noun" | "fantasy" | "military" | "endearment" | "medical";
+  locked: boolean; // If locked, always use this translation regardless of context
+}
+
+/**
+ * Save a terminology entry to the translation memory.
+ */
+export async function saveTerminology(entry: TerminologyEntry): Promise<void> {
+  const key = `${entry.langCode}::${entry.source.toLowerCase()}`;
+  await dbPut(STORE_MEMORY, key, entry);
+}
+
+/**
+ * Get a terminology entry from the translation memory.
+ */
+export async function getTerminology(
+  langCode: string,
+  source: string
+): Promise<TerminologyEntry | null> {
+  const key = `${langCode}::${source.toLowerCase()}`;
+  return dbGet<TerminologyEntry>(STORE_MEMORY, key);
+}
+
+/**
+ * Get all terminology entries for a language.
+ */
+export async function getAllTerminology(
+  langCode: string
+): Promise<TerminologyEntry[]> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_MEMORY, "readonly");
+    const store = tx.objectStore(STORE_MEMORY);
+    const req = store.getAll();
+    req.onsuccess = () => {
+      const all = (req.result as TerminologyEntry[]).filter(
+        (e) => e.langCode === langCode
+      );
+      db.close();
+      resolve(all);
+    };
+    req.onerror = () => { db.close(); reject(req.error); };
+  });
+}
+
+/**
+ * Batch save terminology entries.
+ */
+export async function saveTerminologyBatch(
+  entries: TerminologyEntry[]
+): Promise<void> {
+  for (const entry of entries) {
+    await saveTerminology(entry);
+  }
+}
 
 /**
  * Save or update the project data (call after each parsing chunk).

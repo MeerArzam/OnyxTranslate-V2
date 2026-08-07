@@ -23,10 +23,15 @@ import {
   CheckCheck,
 } from "lucide-react";
 import {
+  runNeuralTranslationPipeline,
   runTranslationPipeline,
+  prepareLanguageModel,
+  releaseLanguageModel,
+  hasNeuralModel,
   generateSampleText,
   type TranslationResult,
 } from "@/lib/translator/engine";
+import type { NeuralProgressCallback } from "@/lib/translator/neural";
 import {
   parsePDFHeader,
   parsePDFBatch,
@@ -122,6 +127,10 @@ export default function Translator() {
   // ─── PDF generation ───
   const [pdfProgress, setPdfProgress] = useState<PDFGenerationProgress | null>(null);
   const [currentPdfBlob, setCurrentPdfBlob] = useState<Blob | null>(null);
+
+  // ─── Neural model state ───
+  const [modelStatus, setModelStatus] = useState<string | null>(null);
+  const [isNeural, setIsNeural] = useState(false);
 
   // ─── ZIP ───
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
@@ -482,6 +491,13 @@ export default function Translator() {
     setTranslationProgress(null);
   }, []);
 
+  // ─── Cleanup model on unmount ───
+  useEffect(() => {
+    return () => {
+      releaseLanguageModel().catch(() => {});
+    };
+  }, []);
+
   // ─── Step-by-Step Translation ───
 
   const startTranslation = useCallback(async () => {
@@ -515,6 +531,16 @@ export default function Translator() {
       const lang = targetLanguages[langIndex];
 
       try {
+        // ── Load neural model for this language ──
+        const neuralAvailable = await prepareLanguageModel(
+          lang.code,
+          (phase, msg) => {
+            setModelStatus(msg);
+          }
+        );
+        setIsNeural(neuralAvailable);
+        setModelStatus(null);
+
         // Check if we already have saved translations for this language
         const allTranslations = await getAllTranslations();
         const saved = allTranslations[lang.code];
@@ -562,12 +588,28 @@ export default function Translator() {
               .slice(range.pageStart, range.pageEnd + 1)
               .join("\n\n");
 
-            const result = await runTranslationPipeline({
-              sourceText: chunkText,
-              targetLanguage: lang.code,
-              marketContext: "standard",
-              chapterNumber: 1,
-            });
+            // Use neural pipeline if model is available, otherwise glossary fallback
+            let result: TranslationResult;
+            if (neuralAvailable) {
+              result = await runNeuralTranslationPipeline(
+                {
+                  sourceText: chunkText,
+                  targetLanguage: lang.code,
+                  marketContext: "standard",
+                  chapterNumber: 1,
+                },
+                (phase, msg) => {
+                  setTranslationProgress((prev) => prev ? { ...prev, phase: msg } : null);
+                }
+              );
+            } else {
+              result = await runTranslationPipeline({
+                sourceText: chunkText,
+                targetLanguage: lang.code,
+                marketContext: "standard",
+                chapterNumber: 1,
+              });
+            }
 
             const chunk: TranslationChunk = {
               langCode: lang.code,
@@ -604,14 +646,20 @@ export default function Translator() {
           setCurrentTranslation(mergedText);
         }
 
+        // Dispose model to free memory before next language
+        await releaseLanguageModel();
+
         setFlowPhase("translation-done");
       } catch (error) {
+        // Always release model on error
+        await releaseLanguageModel();
         setTranslationError(
           error instanceof Error ? error.message : "Translation failed"
         );
         setFlowPhase("translation-done");
       } finally {
         setIsTranslating(false);
+        setModelStatus(null);
       }
     },
     [sourceText, originalPageTexts, completedLanguages]
@@ -1086,7 +1134,18 @@ export default function Translator() {
                   </div>
 
                   <div className="space-y-1.5">
-                    {isTranslating && currentLang && (
+                    {modelStatus && isTranslating && (
+                      <div className="flex items-center gap-2 p-2 rounded-lg bg-yellow-500/5 border border-yellow-500/20">
+                        <Loader2 className="size-3.5 text-yellow-500 animate-spin shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-medium truncate text-yellow-600">
+                            {modelStatus}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {isTranslating && currentLang && !modelStatus && (
                       <div className="flex items-center gap-2 p-2 rounded-lg bg-primary/5 border border-primary/20">
                         <Loader2 className="size-3.5 text-primary animate-spin shrink-0" />
                         <div className="min-w-0">
@@ -1097,12 +1156,19 @@ export default function Translator() {
                             {translationProgress?.phase || "Translating..."}
                           </p>
                         </div>
-                        <Badge
-                          variant="secondary"
-                          className="text-[9px] shrink-0 ml-auto"
-                        >
-                          {currentLang.nativeName}
-                        </Badge>
+                        <div className="flex items-center gap-1 shrink-0 ml-auto">
+                          {isNeural && (
+                            <Badge variant="default" className="text-[8px] bg-blue-600">
+                              Neural MT
+                            </Badge>
+                          )}
+                          <Badge
+                            variant="secondary"
+                            className="text-[9px]"
+                          >
+                            {currentLang.nativeName}
+                          </Badge>
+                        </div>
                       </div>
                     )}
 
@@ -1266,11 +1332,10 @@ export default function Translator() {
                     {flowPhase === "all-complete" && "All Translations Complete"}
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  {flowPhase === "translating" && currentLang && (
+                <div className="flex items-center gap-1.5">                    {flowPhase === "translating" && currentLang && (
                     <Badge variant="secondary" className="text-[9px] animate-pulse">
                       <Loader2 className="size-2.5 mr-1 animate-spin" />
-                      18-Phase Pipeline
+                      {isNeural ? "Neural MT + 18-Phase" : "18-Phase Pipeline"}
                     </Badge>
                   )}
                   {flowPhase === "translation-done" && currentLang && (
@@ -1367,7 +1432,7 @@ export default function Translator() {
                       )}
                       <div className="flex items-center justify-center gap-2 flex-wrap mt-3">
                         <Badge variant="secondary" className="text-[9px]">
-                          18-Phase Pipeline
+                          {isNeural ? "Neural MT + 18-Phase" : "18-Phase Glossary"}
                         </Badge>
                         <Badge variant="outline" className="text-[9px]">
                           {currentLang.script} Script

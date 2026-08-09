@@ -54,6 +54,11 @@ import {
   getAllTranslations,
   mergeChunkTexts,
   chunkPageTexts,
+  exportAllProgress,
+  serializeProgress,
+  importAllProgress,
+  deserializeProgress,
+  isIndexedDBAvailable,
   type TranslationChunk,
   type LanguageProgress,
   type ProjectData,
@@ -139,6 +144,9 @@ export default function Translator() {
   const [hasSavedProgress, setHasSavedProgress] = useState(false);
   const [savedFileName, setSavedFileName] = useState<string | null>(null);
 
+  // ─── Persistence warnings ───
+  const [dbWarning, setDbWarning] = useState<string | null>(null);
+
   // ─── Check for saved progress on mount ───
   useEffect(() => {
     (async () => {
@@ -150,6 +158,16 @@ export default function Translator() {
         }
       } catch {
         // IndexedDB not available or corrupted — ignore
+      }
+    })();
+  }, []);
+
+  // ─── Check IndexedDB health on mount ───
+  useEffect(() => {
+    (async () => {
+      const available = await isIndexedDBAvailable();
+      if (!available) {
+        setDbWarning("IndexedDB is not available. Progress will not be saved. Please export your work regularly.");
       }
     })();
   }, []);
@@ -448,6 +466,48 @@ export default function Translator() {
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
+  }, []);
+
+  // ─── Export / Import Progress ───
+  const handleExportProgress = useCallback(async () => {
+    try {
+      const data = await exportAllProgress();
+      const json = serializeProgress(data);
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `onyx-translate-progress-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Export failed:", err);
+    }
+  }, []);
+
+  const handleImportProgress = useCallback(async () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const data = deserializeProgress(text);
+        await importAllProgress(data);
+        // Reload the saved progress state
+        const project = await getProject();
+        if (project && project.parsedPages > 0) {
+          setHasSavedProgress(true);
+          setSavedFileName(project.fileName);
+        }
+      } catch (err) {
+        console.error("Import failed:", err);
+        setUploadError("Failed to import progress file. Make sure it is a valid .onyx-progress.json file.");
+      }
+    };
+    input.click();
   }, []);
 
   const clearSource = useCallback(async () => {
@@ -915,11 +975,47 @@ export default function Translator() {
             <Badge variant="outline" className="text-[10px]">
               {targetLanguages.length} Languages
             </Badge>
+            <div className="hidden sm:flex items-center gap-1 ml-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 text-[9px] px-1.5"
+                onClick={handleExportProgress}
+                title="Export saved progress to a file"
+              >
+                📤 Export
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 text-[9px] px-1.5"
+                onClick={handleImportProgress}
+                title="Import progress from a file"
+              >
+                📥 Import
+              </Button>
+            </div>
           </div>
         </div>
       </header>
 
       <div className="max-w-[1200px] mx-auto px-6 py-6">
+        {dbWarning && (
+          <div className="mb-4 flex items-center justify-between p-3 rounded-xl bg-yellow-500/5 border border-yellow-500/20 text-[11px]">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="size-3.5 text-yellow-500 shrink-0" />
+              <span>{dbWarning}</span>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <Button variant="ghost" size="sm" className="h-6 text-[9px]" onClick={handleExportProgress}>
+                Export Now
+              </Button>
+              <Button variant="ghost" size="sm" className="h-6 text-[9px]" onClick={() => setDbWarning(null)}>
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6">
           {/* Left Panel */}
           <div className="space-y-4">
@@ -1297,6 +1393,23 @@ export default function Translator() {
                         >
                           <RotateCcw className="size-3.5 mr-2" /> Start Over
                         </Button>
+
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={handleExportProgress}
+                            className="flex-1 h-8 text-[10px]"
+                            variant="outline"
+                          >
+                            📤 Export Progress
+                          </Button>
+                          <Button
+                            onClick={handleImportProgress}
+                            className="flex-1 h-8 text-[10px]"
+                            variant="outline"
+                          >
+                            📥 Import Progress
+                          </Button>
+                        </div>
                       </>
                     )}
                   </div>

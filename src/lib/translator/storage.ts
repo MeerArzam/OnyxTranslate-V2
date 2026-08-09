@@ -2,6 +2,9 @@
  * IndexedDB-based persistent storage for Onyx Translate.
  * Stores parsed PDF data, translated chunks, and progress state
  * so work is never lost on page refresh.
+ *
+ * Export/Import enables cross-origin sync (Preview ↔ Published)
+ * and backup across devices.
  */
 
 import type { PDFPageData } from "./pdfParser";
@@ -70,6 +73,11 @@ export interface LanguageProgress {
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
+    if (typeof indexedDB === "undefined") {
+      reject(new Error("IndexedDB is not available in this browser."));
+      return;
+    }
+
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
     request.onupgradeneeded = () => {
@@ -88,6 +96,19 @@ function openDB(): Promise<IDBDatabase> {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
+}
+
+/**
+ * Check if IndexedDB is available and responsive.
+ */
+export async function isIndexedDBAvailable(): Promise<boolean> {
+  try {
+    const db = await openDB();
+    db.close();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function dbGet<T>(storeName: string, key: string): Promise<T | null> {
@@ -395,4 +416,96 @@ export function chunkPageTexts(
   }
 
   return chunks;
+}
+
+// ──────────────────────────────────────────────
+// Export / Import (cross-origin sync)
+// ──────────────────────────────────────────────
+
+interface ExportedProgress {
+  _exportedAt: string;
+  _version: number;
+  project: ProjectData | null;
+  translations: Record<string, { progress: LanguageProgress; chunks: TranslationChunk[] }>;
+  terminology: TerminologyEntry[];
+}
+
+/**
+ * Export the entire IndexedDB state to a serializable JSON object.
+ * The user can download this as a .onyx-progress.json file.
+ */
+export async function exportAllProgress(): Promise<ExportedProgress> {
+  const project = await dbGet<ProjectData>(STORE_PROJECT, PROJECT_KEY);
+  const translations = await getAllTranslations();
+
+  // Export terminology
+  let terminology: TerminologyEntry[] = [];
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_MEMORY, "readonly");
+    const store = tx.objectStore(STORE_MEMORY);
+    const req = store.getAll();
+    terminology = await new Promise<TerminologyEntry[]>((resolve) => {
+      req.onsuccess = () => resolve(req.result as TerminologyEntry[]);
+      req.onerror = () => resolve([]);
+      tx.oncomplete = () => db.close();
+    });
+  } catch {
+    // Non-critical
+  }
+
+  return {
+    _exportedAt: new Date().toISOString(),
+    _version: 1,
+    project,
+    translations,
+    terminology,
+  };
+}
+
+/**
+ * Import a previously exported progress file into IndexedDB.
+ * Overwrites any existing project/translations (user confirms before calling).
+ */
+export async function importAllProgress(data: ExportedProgress): Promise<void> {
+  if (!data || typeof data !== "object") {
+    throw new Error("Invalid progress file format.");
+  }
+
+  // Import project
+  if (data.project) {
+    await dbPut(STORE_PROJECT, PROJECT_KEY, data.project);
+  }
+
+  // Import translations
+  if (data.translations) {
+    for (const [langCode, langData] of Object.entries(data.translations)) {
+      await dbPut(STORE_TRANSLATIONS, langCode, langData);
+    }
+  }
+
+  // Import terminology
+  if (data.terminology && Array.isArray(data.terminology)) {
+    for (const entry of data.terminology) {
+      await dbPut(STORE_MEMORY, `${entry.langCode}::${entry.source.toLowerCase()}`, entry);
+    }
+  }
+}
+
+/**
+ * Serialize exported progress to a JSON string for download.
+ */
+export function serializeProgress(data: ExportedProgress): string {
+  return JSON.stringify(data);
+}
+
+/**
+ * Parse a .onyx-progress.json string back into an ExportedProgress object.
+ */
+export function deserializeProgress(json: string): ExportedProgress {
+  const parsed = JSON.parse(json);
+  if (!parsed._exportedAt || !parsed._version) {
+    throw new Error("This does not appear to be a valid Onyx Translate progress file.");
+  }
+  return parsed as ExportedProgress;
 }

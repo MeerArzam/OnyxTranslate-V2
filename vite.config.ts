@@ -40,12 +40,17 @@ export default defineConfig({
       'react-dom',
       'react-dom/client',
     ],
+    // pdfjs-dist v5 is pure ESM, so it loads fine WITHOUT being pre-bundled.
+    // Excluding it keeps the giant ~1.3MB library out of the dev-server's
+    // cold-start dependency optimization, so the preview boots much faster.
+    // (jspdf, jszip, @xenova/transformers stay pre-bundled — they contain
+    // CommonJS internals that require the optimizer to run in the browser.)
+    exclude: ['pdfjs-dist'],
   },
   server: {
     host: true,
     port: 5173,
-    hmr: {
-      overlay: false,
-    },
+    // HMR must stay disabled for the Freebuff platform's managed dev server.
+    hmr: false,
   },
 });

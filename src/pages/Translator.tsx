@@ -1,5 +1,4 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import JSZip from "jszip";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -834,6 +833,9 @@ export default function Translator() {
     setIsDownloadingZip(true);
 
     try {
+      // Lazy-load JSZip only when the user clicks "Download All ZIP" — keeps
+      // the ~100KB library out of the initial page load.
+      const JSZip = (await import("jszip")).default;
       const zip = new JSZip();
       const folderName = pdfFileName
         ? pdfFileName.replace(/\.pdf$/i, "").replace(/[^a-zA-Z0-9_-]/g, "_")

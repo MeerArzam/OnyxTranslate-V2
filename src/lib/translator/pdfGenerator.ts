@@ -1,5 +1,8 @@
-import { jsPDF } from "jspdf";
 import type { PDFPageData, PDFTextItem } from "./pdfParser";
+
+// jsPDF (~350KB) is lazily imported inside generateTranslatedPDF() so it is
+// NOT bundled into the initial page load. It only loads when the user clicks
+// "Download PDF".
 
 // Lazy-load pdfjs-dist (same as pdfParser) to avoid bundling ~25MB into initial page load
 type PDFJS = typeof import("pdfjs-dist");
@@ -89,6 +92,8 @@ export async function generateTranslatedPDF(
   const pdfWidth = firstViewport.width / RENDER_SCALE;
   const pdfHeight = firstViewport.height / RENDER_SCALE;
 
+  // Lazy-load jsPDF only when actually generating a PDF (not on page load)
+  const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({
     orientation: pdfWidth > pdfHeight ? "landscape" : "portrait",
     unit: "pt",

@@ -495,11 +495,34 @@ export default function Translator() {
         const text = await file.text();
         const data = deserializeProgress(text);
         await importAllProgress(data);
+        // Reset any in-session state so the restored project is picked up
+        // cleanly and the Resume banner appears.
+        setCurrentLanguageIndex(-1);
+        setIsTranslating(false);
+        setCurrentTranslation(null);
+        setTranslationError(null);
+        setCompletedLanguages([]);
+        setFlowPhase("idle");
+        setPdfProgress(null);
+        setCurrentPdfBlob(null);
+        setTranslationProgress(null);
+        setSourceText("");
+        setPdfFileName(null);
+        setPdfPageCount(null);
+        setPdfWarnings([]);
+        setUploadError(null);
+        setOriginalArrayBuffer(null);
+        setPageData([]);
+        setOriginalPageTexts([]);
+        setParsePhase("idle");
         // Reload the saved progress state
         const project = await getProject();
         if (project && project.parsedPages > 0) {
           setHasSavedProgress(true);
           setSavedFileName(project.fileName);
+        } else {
+          setHasSavedProgress(false);
+          setSavedFileName(null);
         }
       } catch (err) {
         console.error("Import failed:", err);
@@ -977,24 +1000,24 @@ export default function Translator() {
             <Badge variant="outline" className="text-[10px]">
               {targetLanguages.length} Languages
             </Badge>
-            <div className="hidden sm:flex items-center gap-1 ml-1">
+            <div className="flex items-center gap-1 ml-1">
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 text-[9px] px-1.5"
+                className="h-6 text-[9px] px-1.5 sm:text-[10px]"
                 onClick={handleExportProgress}
-                title="Export saved progress to a file"
+                title="Export saved progress to a file — use this to move work between the preview and the published site"
               >
-                📤 Export
+                <FileUp className="size-3 mr-1" /> Export
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 text-[9px] px-1.5"
+                className="h-6 text-[9px] px-1.5 sm:text-[10px]"
                 onClick={handleImportProgress}
-                title="Import progress from a file"
+                title="Import a progress file to resume your work here"
               >
-                📥 Import
+                <FileDown className="size-3 mr-1" /> Import
               </Button>
             </div>
           </div>
@@ -1124,6 +1147,45 @@ export default function Translator() {
                       {pdfWarnings.map((w, i) => (
                         <p key={i}>{w}</p>
                       ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Transfer progress between preview and published site */}
+                {!hasSavedProgress && !isUploading && !pdfFileName && (
+                  <div className="space-y-2">
+                    <div className="flex items-start gap-2 p-2.5 rounded-lg bg-blue-500/5 border border-blue-500/20 text-[11px]">
+                      <Globe className="size-3.5 text-blue-500 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-medium text-blue-600">
+                          Uploaded in the Freebuff preview?
+                        </p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                          Work is saved only in the tab where you uploaded it. To
+                          continue on the published site,{" "}
+                          <strong>Export</strong> a progress file here, then{" "}
+                          <strong>Import</strong> it on{" "}
+                          <strong>oyxtranslate.freebuff.app</strong>.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={handleExportProgress}
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 h-8 text-[11px]"
+                      >
+                        <FileUp className="size-3 mr-1" /> Export Progress
+                      </Button>
+                      <Button
+                        onClick={handleImportProgress}
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 h-8 text-[11px]"
+                      >
+                        <FileDown className="size-3 mr-1" /> Import Progress
+                      </Button>
                     </div>
                   </div>
                 )}

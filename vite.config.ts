@@ -40,12 +40,13 @@ export default defineConfig({
       'react-dom',
       'react-dom/client',
     ],
-    // pdfjs-dist v5 is pure ESM, so it loads fine WITHOUT being pre-bundled.
-    // Excluding it keeps the giant ~1.3MB library out of the dev-server's
-    // cold-start dependency optimization, so the preview boots much faster.
-    // (jspdf, jszip, @xenova/transformers stay pre-bundled — they contain
-    // CommonJS internals that require the optimizer to run in the browser.)
-    exclude: ['pdfjs-dist'],
+    // pdf.js and @xenova/transformers are served from /public/vendor and
+    // loaded at runtime (URL import / script tag) — they are NOT part of the
+    // Vite module graph, so neither cold-start dependency optimization nor
+    // `vite build` ever processes them. These excludes are belt-and-suspenders.
+    // (jspdf and jszip stay pre-bundled — they contain CommonJS internals that
+    // require the optimizer to run in the browser.)
+    exclude: ['pdfjs-dist', '@xenova/transformers', 'onnxruntime-web'],
   },
   server: {
     host: true,

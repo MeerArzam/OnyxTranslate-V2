@@ -203,8 +203,8 @@ export default function Translator() {
       if (project.parsedPages < project.pageCount) {
         setParsePhase("parsing");
         try {
+          // getPDFJS() already wires the worker to the local /vendor copy.
           const pdfjsLib = await getPDFJS();
-          pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/5.4.296/pdf.worker.min.mjs`;
           // CRITICAL: pdfjs-dist v5 detaches/transfers any ArrayBuffer passed
           // to getDocument(). Pass a CLONE so the saved buffer stays intact
           // for IndexedDB saves and later PDF generation. Without this, the

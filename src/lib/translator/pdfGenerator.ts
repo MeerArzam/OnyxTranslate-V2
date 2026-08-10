@@ -1,23 +1,10 @@
 import type { PDFPageData, PDFTextItem } from "./pdfParser";
+import { getPDFJS } from "./pdfParser";
 
-// jsPDF (~350KB) is lazily imported inside generateTranslatedPDF() so it is
-// NOT bundled into the initial page load. It only loads when the user clicks
-// "Download PDF".
-
-// Lazy-load pdfjs-dist (same as pdfParser) to avoid bundling ~25MB into initial page load
-type PDFJS = typeof import("pdfjs-dist");
-let pdfjsPromise: Promise<PDFJS> | null = null;
-
-async function getPDFJS(): Promise<PDFJS> {
-  if (!pdfjsPromise) {
-    pdfjsPromise = import("pdfjs-dist").then((mod) => {
-      const pdfjs = mod as unknown as PDFJS;
-      pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/5.4.296/pdf.worker.min.mjs`;
-      return pdfjs;
-    });
-  }
-  return pdfjsPromise;
-}
+// jsPDF is lazily imported inside generateTranslatedPDF() so it is NOT bundled
+// into the initial page load — it only loads when the user clicks "Download
+// PDF". pdf.js is loaded lazily too, via getPDFJS() from pdfParser (served
+// from /public/vendor, outside the Vite module graph).
 
 export interface PDFGenerationProgress {
   phase: "rendering" | "text-overlay" | "compiling";

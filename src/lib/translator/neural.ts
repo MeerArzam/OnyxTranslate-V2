@@ -3,19 +3,39 @@
  *
  * - Forces WASM backend (numThreads=1) for low-end device / Android compatibility.
  * - Loads ONE language model at a time; disposes it before loading the next.
- * - Dynamically imported so the initial page load stays instant.
+ * - Loaded at runtime from /public/vendor (outside the Vite module graph), so
+ *   the initial page load, the dev-server cold start, and `vite build` never
+ *   touch the ~40MB onnxruntime CJS tree.
  * - Falls back to glossary simulation for languages without ONNX Opus-MT models.
  */
 
-// ─── Lazy singleton for transformers.js ──────────────────────────────────────
+import { VENDOR_URLS } from "./vendor";
 
-type TransformersModule = typeof import("@xenova/transformers");
+// Minimal surface of transformers.js that we use. The full library (a ~900 KB
+// webpack ES-module bundle with onnxruntime baked in) is served from
+// /public/vendor and loaded via a runtime URL import ONLY when a translation
+// starts — it is kept out of the Vite module graph.
+interface TransformersModule {
+  env: {
+    allowRemoteModels?: boolean;
+    allowLocalModels?: boolean;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    backends?: any;
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  pipeline: (...args: any[]) => Promise<any>;
+}
 
 let _transformersPromise: Promise<TransformersModule> | null = null;
 
 async function getTransformers(): Promise<TransformersModule> {
   if (!_transformersPromise) {
-    _transformersPromise = import("@xenova/transformers");
+    // The vendored file is an ES module (`export { … }` build), so it is loaded
+    // with a URL import — exactly like pdf.js. It uses `self`/DOMMatrix, which
+    // are always available in browsers (only missing in Node.js).
+    _transformersPromise = import(/* @vite-ignore */ VENDOR_URLS.transformers).then(
+      (mod) => mod as unknown as TransformersModule
+    );
   }
   return _transformersPromise;
 }
@@ -108,12 +128,17 @@ export async function loadModel(
   env.allowRemoteModels = true;
   env.allowLocalModels = false;
 
-  // Configure WASM for low-end devices
+  // Configure WASM for low-end devices (2 GB RAM constraint). The
+  // `env.backends.onnx.wasm` object is created lazily by the library, so we
+  // create it explicitly to guarantee numThreads = 1 is applied everywhere.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const wasmEnv = (env.backends as any)?.onnx?.wasm;
-  if (wasmEnv) {
-    wasmEnv.numThreads = 1;
-  }
+  const backends = (env.backends ?? {}) as Record<string, any>;
+  const onnxBackend = (backends.onnx ?? {}) as Record<string, any>;
+  const wasmConfig = (onnxBackend.wasm ?? {}) as Record<string, any>;
+  wasmConfig.numThreads = 1;
+  onnxBackend.wasm = wasmConfig;
+  backends.onnx = onnxBackend;
+  env.backends = backends;
 
   try {
     activePipeline = await pipeline("translation", entry.modelId, {

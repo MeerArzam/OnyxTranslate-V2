@@ -1,3 +1,5 @@
+import { VENDOR_URLS } from "./vendor";
+
 // Polyfill Promise.withResolvers for browsers that don't support it yet (ES2024)
 if (typeof (Promise as unknown as Record<string, unknown>).withResolvers === "undefined") {
   (Promise as unknown as Record<string, (...args: unknown[]) => unknown>).withResolvers = function <T>() {
@@ -53,18 +55,42 @@ export interface PDFParseError {
 type ProgressCallback = (currentPage: number, totalPages: number) => void;
 
 // ──────────────────────────────────────────────
-// Lazy pdfjs-dist loader (shared with pdfGenerator)
+// Lazy pdf.js loader — served from /public/vendor and loaded via a runtime
+// URL import. It is deliberately NOT part of the Vite module graph, so neither
+// the dev-server's dependency optimizer nor `vite build` ever processes the
+// ~1.3 MB library: the page opens and the build runs instantly.
 // ──────────────────────────────────────────────
 
-type PDFJS = typeof import("pdfjs-dist");
+// Minimal structural types for the pdf.js API surface we use. The real package
+// is loaded at runtime from /vendor, so no separate type package is needed.
+export interface PDFDocumentProxyLike {
+  numPages: number;
+  getPage(pageNum: number): Promise<PDFPageLike>;
+  getMetadata(): Promise<{ info?: Record<string, unknown> }>;
+}
 
-let pdfjsPromise: Promise<PDFJS> | null = null;
+export interface PDFPageLike {
+  getViewport(opts: { scale: number }): { width: number; height: number };
+  getTextContent(): Promise<{ items: Array<Record<string, unknown>> }>;
+  render(opts: Record<string, unknown>): { promise: Promise<unknown> };
+}
 
-export async function getPDFJS(): Promise<PDFJS> {
+export interface PDFJSModule {
+  GlobalWorkerOptions: { workerSrc: string };
+  getDocument(
+    params: Record<string, unknown>
+  ): { promise: Promise<PDFDocumentProxyLike> };
+}
+
+let pdfjsPromise: Promise<PDFJSModule> | null = null;
+
+export async function getPDFJS(): Promise<PDFJSModule> {
   if (!pdfjsPromise) {
-    pdfjsPromise = import("pdfjs-dist").then((mod) => {
-      const pdfjs = mod as unknown as PDFJS;
-      pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/5.4.296/pdf.worker.min.mjs`;
+    pdfjsPromise = import(/* @vite-ignore */ VENDOR_URLS.pdfjs).then((mod) => {
+      const pdfjs = mod as unknown as PDFJSModule;
+      // Point the worker at the local /vendor copy — no CDN dependency, and it
+      // matches the pdf.js version we vendored exactly.
+      pdfjs.GlobalWorkerOptions.workerSrc = VENDOR_URLS.pdfjsWorker;
       return pdfjs;
     });
   }
@@ -76,7 +102,7 @@ export async function getPDFJS(): Promise<PDFJS> {
 // ──────────────────────────────────────────────
 
 async function extractPageData(
-  pdf: import("pdfjs-dist").PDFDocumentProxy,
+  pdf: PDFDocumentProxyLike,
   pageNum: number,
   renderScale: number
 ): Promise<PDFPageData> {
@@ -141,7 +167,7 @@ async function extractPageData(
 export const PARSE_BATCH_SIZE = 3; // Pages per batch — keeps each batch fast (~5-10s)
 
 export interface PDFHeader {
-  pdf: import("pdfjs-dist").PDFDocumentProxy;
+  pdf: PDFDocumentProxyLike;
   totalPages: number;
   title: string | undefined;
   info: Record<string, unknown>;
@@ -204,7 +230,7 @@ export async function parsePDFHeader(file: File): Promise<PDFHeader> {
  * Returns the page data for pages [startPage..endPage] (1-based).
  */
 export async function parsePDFBatch(
-  pdf: import("pdfjs-dist").PDFDocumentProxy,
+  pdf: PDFDocumentProxyLike,
   startPage: number,
   endPage: number
 ): Promise<PDFPageData[]> {

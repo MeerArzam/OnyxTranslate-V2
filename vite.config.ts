@@ -32,6 +32,12 @@ export default defineConfig({
     target: 'esnext',
     minify: 'esbuild',
   },
+  // PDF generation runs in a module Web Worker that lazy-loads pdf-lib via
+  // dynamic import() — that requires code-splitting, so the worker must be
+  // bundled as ESM (the default 'iife' format cannot split chunks).
+  worker: {
+    format: 'es',
+  },
   optimizeDeps: {
     entries: ['index.html'],
     include: [

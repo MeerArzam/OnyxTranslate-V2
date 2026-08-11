@@ -10,7 +10,7 @@
 import type { PDFPageData } from "./pdfParser";
 
 const DB_NAME = "onyx-translate-db";
-const DB_VERSION = 1;
+const DB_VERSION = 2; // v2: PDFs stored as raw ArrayBuffer/Blob (was Base64 in v1)
 
 // Object store names
 const STORE_PROJECT = "project";
@@ -24,8 +24,10 @@ export interface ProjectData {
   pageCount: number;
   wordCount: number;
   warnings: string[];
-  /** Base64-encoded ArrayBuffer of the original PDF */
-  pdfBase64: string;
+  /** Raw binary bytes of the original PDF (v2 storage, ~33% smaller than Base64) */
+  pdfBytes?: ArrayBuffer;
+  /** Legacy Base64 encoding (v1). Migrated to pdfBytes on load; kept on exports for file compatibility. */
+  pdfBase64?: string;
   /** Parsed page data (text items with positions) */
   pageData: PDFPageData[];
   /** Per-page plain text */
@@ -67,6 +69,13 @@ export interface LanguageProgress {
   pdfDownloaded: boolean;
 }
 
+export interface TranslationRecord {
+  progress: LanguageProgress;
+  chunks: TranslationChunk[];
+  /** Cached generated PDF for this language (v2) — makes ZIP downloads instant. */
+  pdfBlob?: Blob;
+}
+
 // ──────────────────────────────────────────────
 // Internal helpers
 // ──────────────────────────────────────────────
@@ -93,7 +102,14 @@ function openDB(): Promise<IDBDatabase> {
       }
     };
 
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      // Fire-and-forget migration for projects written by v1 (Base64 PDF).
+      migrateFromBase64(db).catch((e) =>
+        console.warn("v1->v2 migration skipped", e)
+      );
+      resolve(db);
+    };
     request.onerror = () => reject(request.error);
   });
 }
@@ -180,6 +196,30 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
   return bytes.buffer;
 }
 
+/**
+ * One-time migration for databases created by v1 (which stored the original
+ * PDF as a Base64 string). Converts to raw ArrayBuffer/Blob in place.
+ */
+async function migrateFromBase64(db: IDBDatabase): Promise<void> {
+  // Project: pdfBase64 -> pdfBytes
+  try {
+    const tx = db.transaction(STORE_PROJECT, "readwrite");
+    const store = tx.objectStore(STORE_PROJECT);
+    const proj = await new Promise<ProjectData | undefined>((resolve) => {
+      const r = store.get(PROJECT_KEY);
+      r.onsuccess = () => resolve(r.result as ProjectData | undefined);
+      r.onerror = () => resolve(undefined);
+    });
+    if (proj && proj.pdfBase64 && !proj.pdfBytes) {
+      proj.pdfBytes = base64ToArrayBuffer(proj.pdfBase64);
+      delete proj.pdfBase64;
+      store.put(proj, PROJECT_KEY);
+    }
+  } catch (e) {
+    console.warn("project migration skipped", e);
+  }
+}
+
 // ──────────────────────────────────────────────
 // Public API
 // ──────────────────────────────────────────────
@@ -255,25 +295,43 @@ export async function saveTerminologyBatch(
 
 /**
  * Save or update the project data (call after each parsing chunk).
+ * The original PDF is stored as raw binary (no Base64 overhead).
  */
-export async function saveProject(data: Omit<ProjectData, "pdfBase64"> & { arrayBuffer: ArrayBuffer }): Promise<void> {
+export async function saveProject(data: Omit<ProjectData, "pdfBytes" | "pdfBase64"> & { arrayBuffer: ArrayBuffer }): Promise<void> {
   const project: ProjectData = {
     ...data,
-    pdfBase64: arrayBufferToBase64(data.arrayBuffer),
+    pdfBytes: data.arrayBuffer,
   };
+  delete (project as { pdfBase64?: string }).pdfBase64;
   await dbPut(STORE_PROJECT, PROJECT_KEY, project);
 }
 
 /**
  * Get the stored project, or null if none exists.
+ * Handles v1 projects (Base64) by migrating them to raw binary on read.
  */
 export async function getProject(): Promise<(ProjectData & { arrayBuffer: ArrayBuffer }) | null> {
   const data = await dbGet<ProjectData>(STORE_PROJECT, PROJECT_KEY);
   if (!data) return null;
-  return {
-    ...data,
-    arrayBuffer: base64ToArrayBuffer(data.pdfBase64),
-  };
+
+  if (data.pdfBytes) {
+    return { ...data, arrayBuffer: data.pdfBytes };
+  }
+
+  // Legacy v1 data — migrate in place.
+  if (data.pdfBase64) {
+    const arrayBuffer = base64ToArrayBuffer(data.pdfBase64);
+    const migrated: ProjectData = { ...data, pdfBytes: arrayBuffer };
+    delete migrated.pdfBase64;
+    try {
+      await dbPut(STORE_PROJECT, PROJECT_KEY, migrated);
+    } catch {
+      // Non-critical: migration will retry next time.
+    }
+    return { ...migrated, arrayBuffer };
+  }
+
+  return { ...data, arrayBuffer: new ArrayBuffer(0) };
 }
 
 /**
@@ -312,9 +370,7 @@ export async function saveTranslationChunk(
 /**
  * Get all stored translation progress for all languages.
  */
-export async function getAllTranslations(): Promise<
-  Record<string, { progress: LanguageProgress; chunks: TranslationChunk[] }>
-> {
+export async function getAllTranslations(): Promise<Record<string, TranslationRecord>> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_TRANSLATIONS, "readonly");
@@ -322,7 +378,7 @@ export async function getAllTranslations(): Promise<
     const req = store.getAllKeys();
     req.onsuccess = () => {
       const keys = req.result as string[];
-      const result: Record<string, { progress: LanguageProgress; chunks: TranslationChunk[] }> = {};
+      const result: Record<string, TranslationRecord> = {};
 
       if (keys.length === 0) {
         db.close();
@@ -355,23 +411,45 @@ export async function getAllTranslations(): Promise<
 }
 
 /**
- * Mark a language's translation as PDF downloaded.
+ * Cache the generated PDF for a language so ZIP downloads never regenerate.
  */
-export async function markPdfDownloaded(langCode: string): Promise<void> {
+export async function saveTranslationPdf(
+  langCode: string,
+  pdfBlob: Blob
+): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_TRANSLATIONS, "readwrite");
     const store = tx.objectStore(STORE_TRANSLATIONS);
     const req = store.get(langCode);
     req.onsuccess = () => {
-      const data = req.result;
-      if (data?.progress) {
-        data.progress.pdfDownloaded = true;
+      const data = req.result as TranslationRecord | undefined;
+      if (data) {
+        data.pdfBlob = pdfBlob;
+        if (data.progress) data.progress.pdfDownloaded = true;
         store.put(data, langCode);
       }
     };
     tx.oncomplete = () => { db.close(); resolve(); };
     tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+}
+
+/**
+ * Get the cached generated PDF for a language, or null if not generated yet.
+ */
+export async function getTranslationPdf(
+  langCode: string
+): Promise<Blob | null> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_TRANSLATIONS, "readonly");
+    const store = tx.objectStore(STORE_TRANSLATIONS);
+    const req = store.get(langCode);
+    req.onsuccess = () =>
+      resolve((req.result as TranslationRecord | undefined)?.pdfBlob ?? null);
+    req.onerror = () => reject(req.error);
+    tx.oncomplete = () => db.close();
   });
 }
 
@@ -426,7 +504,7 @@ interface ExportedProgress {
   _exportedAt: string;
   _version: number;
   project: ProjectData | null;
-  translations: Record<string, { progress: LanguageProgress; chunks: TranslationChunk[] }>;
+  translations: Record<string, TranslationRecord>;
   terminology: TerminologyEntry[];
 }
 
@@ -454,11 +532,33 @@ export async function exportAllProgress(): Promise<ExportedProgress> {
     // Non-critical
   }
 
+  // Convert binary PDFs to Base64 so the JSON export stays serializable.
+  if (project) {
+    if (project.pdfBytes) {
+      project.pdfBase64 = arrayBufferToBase64(project.pdfBytes);
+      delete project.pdfBytes;
+    } else if (!project.pdfBase64) {
+      project.pdfBase64 = "";
+    }
+  }
+
+  // NOTE: cached PDF blobs are NOT included in exports — 20 translated PDFs
+  // (up to several hundred MB with embedded Unicode fonts) would blow up the
+  // JSON on low-end devices. Translated PDFs regenerate quickly through the
+  // pdf-lib worker, so the destination regenerates any missing PDF on demand.
+  const exportedTranslations: Record<string, TranslationRecord> = {};
+  for (const [langCode, rec] of Object.entries(translations)) {
+    exportedTranslations[langCode] = {
+      progress: rec.progress,
+      chunks: rec.chunks,
+    };
+  }
+
   return {
     _exportedAt: new Date().toISOString(),
-    _version: 1,
+    _version: 2,
     project,
-    translations,
+    translations: exportedTranslations,
     terminology,
   };
 }
@@ -472,14 +572,21 @@ export async function importAllProgress(data: ExportedProgress): Promise<void> {
     throw new Error("Invalid progress file format.");
   }
 
-  // Import project
+  // Import project (restore binary PDF from the exported Base64)
   if (data.project) {
-    await dbPut(STORE_PROJECT, PROJECT_KEY, data.project);
+    const proj = data.project;
+    if (proj.pdfBase64) {
+      proj.pdfBytes = base64ToArrayBuffer(proj.pdfBase64);
+      delete proj.pdfBase64;
+    }
+    await dbPut(STORE_PROJECT, PROJECT_KEY, proj);
   }
 
-  // Import translations
+  // Import translations (cached PDF blobs regenerate on demand)
   if (data.translations) {
     for (const [langCode, langData] of Object.entries(data.translations)) {
+      delete (langData as unknown as { pdfBlobBase64?: string }).pdfBlobBase64;
+      delete langData.pdfBlob;
       await dbPut(STORE_TRANSLATIONS, langCode, langData);
     }
   }

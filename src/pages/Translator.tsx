@@ -42,7 +42,6 @@ import {
 } from "@/lib/translator/pdfParser";
 import {
   generateTranslatedPDF,
-  extractPageTexts,
   type PDFGenerationProgress,
 } from "@/lib/translator/pdfGenerator";
 import {
@@ -50,6 +49,8 @@ import {
   getProject,
   deleteProject,
   saveTranslationChunk,
+  saveTranslationPdf,
+  getTranslationPdf,
   getAllTranslations,
   mergeChunkTexts,
   chunkPageTexts,
@@ -278,6 +279,7 @@ export default function Translator() {
             name: lang.name,
             nativeName: lang.nativeName,
             translatedText: data.progress.mergedText || mergeChunkTexts(data.chunks),
+            pdfBlob: data.pdfBlob || undefined,
           });
         }
       }
@@ -802,6 +804,14 @@ export default function Translator() {
 
       setCurrentPdfBlob(blob);
 
+      // Cache the generated PDF so "Download All ZIP" never regenerates it
+      // (and it survives page refresh / resume).
+      try {
+        await saveTranslationPdf(lang.code, blob);
+      } catch (e) {
+        console.warn("Failed to cache PDF in IndexedDB:", e);
+      }
+
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -874,15 +884,21 @@ export default function Translator() {
           completed.translatedText
         );
 
-        if (completed.pdfBlob) {
-          folder.file(`${folderName}_${langCode}.pdf`, completed.pdfBlob);
-        } else if (
+        // 1) Use the blob already in memory
+        // 2) Otherwise use the cached blob from IndexedDB (survives refresh)
+        // 3) Only as a last resort regenerate (worker makes this fast)
+        let pdfBlob: Blob | null | undefined = completed.pdfBlob;
+        if (!pdfBlob) {
+          pdfBlob = await getTranslationPdf(langCode).catch(() => null);
+        }
+        if (
+          !pdfBlob &&
           originalArrayBuffer &&
           pageData.length &&
           originalPageTexts.length
         ) {
           try {
-            const pdfBlob = await generateTranslatedPDF(
+            pdfBlob = await generateTranslatedPDF(
               originalArrayBuffer,
               pageData,
               originalPageTexts,
@@ -890,10 +906,12 @@ export default function Translator() {
               langCode,
               () => {}
             );
-            folder.file(`${folderName}_${langCode}.pdf`, pdfBlob);
           } catch {
             // PDF generation failed, include text only
           }
+        }
+        if (pdfBlob) {
+          folder.file(`${folderName}_${langCode}.pdf`, pdfBlob);
         }
       }
 

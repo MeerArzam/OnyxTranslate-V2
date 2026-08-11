@@ -84,14 +84,32 @@ export interface PDFJSModule {
 
 let pdfjsPromise: Promise<PDFJSModule> | null = null;
 
+/**
+ * Load the pdf.js worker as a blob URL.
+ *
+ * pdf.js creates its worker via `new Worker(workerSrc, { type: "module" })` and,
+ * if that fails, falls back to a "fake worker" that builds a blob module doing
+ * `import(workerSrc)`. A server-relative path like "/vendor/pdf.worker.min.mjs"
+ * fails in both cases (module resolution from a blob context). A blob: URL for
+ * the worker sidesteps the server entirely and works in both paths.
+ */
+async function loadWorkerBlobUrl(): Promise<string> {
+  const resp = await fetch(VENDOR_URLS.pdfjsWorker);
+  if (!resp.ok) {
+    throw new Error(`Failed to load pdf.js worker: ${resp.statusText}`);
+  }
+  return URL.createObjectURL(await resp.blob());
+}
+
 export async function getPDFJS(): Promise<PDFJSModule> {
   if (!pdfjsPromise) {
-    pdfjsPromise = loadVendorModule<PDFJSModule>(VENDOR_URLS.pdfjs).then((pdfjs) => {
-      // Point the worker at the local /vendor copy — no CDN dependency, and it
-      // matches the pdf.js version we vendored exactly.
-      pdfjs.GlobalWorkerOptions.workerSrc = VENDOR_URLS.pdfjsWorker;
+    pdfjsPromise = (async () => {
+      const pdfjs = await loadVendorModule<PDFJSModule>(VENDOR_URLS.pdfjs);
+      // Point the worker at a blob URL of the local /vendor copy — no CDN
+      // dependency, and it matches the pdf.js version we vendored exactly.
+      pdfjs.GlobalWorkerOptions.workerSrc = await loadWorkerBlobUrl();
       return pdfjs;
-    });
+    })();
   }
   return pdfjsPromise;
 }

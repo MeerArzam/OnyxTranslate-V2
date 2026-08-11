@@ -1,4 +1,4 @@
-import { VENDOR_URLS } from "./vendor";
+import { VENDOR_URLS, loadVendorModule } from "./vendor";
 
 // Polyfill Promise.withResolvers for browsers that don't support it yet (ES2024)
 if (typeof (Promise as unknown as Record<string, unknown>).withResolvers === "undefined") {
@@ -86,8 +86,7 @@ let pdfjsPromise: Promise<PDFJSModule> | null = null;
 
 export async function getPDFJS(): Promise<PDFJSModule> {
   if (!pdfjsPromise) {
-    pdfjsPromise = import(/* @vite-ignore */ VENDOR_URLS.pdfjs).then((mod) => {
-      const pdfjs = mod as unknown as PDFJSModule;
+    pdfjsPromise = loadVendorModule<PDFJSModule>(VENDOR_URLS.pdfjs).then((pdfjs) => {
       // Point the worker at the local /vendor copy — no CDN dependency, and it
       // matches the pdf.js version we vendored exactly.
       pdfjs.GlobalWorkerOptions.workerSrc = VENDOR_URLS.pdfjsWorker;

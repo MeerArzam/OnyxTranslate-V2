@@ -9,7 +9,7 @@
  * - Falls back to glossary simulation for languages without ONNX Opus-MT models.
  */
 
-import { VENDOR_URLS } from "./vendor";
+import { VENDOR_URLS, loadVendorModule } from "./vendor";
 
 // Minimal surface of transformers.js that we use. The full library (a ~900 KB
 // webpack ES-module bundle with onnxruntime baked in) is served from
@@ -33,9 +33,7 @@ async function getTransformers(): Promise<TransformersModule> {
     // The vendored file is an ES module (`export { … }` build), so it is loaded
     // with a URL import — exactly like pdf.js. It uses `self`/DOMMatrix, which
     // are always available in browsers (only missing in Node.js).
-    _transformersPromise = import(/* @vite-ignore */ VENDOR_URLS.transformers).then(
-      (mod) => mod as unknown as TransformersModule
-    );
+    _transformersPromise = loadVendorModule<TransformersModule>(VENDOR_URLS.transformers);
   }
   return _transformersPromise;
 }

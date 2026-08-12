@@ -20,6 +20,8 @@ import {
   Image,
   FileDown,
   CheckCheck,
+  Copy,
+  Check,
 } from "lucide-react";
 import {
   runNeuralTranslationPipeline,
@@ -129,6 +131,8 @@ export default function Translator() {
     total: number;
     phase: string;
   } | null>(null);
+  const [copiedPreview, setCopiedPreview] = useState(false);
+  const copyTimerRef = useRef<number | null>(null);
 
   // ─── PDF generation ───
   const [pdfProgress, setPdfProgress] = useState<PDFGenerationProgress | null>(null);
@@ -579,6 +583,7 @@ export default function Translator() {
   // ─── Cleanup model on unmount ───
   useEffect(() => {
     return () => {
+      if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
       releaseLanguageModel().catch(() => {});
     };
   }, []);
@@ -812,6 +817,30 @@ export default function Translator() {
     },
     [completedLanguages, isTranslating, translateCurrentLanguage]
   );
+
+  // ─── Copy current translation to clipboard ───
+
+  const handleCopyTranslation = useCallback(async () => {
+    if (!currentTranslation) return;
+    try {
+      await navigator.clipboard.writeText(currentTranslation);
+    } catch {
+      // Fallback for older browsers / non-secure contexts
+      const ta = document.createElement("textarea");
+      ta.value = currentTranslation;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    setCopiedPreview(true);
+    if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = window.setTimeout(() => {
+      setCopiedPreview(false);
+    }, 2000);
+  }, [currentTranslation]);
 
   // ─── PDF Generation ───
 
@@ -1571,7 +1600,27 @@ export default function Translator() {
                     {flowPhase === "all-complete" && "All Translations Complete"}
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5">                    {flowPhase === "translating" && currentLang && (
+                <div className="flex items-center gap-1.5">
+                  {currentTranslation && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-[10px] gap-1.5"
+                      onClick={handleCopyTranslation}
+                      title="Copy this translation to the clipboard"
+                    >
+                      {copiedPreview ? (
+                        <>
+                          <Check className="size-3 text-green-500" /> Copied
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="size-3" /> Copy
+                        </>
+                      )}
+                    </Button>
+                  )}
+                  {flowPhase === "translating" && currentLang && (
                     <Badge variant="secondary" className="text-[9px] animate-pulse">
                       <Loader2 className="size-2.5 mr-1 animate-spin" />
                       {isNeural ? "Neural MT + 18-Phase" : "18-Phase Pipeline"}

@@ -411,6 +411,15 @@ export async function getAllTranslations(): Promise<Record<string, TranslationRe
 }
 
 /**
+ * Delete all stored translation progress for a language.
+ * Used when the user retranslates: wipes the old chunks so a fresh
+ * translation starts from chunk 0 instead of resuming the old one.
+ */
+export async function deleteTranslation(langCode: string): Promise<void> {
+  await dbDelete(STORE_TRANSLATIONS, langCode);
+}
+
+/**
  * Cache the generated PDF for a language so ZIP downloads never regenerate.
  */
 export async function saveTranslationPdf(

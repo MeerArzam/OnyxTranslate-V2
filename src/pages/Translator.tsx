@@ -51,6 +51,7 @@ import {
   saveTranslationChunk,
   saveTranslationPdf,
   getTranslationPdf,
+  deleteTranslation,
   getAllTranslations,
   mergeChunkTexts,
   chunkPageTexts,
@@ -590,13 +591,15 @@ export default function Translator() {
   }, [sourceText, currentLanguageIndex]);
 
   const translateCurrentLanguage = useCallback(
-    async (langIndex: number) => {
+    async (langIndex: number, force = false) => {
       // Skip languages already completed in this session (e.g. restored after
       // a resume) so they are never re-translated or added twice to the list.
+      // With force=true (retranslate) the skip is bypassed on purpose.
       const completedCodes = new Set(completedLanguages.map((c) => c.code));
       while (
         langIndex < targetLanguages.length &&
-        completedCodes.has(targetLanguages[langIndex].code)
+        completedCodes.has(targetLanguages[langIndex].code) &&
+        !force
       ) {
         langIndex++;
       }
@@ -625,11 +628,17 @@ export default function Translator() {
         setIsNeural(neuralAvailable);
         setModelStatus(null);
 
+        // A forced retranslate wipes the old saved chunks + cached PDF first
+        // so the new run starts fresh from chunk 0.
+        if (force) {
+          await deleteTranslation(lang.code).catch(() => {});
+        }
+
         // Check if we already have saved translations for this language
         const allTranslations = await getAllTranslations();
         const saved = allTranslations[lang.code];
 
-        if (saved?.progress?.complete && saved.progress.mergedText) {
+        if (!force && saved?.progress?.complete && saved.progress.mergedText) {
           // Use saved translation
           setCurrentTranslation(saved.progress.mergedText);
           setTranslationProgress({
@@ -779,6 +788,30 @@ export default function Translator() {
       await translateCurrentLanguage(nextIndex);
     }
   }, [currentTranslation, currentLanguageIndex, currentPdfBlob, translateCurrentLanguage]);
+
+  // ─── Retranslate an already-completed language from the original source ───
+
+  const handleRetranslate = useCallback(
+    async (langCode: string) => {
+      const target = completedLanguages.find((c) => c.code === langCode);
+      if (!target || isTranslating) return;
+
+      // Drop it from the completed list so it can be re-added on Continue
+      setCompletedLanguages((prev) =>
+        prev.filter((c) => c.code !== langCode)
+      );
+
+      // Clear the current-view state so the old result disappears
+      setCurrentTranslation(null);
+      setCurrentPdfBlob(null);
+      setPdfProgress(null);
+      setTranslationProgress(null);
+      setTranslationError(null);
+
+      await translateCurrentLanguage(target.index, true);
+    },
+    [completedLanguages, isTranslating, translateCurrentLanguage]
+  );
 
   // ─── PDF Generation ───
 
@@ -1388,6 +1421,17 @@ export default function Translator() {
                             <Badge variant="outline" className="text-[8px] shrink-0">
                               {cl.pdfBlob ? "PDF" : "Text"}
                             </Badge>
+                            <button
+                              onClick={() => handleRetranslate(cl.code)}
+                              disabled={
+                                isTranslating || flowPhase === "generating-pdf"
+                              }
+                              className="shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-muted-foreground transition-colors hover:bg-green-500/10 hover:text-green-600 disabled:pointer-events-none disabled:opacity-40"
+                              title={`Retranslate ${cl.name} from the original source`}
+                            >
+                              <RotateCcw className="size-2.5" />
+                              Retranslate
+                            </button>
                           </div>
                         ))}
                       </div>

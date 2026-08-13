@@ -822,12 +822,16 @@ export default function Translator() {
 
   const handleCopyTranslation = useCallback(async () => {
     if (!currentTranslation) return;
+    // Clipboard has size limits; copy only the first 10,000 words.
+    const words = currentTranslation.trim().split(/\s+/);
+    const copyText =
+      words.length > 10000 ? words.slice(0, 10000).join(" ") : currentTranslation;
     try {
-      await navigator.clipboard.writeText(currentTranslation);
+      await navigator.clipboard.writeText(copyText);
     } catch {
       // Fallback for older browsers / non-secure contexts
       const ta = document.createElement("textarea");
-      ta.value = currentTranslation;
+      ta.value = copyText;
       ta.style.position = "fixed";
       ta.style.opacity = "0";
       document.body.appendChild(ta);
@@ -1607,7 +1611,7 @@ export default function Translator() {
                       size="sm"
                       className="h-7 px-2 text-[10px] gap-1.5"
                       onClick={handleCopyTranslation}
-                      title="Copy this translation to the clipboard"
+                      title="Copy first 10,000 words of this translation to the clipboard"
                     >
                       {copiedPreview ? (
                         <>

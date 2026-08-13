@@ -1,0 +1,51 @@
+{
+  "code": "sw",
+  "name": "Swahili",
+  "nativeName": "Kiswahili",
+  "script": "Latin",
+  "rtl": false,
+  "dialogue": { "open": "“", "close": "”", "note": "Use “ ” for dialogue; kistari — for interruptions." },
+  "formality": {
+    "system": "wewe/nyinyi",
+    "informal": "wewe",
+    "formal": "nyinyi / heshima",
+    "note": "Intimate pairs use wewe; elders and commanders receive respectful address."
+  },
+  "profanity": {
+    "fuck": "jamani",
+    "shit": "mavi",
+    "bastard": "mzuka",
+    "damn": "laana",
+    "hell": "kuzimu"
+  },
+  "ranks": {
+    "Wingleader": "Kamanda wa Kundi",
+    "Squad Leader": "Kiongozi wa Kikosi",
+    "Cadet": "Kadeti",
+    "General": "Jenerali",
+    "Scribe": "Karithi",
+    "Rider": "Mpanda Farasi"
+  },
+  "magicSystem": "Muhuri (Signet) hierarchy: mpanda farasi → muhuri → njia (conduit) → ulinzi (ward). Rune inabaki 'rune'; Mtakatifu kwa Empyrean; wenin kwa Venin.",
+  "fanNames": {},
+  "blurb": "Violet anaamka Aretia akiwa amechanganyikiwa, akiwa na pete na ujumbe wa Xaden: «Usinitafute.» Anatambua kuwa ameolewa, lakini mumewe amepotea gizani. Ulinzi unapobomoka, Violet lazima achague: utii kwa himaya, au ukweli ambao watu wanakufa kuulinda.",
+  "styleSheet": {
+    "register": "storytelling-vivid",
+    "sentenceLength": "flowing",
+    "gender": "gender inferred from context (noun-class system)",
+    "archaic": "literary Swahili with oral storytelling rhythm",
+    "numerals": "Western Arabic numerals"
+  },
+  "names": {
+    "Violet": "Violet",
+    "Xaden": "Xaden",
+    "Tairn": "Tairn",
+    "Andarna": "Andarna",
+    "Sgaeyl": "Sgaeyl",
+    "Navarre": "Navarre",
+    "Tyrrendor": "Tyrrendor",
+    "Aretia": "Aretia",
+    "Poromiel": "Poromiel",
+    "Deverelli": "Deverelli"
+  }
+}

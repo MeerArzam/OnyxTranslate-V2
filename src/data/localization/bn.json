@@ -1,0 +1,51 @@
+{
+  "code": "bn",
+  "name": "Bangla",
+  "nativeName": "বাংলা",
+  "script": "Bengali",
+  "rtl": false,
+  "dialogue": { "open": "“", "close": "”", "note": "Use “ ” for dialogue; ড্যাশ — for interruptions." },
+  "formality": {
+    "system": "তুই/তুমি/আপনি",
+    "informal": "তুমি / তুই",
+    "formal": "আপনি",
+    "note": "Violet↔Xaden use তুমি; General Aetos / King Tauri addressed with আপনি."
+  },
+  "profanity": {
+    "fuck": "লানত",
+    "shit": "বাজে কথা",
+    "bastard": "বদমাশ",
+    "damn": "ধিক্কার",
+    "hell": "নরক"
+  },
+  "ranks": {
+    "Wingleader": "উইং কমান্ডার",
+    "Squad Leader": "স্কোয়াড নেতা",
+    "Cadet": "ক্যাডেট",
+    "General": "জেনারেল",
+    "Scribe": "লিপিকার",
+    "Rider": "রাইডার"
+  },
+  "magicSystem": "সিল (সিগনেট) এর স্তরক্রম: রাইডার → সিল → চ্যানেল (কন্ডুইট) → প্রহরী (ওয়ার্ড)। রুন 'রুন' ই থাকবে, সাধারণ জাদু বানানো যাবে না। স্বর্গীয় for Empyrean; ভেনিন for Venin.",
+  "fanNames": {},
+  "blurb": "ভায়োলেট আরেটিয়ায় বিভ্রান্ত হয়ে জেগে ওঠে, হাতে আংটি আর জেইডেনের একটি চিরকুট: \"আমাকে খুঁজো না।\" সে বুঝতে পারে সে বিবাহিত, কিন্তু তার স্বামী অন্ধকারে হারিয়ে গেছে। প্রহরী ভেঙে পড়ার মুখে, ভায়োলেটকে সাম্রাজ্য যে মিথ্যার ওপর দাঁড়িয়ে আছে তার মুখোমুখি হতে হবে।",
+  "styleSheet": {
+    "register": "literary-vivid",
+    "sentenceLength": "balanced",
+    "gender": "grammatical gender honored",
+    "archaic": "modern literary Bangla with shadhubhasha flavor in epic scenes",
+    "numerals": "Bengali numerals optional, Western preferred"
+  },
+  "names": {
+    "Violet": "ভায়োলেট",
+    "Xaden": "জেইডেন",
+    "Tairn": "তৈর্ন",
+    "Andarna": "আন্দার্না",
+    "Sgaeyl": "স্কেইল",
+    "Navarre": "নাভার",
+    "Tyrrendor": "তাইরেন্ডর",
+    "Aretia": "আরেটিয়া",
+    "Poromiel": "পোরোমিয়েল",
+    "Deverelli": "দেভেরেল্লি"
+  }
+}

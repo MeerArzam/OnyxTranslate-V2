@@ -1175,15 +1175,15 @@
     }
   },
   "properNouns": {
-    "Violet": ["Violet", "Violet", "Violet", "ヴィオレット", "Violet", "वायलेट", "Violet", "薇奥莱特", "Вайолет", "바이올렛", "Violet", "Violet", "Violet", "Violet", "Violet", "Violet", "Violeta", "Violet", "Violet", "ভায়োলেট", "Violeta"],
-    "Xaden": ["Xaden", "Xaden", "Xaden", "クセイデン", "Xaden", "ज़ैडन", "Xaden", "扎登", "Зейден", "재이든", "Xaden", "Xaden", "Xaden", "Xaden", "Xaden", "Xaden", "Xaden", "Xaden", "Xaden", "জেইডেন", "Xaden"],
-    "Tairn": ["Tairn", "Tairn", "Tairn", "テアーン", "Tairn", "तैर्न", "Tairn", "泰恩", "Тейрн", "테어른", "Tairn", "Tairn", "Tairn", "Tairn", "Tairn", "Tairn", "Tairn", "Tairn", "Tairn", "তৈর্ন", "Tairn"],
-    "Andarna": ["Andarna", "Andarna", "Andarna", "アンダルナ", "Andarna", "अंदार्ना", "Andarna", "安达娜", "Андарна", "안다르나", "Andarna", "Andarna", "Andarna", "Andarna", "Andarna", "Andarna", "Andarna", "Andarna", "Andarna", "আন্দার্না", "Andarna"],
-    "Sgaeyl": ["Sgaeyl", "Sgaeyl", "Sgaeyl", "スゲイル", "Sgaeyl", "स्केल", "Sgaeyl", "斯盖尔", "Сгейл", "스게일", "Sgaeyl", "Sgaeyl", "Sgaeyl", "Sgaeyl", "Sgaeyl", "Sgaeyl", "Sgaeyl", "Sgaeyl", "Sgaeyl", "স্কেইল", "Sgaeyl"],
-    "Navarre": ["Navarre", "Navarre", "Navarre", "ナヴァール", "Navarre", "नवार", "Navarre", "纳瓦尔", "Наварр", "나바르", "Navarre", "Navarre", "Navarre", "Navarre", "Navarre", "Navarre", "Navarra", "Navarre", "Navarre", "নাভার", "Navarra"],
-    "Tyrrendor": ["Tyrrendor", "Tyrrendor", "Tyrrendor", "ティレンドール", "Tyrrendor", "तायरेंडोर", "Tyrrendor", "泰伦多尔", "Тиррендор", "티렌도르", "Tyrrendor", "Tyrrendor", "Tyrrendor", "Tyrrendor", "Tyrrendor", "Tyrrendor", "Tirrendor", "Tyrrendor", "Tyrrendor", "তাইরেন্ডর", "Tyrrendor"],
-    "Aretia": ["Aretia", "Aretia", "Aretia", "アレティア", "Aretia", "अरेटिया", "Aretia", "阿蕾西亚", "Аретия", "아레티아", "Aretia", "Aretia", "Aretia", "Aretia", "Aretia", "Aretia", "Aretia", "Aretia", "Aretia", "আরেটিয়া", "Aretia"],
-    "Poromiel": ["Poromiel", "Poromiel", "Poromiel", "ポロミエル", "Poromiel", "पोरोमिएल", "Poromiel", "波罗米尔", "Поромиэль", "포로미엘", "Poromiel", "Poromiel", "Poromiel", "Poromiel", "Poromiel", "Poromiel", "Poromiel", "Poromiel", "Poromiel", "পোরোমিয়েল", "Poromiel"],
-    "Deverelli": ["Deverelli", "Deverelli", "Deverelli", "デヴェレリ", "Deverelli", "देवेरेली", "Deverelli", "德维雷利", "Деверелли", "데베렐리", "Deverelli", "Deverelli", "Deverelli", "Deverelli", "Deverelli", "Deverelli", "Deverelli", "Deverelli", "Deverelli", "দেভেরেল্লি", "Deverelli"]
+    "Violet": ["Violet", "فايوليت", "وایلیٹ", "Violet", "ヴァイオレット", "Violet", "वायलेट", "Violet", "维奥莱特", "Вайолет", "바이올렛", "Violet", "وائلٹ", "Violet", "Violet", "Violet", "Violeta", "Violet", "वायलेट", "ভায়োলেট", "Violeta"],
+    "Xaden": ["Xaden", "زيدن", "زیدن", "Xaden", "ゼイデン", "Xaden", "ज़ैडेन", "Xaden", "谢顿", "Ксаден", "제이든", "Xaden", "زیرن", "Xaden", "Xaden", "Xaden", "Xaden", "Xaden", "ज़ैडेन", "জেইডেন", "Xaden"],
+    "Tairn": ["Tairn", "تيرن", "تیرن", "Tairn", "テアーン", "Tairn", "तैर्न", "Tairn", "泰恩", "Тейрн", "테어른", "Tairn", "تیرن", "Tairn", "Tairn", "Tairn", "Tairn", "Tairn", "तैर्न", "তৈর্ন", "Tairn"],
+    "Andarna": ["Andarna", "أندارنا", "اندرنا", "Andarna", "アンダルナ", "Andarna", "अंदार्ना", "Andarna", "安达娜", "Андарна", "안다르나", "Andarna", "اندرنا", "Andarna", "Andarna", "Andarna", "Andarna", "Andarna", "अन्दार्ना", "আন্দার্না", "Andarna"],
+    "Sgaeyl": ["Sgaeyl", "سغييل", "سگائل", "Sgaeyl", "スゲイル", "Sgaeyl", "स्केल", "Sgaeyl", "斯盖尔", "Сгейл", "스게일", "Sgaeyl", "سگل", "Sgaeyl", "Sgaeyl", "Sgaeyl", "Sgaeyl", "Sgaeyl", "स्गेयल", "স্কেইল", "Sgaeyl"],
+    "Navarre": ["Navarre", "نافار", "ناوار", "Navarre", "ナヴァール", "Navarre", "नवार", "Navarre", "纳瓦尔", "Наварр", "나바르", "Navarre", "نوار", "Navarre", "Navarre", "Navarre", "Navarra", "Navarre", "नावार", "নাভার", "Navarra"],
+    "Tyrrendor": ["Tyrrendor", "تيريندور", "ٹیرینڈور", "Tyrrendor", "ティレンドール", "Tyrrendor", "तायरेंडोर", "Tyrrendor", "泰伦多尔", "Тиррендор", "티렌도르", "Tyrrendor", "ٹائرینڈر", "Tyrrendor", "Tyrrendor", "Tyrrendor", "Tirrendor", "Tyrrendor", "ताइरेन्डोर", "তাইরেন্ডর", "Tyrrendor"],
+    "Aretia": ["Aretia", "آريتيا", "آریٹیا", "Aretia", "アレティア", "Aretia", "एरेटिया", "Aretia", "阿雷蒂亚", "Аретии", "아레티아", "Aretia", "ایرٹیا", "Aretia", "Aretia", "Aretia", "Aretia", "Aretia", "एरेटिया", "আরেটিয়া", "Aretia"],
+    "Poromiel": ["Poromiel", "بورومييل", "پورومیئل", "Poromiel", "ポロミエル", "Poromiel", "पोरोमिएल", "Poromiel", "波罗米尔", "Поромиэль", "포로미엘", "Poromiel", "پورومیال", "Poromiel", "Poromiel", "Poromiel", "Poromiel", "Poromiel", "पोरोमिएल", "পোরোমিয়েল", "Poromiel"],
+    "Deverelli": ["Deverelli", "ديفيريلي", "دیورلی", "Deverelli", "デヴェレリ", "Deverelli", "देवेरेली", "Deverelli", "德维雷利", "Деверелли", "데베렐리", "Deverelli", "دیوریلی", "Deverelli", "Deverelli", "Deverelli", "Deverelli", "Deverelli", "देवेरेल्ली", "দেভেরেল্লি", "Deverelli"]
   }
 }

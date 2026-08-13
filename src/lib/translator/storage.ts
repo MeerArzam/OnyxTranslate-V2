@@ -8,6 +8,7 @@
  */
 
 import type { PDFPageData } from "./pdfParser";
+import type { QAReport } from "./qa";
 
 const DB_NAME = "onyx-translate-db";
 const DB_VERSION = 2; // v2: PDFs stored as raw ArrayBuffer/Blob (was Base64 in v1)
@@ -74,6 +75,8 @@ export interface TranslationRecord {
   chunks: TranslationChunk[];
   /** Cached generated PDF for this language (v2) — makes ZIP downloads instant. */
   pdfBlob?: Blob;
+  /** Per-language QA report from the 23-phase code checks (Part D.3). */
+  qaReport?: QAReport;
 }
 
 // ──────────────────────────────────────────────
@@ -420,6 +423,31 @@ export async function deleteTranslation(langCode: string): Promise<void> {
 }
 
 /**
+ * Cache the QA report for a language (updated after every chunk so it
+ * survives refresh even mid-translation).
+ */
+export async function saveQAReport(
+  langCode: string,
+  qaReport: QAReport
+): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_TRANSLATIONS, "readwrite");
+    const store = tx.objectStore(STORE_TRANSLATIONS);
+    const req = store.get(langCode);
+    req.onsuccess = () => {
+      const data = req.result as TranslationRecord | undefined;
+      if (data) {
+        data.qaReport = qaReport;
+        store.put(data, langCode);
+      }
+    };
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+}
+
+/**
  * Cache the generated PDF for a language so ZIP downloads never regenerate.
  */
 export async function saveTranslationPdf(
@@ -560,6 +588,7 @@ export async function exportAllProgress(): Promise<ExportedProgress> {
     exportedTranslations[langCode] = {
       progress: rec.progress,
       chunks: rec.chunks,
+      qaReport: rec.qaReport,
     };
   }
 

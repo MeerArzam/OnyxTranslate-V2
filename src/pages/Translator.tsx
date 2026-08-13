@@ -24,14 +24,13 @@ import {
   Check,
 } from "lucide-react";
 import {
-  runNeuralTranslationPipeline,
-  runTranslationPipeline,
+  runLocalizedTranslationPipeline,
   prepareLanguageModel,
   releaseLanguageModel,
-  hasNeuralModel,
   generateSampleText,
-  type TranslationResult,
+  type TranslationMode,
 } from "@/lib/translator/engine";
+import type { QAReport } from "@/lib/translator/qa";
 import type { NeuralProgressCallback } from "@/lib/translator/neural";
 import {
   parsePDFHeader,
@@ -52,6 +51,7 @@ import {
   deleteProject,
   saveTranslationChunk,
   saveTranslationPdf,
+  saveQAReport,
   getTranslationPdf,
   deleteTranslation,
   getAllTranslations,
@@ -97,6 +97,8 @@ interface CompletedLanguage {
   nativeName: string;
   translatedText: string;
   pdfBlob?: Blob;
+  qaReport?: QAReport;
+  mode?: TranslationMode;
 }
 
 export default function Translator() {
@@ -141,6 +143,10 @@ export default function Translator() {
   // ─── Neural model state ───
   const [modelStatus, setModelStatus] = useState<string | null>(null);
   const [isNeural, setIsNeural] = useState(false);
+
+  // ─── 18+5-phase QA state ───
+  const [currentQaReport, setCurrentQaReport] = useState<QAReport | null>(null);
+  const [translationMode, setTranslationMode] = useState<TranslationMode | null>(null);
 
   // ─── ZIP ───
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
@@ -578,6 +584,8 @@ export default function Translator() {
     setPdfProgress(null);
     setCurrentPdfBlob(null);
     setTranslationProgress(null);
+    setCurrentQaReport(null);
+    setTranslationMode(null);
   }, []);
 
   // ─── Cleanup model on unmount ───
@@ -646,6 +654,8 @@ export default function Translator() {
         if (!force && saved?.progress?.complete && saved.progress.mergedText) {
           // Use saved translation
           setCurrentTranslation(saved.progress.mergedText);
+          setCurrentQaReport(saved.qaReport ?? null);
+          setTranslationMode(saved.qaReport ? "vly" : null);
           setTranslationProgress({
             current: saved.progress.totalChunks,
             total: saved.progress.totalChunks,
@@ -686,28 +696,19 @@ export default function Translator() {
               .slice(range.pageStart, range.pageEnd + 1)
               .join("\n\n");
 
-            // Use neural pipeline if model is available, otherwise glossary fallback
-            let result: TranslationResult;
-            if (neuralAvailable) {
-              result = await runNeuralTranslationPipeline(
-                {
-                  sourceText: chunkText,
-                  targetLanguage: lang.code,
-                  marketContext: "standard",
-                  chapterNumber: 1,
-                },
-                (phase, msg) => {
-                  setTranslationProgress((prev) => prev ? { ...prev, phase: msg } : null);
-                }
-              );
-            } else {
-              result = await runTranslationPipeline({
+            // Primary engine: VLY AI (18+5-phase prompt) with neural MT and
+            // Glossary Mode as automatic fallbacks. QA runs after every chunk.
+            const result = await runLocalizedTranslationPipeline(
+              {
                 sourceText: chunkText,
                 targetLanguage: lang.code,
                 marketContext: "standard",
                 chapterNumber: 1,
-              });
-            }
+              },
+              (phase, msg) => {
+                setTranslationProgress((prev) => prev ? { ...prev, phase: msg } : null);
+              }
+            );
 
             const chunk: TranslationChunk = {
               langCode: lang.code,
@@ -733,6 +734,13 @@ export default function Translator() {
               merged,
               ci === totalChunks - 1
             );
+
+            // Cache the latest QA report so refresh never loses it
+            if (result.qaReport) {
+              setCurrentQaReport(result.qaReport);
+              setTranslationMode(result.mode ?? (neuralAvailable ? "neural" : "glossary"));
+              await saveQAReport(lang.code, result.qaReport).catch(() => {});
+            }
 
             setTranslationProgress({
               current: ci + 1,
@@ -776,6 +784,8 @@ export default function Translator() {
           nativeName: lang.nativeName,
           translatedText: currentTranslation,
           pdfBlob: currentPdfBlob || undefined,
+          qaReport: currentQaReport || undefined,
+          mode: translationMode || undefined,
         },
       ]);
     }
@@ -784,6 +794,8 @@ export default function Translator() {
     setCurrentPdfBlob(null);
     setPdfProgress(null);
     setTranslationProgress(null);
+    setCurrentQaReport(null);
+    setTranslationMode(null);
 
     const nextIndex = currentLanguageIndex + 1;
     if (nextIndex >= targetLanguages.length) {
@@ -792,7 +804,7 @@ export default function Translator() {
     } else {
       await translateCurrentLanguage(nextIndex);
     }
-  }, [currentTranslation, currentLanguageIndex, currentPdfBlob, translateCurrentLanguage]);
+  }, [currentTranslation, currentLanguageIndex, currentPdfBlob, currentQaReport, translationMode, translateCurrentLanguage]);
 
   // ─── Retranslate an already-completed language from the original source ───
 
@@ -812,6 +824,8 @@ export default function Translator() {
       setPdfProgress(null);
       setTranslationProgress(null);
       setTranslationError(null);
+      setCurrentQaReport(null);
+      setTranslationMode(null);
 
       await translateCurrentLanguage(target.index, true);
     },
@@ -1451,6 +1465,21 @@ export default function Translator() {
                                 {cl.nativeName}
                               </span>
                             </span>
+                            {cl.qaReport && (
+                              <Badge
+                                variant="outline"
+                                className={`text-[8px] shrink-0 ${
+                                  cl.qaReport.overall === "pass"
+                                    ? "text-green-600 border-green-500/30"
+                                    : cl.qaReport.overall === "warn"
+                                      ? "text-amber-600 border-amber-500/30"
+                                      : "text-red-600 border-red-500/30"
+                                }`}
+                                title={`QA ${cl.qaReport.score}/100 — ${cl.qaReport.checks.filter((c) => c.status === "pass").length} phases pass`}
+                              >
+                                QA {cl.qaReport.score}
+                              </Badge>
+                            )}
                             <Badge variant="outline" className="text-[8px] shrink-0">
                               {cl.pdfBlob ? "PDF" : "Text"}
                             </Badge>
@@ -1470,6 +1499,71 @@ export default function Translator() {
                       </div>
                     </ScrollArea>
                   )}
+
+                  {flowPhase === "translation-done" &&
+                    currentQaReport &&
+                    currentLang &&
+                    !isTranslating && (
+                      <div className="rounded-lg border border-border/40 bg-muted/20 p-2 space-y-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <CheckCircle2 className="size-3 text-green-500 shrink-0" />
+                          <span className="text-[10px] font-semibold">
+                            18-Phase QA
+                          </span>
+                          <span
+                            className={`text-[10px] font-mono ml-auto ${
+                              currentQaReport.overall === "pass"
+                                ? "text-green-600"
+                                : currentQaReport.overall === "warn"
+                                  ? "text-amber-600"
+                                  : "text-red-600"
+                            }`}
+                          >
+                            {currentQaReport.score}/100
+                          </span>
+                          {translationMode && (
+                            <Badge variant="outline" className="text-[8px] w-full">
+                              {translationMode === "vly"
+                                ? "VLY AI · 18+5 phases"
+                                : translationMode === "neural"
+                                  ? "Neural MT + phases"
+                                  : "Glossary Mode"}
+                            </Badge>
+                          )}
+                        </div>
+                        <ScrollArea className="max-h-[130px]">
+                          <div className="space-y-0.5">
+                            {currentQaReport.checks
+                              .filter((c) => c.status !== "pass")
+                              .map((c) => (
+                                <div
+                                  key={c.label}
+                                  className="flex items-start gap-1.5 text-[9px] leading-snug"
+                                >
+                                  <span
+                                    className={`shrink-0 font-semibold ${
+                                      c.status === "fail"
+                                        ? "text-red-500"
+                                        : "text-amber-500"
+                                    }`}
+                                  >
+                                    {c.label}{" "}
+                                    {c.status === "fail" ? "✗" : "⚠️"}
+                                  </span>
+                                  <span className="text-muted-foreground">
+                                    {c.detail}
+                                  </span>
+                                </div>
+                              ))}
+                            {currentQaReport.checks.every((c) => c.status === "pass") && (
+                              <p className="text-[9px] text-green-600">
+                                All phases pass ✓
+                              </p>
+                            )}
+                          </div>
+                        </ScrollArea>
+                      </div>
+                    )}
 
                   <div className="space-y-1.5 pt-1">
                     {flowPhase === "translation-done" &&

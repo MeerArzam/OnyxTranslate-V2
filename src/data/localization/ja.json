@@ -1,0 +1,51 @@
+{
+  "code": "ja",
+  "name": "Japanese",
+  "nativeName": "日本語",
+  "script": "Japanese",
+  "rtl": false,
+  "dialogue": { "open": "「", "close": "」", "note": "Use 「」 for dialogue; 『』 for dragon telepathy; 一 — for interruptions." },
+  "formality": {
+    "system": "keigo (丁寧語/タメ口)",
+    "informal": "タメ口 / お前・君",
+    "formal": "敬語 (です・ます, ございます)",
+    "note": "Violet↔Xaden use intimate tamede-go; General Aetos / King Tauri receive keigo. Drop formality in emotional-breaking scenes."
+  },
+  "profanity": {
+    "fuck": "くそ",
+    "shit": "ちくしょう",
+    "bastard": "ろくでなし",
+    "damn": "しまった",
+    "hell": "地獄"
+  },
+  "ranks": {
+    "Wingleader": "翼長",
+    "Squad Leader": "分隊長",
+    "Cadet": "士官候補生",
+    "General": "将軍",
+    "Scribe": "書記",
+    "Rider": "ライダー"
+  },
+  "magicSystem": "印（シグネット）の階層：ライダー → 印 → 導管（コンジット） → 結界（ウォード）。ルーンは「ルーン」のまま、汎用の呪文にしない。天界 for Empyrean; ヴェニン for Venin.",
+  "fanNames": { "Violet": "ヴァイオレット", "Xaden": "ゼイデン" },
+  "blurb": "ヴァイオレットは混乱しながらアレティアで目を覚ます。指には指輪があり、ゼイデンからのメモが残されていた。「私を探さないで」。彼女は自分が結婚していること、しかし夫が闇に飲み込まれたことを理解する。運命に結ばれた二人——彼女は闇に消えた夫を取り戻すため、帝国の嘘と向き合う。",
+  "styleSheet": {
+    "register": "light-novel literary",
+    "sentenceLength": "short-medium",
+    "gender": "speaker gender via first-person pronouns (私/俺/あたし)",
+    "archaic": "modern Japanese, subtle literary tone",
+    "numerals": "Western Arabic numerals"
+  },
+  "names": {
+    "Violet": "ヴァイオレット",
+    "Xaden": "ゼイデン",
+    "Tairn": "テアーン",
+    "Andarna": "アンダルナ",
+    "Sgaeyl": "スゲイル",
+    "Navarre": "ナヴァール",
+    "Tyrrendor": "ティレンドール",
+    "Aretia": "アレティア",
+    "Poromiel": "ポロミエル",
+    "Deverelli": "デヴェレリ"
+  }
+}

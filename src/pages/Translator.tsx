@@ -4,6 +4,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Languages,
   Loader2,
   FileUp,
@@ -147,6 +154,11 @@ export default function Translator() {
   // ─── 18+5-phase QA state ───
   const [currentQaReport, setCurrentQaReport] = useState<QAReport | null>(null);
   const [translationMode, setTranslationMode] = useState<TranslationMode | null>(null);
+
+  // ─── Target market context (P6/P7/P13/P14 sensitivity filters) ───
+  const [marketContext, setMarketContext] = useState<
+    "standard" | "high-censorship" | "romance-focused" | "conservative"
+  >("standard");
 
   // ─── ZIP ───
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
@@ -702,7 +714,7 @@ export default function Translator() {
               {
                 sourceText: chunkText,
                 targetLanguage: lang.code,
-                marketContext: "standard",
+                marketContext,
                 chapterNumber: 1,
               },
               (phase, msg) => {
@@ -768,7 +780,7 @@ export default function Translator() {
         setModelStatus(null);
       }
     },
-    [sourceText, originalPageTexts, completedLanguages]
+    [sourceText, originalPageTexts, completedLanguages, marketContext]
   );
 
   const handleContinue = useCallback(async () => {
@@ -1353,14 +1365,57 @@ export default function Translator() {
                 </div>
 
                 {sourceText.trim() && flowPhase === "idle" && (
-                  <Button
-                    onClick={startTranslation}
-                    className="w-full h-9"
-                    size="default"
-                  >
-                    <Globe className="size-3.5 mr-2" />
-                    Begin Translation Journey
-                  </Button>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground shrink-0">
+                        Target Market
+                      </span>
+                      <Select
+                        value={marketContext}
+                        onValueChange={(v) =>
+                          setMarketContext(
+                            v as "standard" | "high-censorship" | "romance-focused" | "conservative"
+                          )
+                        }
+                      >
+                        <SelectTrigger className="w-full h-8 text-xs">
+                          <SelectValue placeholder="Market context" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="standard">
+                            Standard — global literary fantasy
+                          </SelectItem>
+                          <SelectItem value="high-censorship">
+                            High Censorship — Turkey / Arabic markets
+                          </SelectItem>
+                          <SelectItem value="romance-focused">
+                            Romance Focused — Korea / Japan
+                          </SelectItem>
+                          <SelectItem value="conservative">
+                            Conservative — strict cultural norms
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <p className="text-[9px] text-muted-foreground leading-relaxed">
+                      {marketContext === "standard" &&
+                        "Publish-grade localization: profanity mapped, intimacy handled per language norms."}
+                      {marketContext === "high-censorship" &&
+                        "P6/P7/P13/P14 tightened: intimacy strictly implied, profanity euphemized, political/religious content adapted."}
+                      {marketContext === "romance-focused" &&
+                        "P13 tuned for fated-pair chemistry with cultural subtlety (Korea / Japan norms)."}
+                      {marketContext === "conservative" &&
+                        "Full sensitivity pass: profanity, intimacy, political, religious and sensitivity filters applied."}
+                    </p>
+                    <Button
+                      onClick={startTranslation}
+                      className="w-full h-9"
+                      size="default"
+                    >
+                      <Globe className="size-3.5 mr-2" />
+                      Begin Translation Journey
+                    </Button>
+                  </div>
                 )}
               </div>
             </div>

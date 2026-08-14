@@ -67,7 +67,16 @@ function countOccurrences(haystack: string, needle: string): number {
 }
 
 function wordCount(text: string): number {
-  return text.split(/\s+/).filter(Boolean).length;
+  // Space-delimited scripts: count whitespace-separated tokens.
+  const spaceWords = text.split(/\s+/).filter(Boolean).length;
+  // CJK / Hangul scripts have no word separators, so a whole sentence would
+  // otherwise count as a single "word" and wreck the P17 length heuristic.
+  // Estimate ~2.5 script characters per English-word equivalent so the ratio
+  // compares like-for-like with the Latin source.
+  const cjkChars =
+    text.match(/[\u3000-\u303F\u3040-\u30FF\u3400-\u9FFF\uF900-\uFAFF\uFF66-\uFF9F\uAC00-\uD7AF]/g)
+      ?.length ?? 0;
+  return Math.max(spaceWords, Math.round(cjkChars / 2.5));
 }
 
 /** Every standalone Latin word in a text. */
@@ -366,7 +375,7 @@ function checkLengthHeuristic(ctx: CheckContext): PhaseCheck {
   let expectedMax = 1.6;
   const cfg = getLocalizationConfig(ctx.langCode);
   if (cfg) {
-    if (["zh", "ja", "ko"].includes(cfg.script)) {
+    if (["zh", "ja", "ko", "Chinese", "Japanese", "Hangul"].includes(cfg.script)) {
       expectedMin = 0.5;
       expectedMax = 1.2;
     } else if (["Arabic", "Cyrillic", "Devanagari", "Bengali"].includes(cfg.script)) {

@@ -29,6 +29,8 @@ import {
   CheckCheck,
   Copy,
   Check,
+  FlaskConical,
+  ListChecks,
 } from "lucide-react";
 import {
   runLocalizedTranslationPipeline,
@@ -39,6 +41,10 @@ import {
 } from "@/lib/translator/engine";
 import type { QAReport } from "@/lib/translator/qa";
 import type { NeuralProgressCallback } from "@/lib/translator/neural";
+import {
+  runBaselineTests,
+  type BaselineSummary,
+} from "@/lib/translator/baseline";
 import {
   parsePDFHeader,
   parsePDFBatch,
@@ -154,6 +160,12 @@ export default function Translator() {
   // ─── 18+5-phase QA state ───
   const [currentQaReport, setCurrentQaReport] = useState<QAReport | null>(null);
   const [translationMode, setTranslationMode] = useState<TranslationMode | null>(null);
+  const [showAllQaPhases, setShowAllQaPhases] = useState(false);
+
+  // ─── Baseline test state (Part 2 of the 18-phase spec) ───
+  const [baselineSummary, setBaselineSummary] = useState<BaselineSummary | null>(null);
+  const [baselineRunning, setBaselineRunning] = useState(false);
+  const [baselineOpen, setBaselineOpen] = useState(false);
 
   // ─── Target market context (P6/P7/P13/P14 sensitivity filters) ───
   const [marketContext, setMarketContext] = useState<
@@ -584,6 +596,18 @@ export default function Translator() {
     setOriginalPageTexts([]);
     setParsePhase("done");
     resetFlow();
+  }, []);
+
+  const handleRunBaseline = useCallback(() => {
+    setBaselineRunning(true);
+    // Defer so the button spinner paints before the (sync) QA pass runs
+    window.setTimeout(() => {
+      try {
+        setBaselineSummary(runBaselineTests());
+      } finally {
+        setBaselineRunning(false);
+      }
+    }, 30);
   }, []);
 
   const resetFlow = useCallback(() => {
@@ -1341,8 +1365,23 @@ export default function Translator() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={loadSample}
                       className="text-[10px] h-6"
+                      onClick={handleRunBaseline}
+                      disabled={baselineRunning}
+                      title="Verify the locked baseline sentence across all 20 languages (18+5-phase QA)"
+                    >
+                      {baselineRunning ? (
+                        <Loader2 className="size-2.5 animate-spin" />
+                      ) : (
+                        <FlaskConical className="size-2.5" />
+                      )}{" "}
+                      Baseline
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-[10px] h-6"
+                      onClick={loadSample}
                     >
                       Sample
                     </Button>
@@ -1358,6 +1397,69 @@ export default function Translator() {
                     placeholder="Paste your text here or upload a PDF..."
                     className="min-h-[100px] resize-none font-mono text-xs leading-relaxed"
                   />
+
+                  {baselineSummary && (
+                    <div className="mt-2 space-y-1.5 text-left">
+                      <button
+                        className="w-full flex items-center gap-1.5 rounded-lg border border-border/40 bg-muted/20 px-2.5 py-1.5 text-[10px] font-semibold"
+                        onClick={() => setBaselineOpen((v) => !v)}
+                      >
+                        <ListChecks className="size-3 text-primary" />
+                        Baseline: {baselineSummary.passed} pass · {baselineSummary.warned}{" "}
+                        warn · {baselineSummary.failed} fail · avg{" "}
+                        {baselineSummary.averageScore}/100
+                        <span className="ml-auto text-muted-foreground">
+                          {baselineOpen ? "▾" : "▸"}
+                        </span>
+                      </button>
+                      {baselineOpen && (
+                        <ScrollArea className="max-h-[180px] rounded-lg border border-border/40">
+                          <div className="divide-y divide-border/40">
+                            {baselineSummary.results.map((r) => (
+                              <div key={r.langCode} className="px-2.5 py-1.5 text-[10px]">
+                                <div className="flex items-center gap-1.5">
+                                  {r.overall === "pass" ? (
+                                    <CheckCircle2 className="size-3 text-green-500 shrink-0" />
+                                  ) : r.overall === "warn" ? (
+                                    <AlertCircle className="size-3 text-amber-500 shrink-0" />
+                                  ) : (
+                                    <XCircle className="size-3 text-red-500 shrink-0" />
+                                  )}
+                                  <span className="font-medium">
+                                    {r.name}{" "}
+                                    <span className="text-muted-foreground font-normal">
+                                      {r.nativeName}
+                                    </span>
+                                  </span>
+                                  <span
+                                    className={`ml-auto font-mono ${
+                                      r.overall === "pass"
+                                        ? "text-green-600"
+                                        : r.overall === "warn"
+                                          ? "text-amber-600"
+                                          : "text-red-600"
+                                    }`}
+                                  >
+                                    {r.score}/100
+                                  </span>
+                                </div>
+                                {r.summary.filter((s) => s.includes("✗") || s.includes("⚠")).length > 0 && (
+                                  <div className="mt-0.5 space-y-0.5 pl-4.5 text-[9px] text-muted-foreground leading-snug">
+                                    {r.summary
+                                      .filter((s) => s.includes("✗") || s.includes("⚠"))
+                                      .slice(0, 3)
+                                      .map((s, i) => (
+                                        <div key={i}>{s}</div>
+                                      ))}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      )}
+                    </div>
+                  )}
                   <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
                     <span>{wordCount.toLocaleString()} words</span>
                     <span>{sourceText.length.toLocaleString()} chars</span>
@@ -1586,35 +1688,52 @@ export default function Translator() {
                             </Badge>
                           )}
                         </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => setShowAllQaPhases((v) => !v)}
+                            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-muted-foreground hover:bg-muted/40 transition-colors"
+                          >
+                            <ListChecks className="size-2.5" />
+                            {showAllQaPhases ? "Hide passes" : "Show all phases"}
+                          </button>
+                          <span className="text-[9px] text-muted-foreground ml-auto">
+                            {currentQaReport.checks.filter((c) => c.status === "pass").length}/
+                            {currentQaReport.checks.length} pass
+                          </span>
+                        </div>
                         <ScrollArea className="max-h-[130px]">
                           <div className="space-y-0.5">
-                            {currentQaReport.checks
-                              .filter((c) => c.status !== "pass")
-                              .map((c) => (
-                                <div
-                                  key={c.label}
-                                  className="flex items-start gap-1.5 text-[9px] leading-snug"
-                                >
-                                  <span
-                                    className={`shrink-0 font-semibold ${
-                                      c.status === "fail"
+                            {(showAllQaPhases
+                              ? currentQaReport.checks
+                              : currentQaReport.checks.filter((c) => c.status !== "pass")
+                            ).map((c) => (
+                              <div
+                                key={c.label}
+                                className="flex items-start gap-1.5 text-[9px] leading-snug"
+                              >
+                                <span
+                                  className={`shrink-0 font-semibold ${
+                                    c.status === "pass"
+                                      ? "text-green-600"
+                                      : c.status === "fail"
                                         ? "text-red-500"
                                         : "text-amber-500"
-                                    }`}
-                                  >
-                                    {c.label}{" "}
-                                    {c.status === "fail" ? "✗" : "⚠️"}
-                                  </span>
-                                  <span className="text-muted-foreground">
-                                    {c.detail}
-                                  </span>
-                                </div>
-                              ))}
-                            {currentQaReport.checks.every((c) => c.status === "pass") && (
-                              <p className="text-[9px] text-green-600">
-                                All phases pass ✓
-                              </p>
-                            )}
+                                  }`}
+                                >
+                                  {c.status === "pass" ? "✓" : c.status === "fail" ? "✗" : "⚠️"}{" "}
+                                  {c.label}
+                                </span>
+                                <span className="text-muted-foreground">
+                                  {c.detail}
+                                </span>
+                              </div>
+                            ))}
+                            {!showAllQaPhases &&
+                              currentQaReport.checks.every((c) => c.status === "pass") && (
+                                <p className="text-[9px] text-green-600">
+                                  All phases pass ✓
+                                </p>
+                              )}
                           </div>
                         </ScrollArea>
                       </div>

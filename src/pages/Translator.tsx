@@ -157,9 +157,16 @@ export default function Translator() {
   const [modelStatus, setModelStatus] = useState<string | null>(null);
   const [isNeural, setIsNeural] = useState(false);
 
-  // ─── 18+5-phase QA state ───
+  // ─── 23-phase DeepSeek QA state ───
   const [currentQaReport, setCurrentQaReport] = useState<QAReport | null>(null);
   const [translationMode, setTranslationMode] = useState<TranslationMode | null>(null);
+  const [translationModel, setTranslationModel] = useState<string | null>(null);
+  const [translationUsage, setTranslationUsage] = useState<{
+    credits?: number;
+    promptTokens?: number;
+    completionTokens?: number;
+    totalTokens?: number;
+  } | null>(null);
   const [showAllQaPhases, setShowAllQaPhases] = useState(false);
 
   // ─── Baseline test state (Part 2 of the 18-phase spec) ───
@@ -663,6 +670,8 @@ export default function Translator() {
       setCurrentLanguageIndex(langIndex);
       setTranslationError(null);
       setCurrentPdfBlob(null);
+      setTranslationModel(null);
+      setTranslationUsage(null);
 
       const lang = targetLanguages[langIndex];
 
@@ -692,6 +701,8 @@ export default function Translator() {
           setCurrentTranslation(saved.progress.mergedText);
           setCurrentQaReport(saved.qaReport ?? null);
           setTranslationMode(saved.qaReport ? "vly" : null);
+          setTranslationModel(null);
+          setTranslationUsage(null);
           setTranslationProgress({
             current: saved.progress.totalChunks,
             total: saved.progress.totalChunks,
@@ -732,7 +743,7 @@ export default function Translator() {
               .slice(range.pageStart, range.pageEnd + 1)
               .join("\n\n");
 
-            // Primary engine: VLY AI (18+5-phase prompt) with neural MT and
+            // Primary engine: DeepSeek AI via the VLY gateway (23-phase prompt)
             // Glossary Mode as automatic fallbacks. QA runs after every chunk.
             const result = await runLocalizedTranslationPipeline(
               {
@@ -775,6 +786,8 @@ export default function Translator() {
             if (result.qaReport) {
               setCurrentQaReport(result.qaReport);
               setTranslationMode(result.mode ?? (neuralAvailable ? "neural" : "glossary"));
+              setTranslationModel(result.model ?? null);
+              setTranslationUsage(result.usage ?? null);
               await saveQAReport(lang.code, result.qaReport).catch(() => {});
             }
 
@@ -832,6 +845,8 @@ export default function Translator() {
     setTranslationProgress(null);
     setCurrentQaReport(null);
     setTranslationMode(null);
+    setTranslationModel(null);
+    setTranslationUsage(null);
 
     const nextIndex = currentLanguageIndex + 1;
     if (nextIndex >= targetLanguages.length) {
@@ -1368,7 +1383,7 @@ export default function Translator() {
                       className="text-[10px] h-6"
                       onClick={handleRunBaseline}
                       disabled={baselineRunning}
-                      title="Verify the locked baseline sentence across all 20 languages (18+5-phase QA)"
+                      title="Verify the locked baseline sentence across all 20 languages (23-phase QA)"
                     >
                       {baselineRunning ? (
                         <Loader2 className="size-2.5 animate-spin" />
@@ -1665,7 +1680,7 @@ export default function Translator() {
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <CheckCircle2 className="size-3 text-green-500 shrink-0" />
                           <span className="text-[10px] font-semibold">
-                            18-Phase QA
+                            23-Phase QA
                           </span>
                           <span
                             className={`text-[10px] font-mono ml-auto ${
@@ -1681,13 +1696,26 @@ export default function Translator() {
                           {translationMode && (
                             <Badge variant="outline" className="text-[8px] w-full">
                               {translationMode === "vly"
-                                ? "VLY AI · 18+5 phases"
+                                ? `DeepSeek AI · 23 phases${translationModel && translationModel !== "gateway-default" ? ` · ${translationModel}` : ""}`
                                 : translationMode === "neural"
                                   ? "Neural MT + phases"
-                                  : "Glossary Mode"}
+                                  : "Glossary Mode · VLY offline (word-swap fallback)"}
                             </Badge>
                           )}
                         </div>
+                        {translationMode === "vly" &&
+                          translationUsage &&
+                          (translationUsage.totalTokens != null ||
+                            translationUsage.credits != null) && (
+                            <div className="flex items-center gap-1 text-[9px] text-muted-foreground font-mono">
+                              <span>⚡</span>
+                              <span>
+                                {translationUsage.credits != null
+                                  ? `${translationUsage.credits} credits used`
+                                  : `~${(translationUsage.totalTokens ?? 0).toLocaleString()} tokens used`}
+                              </span>
+                            </div>
+                          )}
                         <div className="flex items-center gap-1.5">
                           <button
                             onClick={() => setShowAllQaPhases((v) => !v)}

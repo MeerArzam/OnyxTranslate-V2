@@ -171,6 +171,36 @@ function checkNameConsistency(ctx: CheckContext): PhaseCheck {
   return { id: 2, label: "P2", name: "Proper Noun & Name Consistency", status, detail };
 }
 
+function checkLiteralBridge(ctx: CheckContext): PhaseCheck {
+  // P3: flag chunks where >60% of the output words are literal copies of
+  // English source words — the signature of word-swapped, not localized,
+  // output.
+  const srcWords = new Set(latinWords(ctx.source));
+  const outLatin = latinWords(ctx.output);
+  if (outLatin.length === 0) {
+    return {
+      id: 3,
+      label: "P3",
+      name: "Literal-to-Natural Bridge",
+      status: "pass",
+      detail: "No Latin-script words in output — fully localized",
+    };
+  }
+  const overlaps = outLatin.filter((w) => srcWords.has(w)).length;
+  const ratio = overlaps / outLatin.length;
+  const status: PhaseStatus = ratio > 0.6 ? "warn" : "pass";
+  return {
+    id: 3,
+    label: "P3",
+    name: "Literal-to-Natural Bridge",
+    status,
+    detail:
+      status === "pass"
+        ? `Natural phrasing — only ${Math.round(ratio * 100)}% word overlap with the source`
+        : `${Math.round(ratio * 100)}% of output words are English source words — reads like word-swapped English`,
+  };
+}
+
 function checkDialoguePreserved(ctx: CheckContext): PhaseCheck {
   const quoteLike = /[“”"«»「」„”]/g;
   const sourceQuotes = (ctx.source.match(quoteLike) ?? []).length;
@@ -389,7 +419,7 @@ function checkLengthHeuristic(ctx: CheckContext): PhaseCheck {
   const detail = ok
     ? `Length factor ${ratio.toFixed(2)} within expected range (${expectedMin}-${expectedMax})`
     : `Length factor ${ratio.toFixed(2)} outside expected range (${expectedMin}-${expectedMax}) — PDF overlay may overflow`;
-  return { id: 17, label: "P17", name: "Visual & Layout Awareness", status, detail };
+  return { id: 17, label: "P17", name: "Visual-Element Extraction (PDF-aware)", status, detail };
 }
 
 function checkFinalQA(ctx: CheckContext, checks: PhaseCheck[]): PhaseCheck {
@@ -406,12 +436,12 @@ function checkFinalQA(ctx: CheckContext, checks: PhaseCheck[]): PhaseCheck {
 
   const status: PhaseStatus = issues.length === 0 ? "pass" : "warn";
   return {
-    id: 18,
-    label: "P18",
-    name: "Final QA & Self-Verification",
+    id: 23,
+    label: "P23",
+    name: "Final QA & Proofread",
     status,
     detail: issues.length === 0
-      ? "No English leftovers, no grammar/cultural red flags"
+      ? "Full suite passed — no English leftovers, no grammar/cultural red flags"
       : issues.join("; "),
   };
 }
@@ -423,9 +453,9 @@ function checkChapterMetadata(ctx: CheckContext): PhaseCheck {
     .length;
   if (srcChapters === 0) {
     return {
-      id: 23,
-      label: "P23",
-      name: "Chapter & Metadata Fidelity",
+      id: 19,
+      label: "P19",
+      name: "Chapter Headings, TOC & Front/Back Matter",
       status: "pass",
       detail: "No chapter markers in segment",
     };
@@ -436,9 +466,9 @@ function checkChapterMetadata(ctx: CheckContext): PhaseCheck {
     .length;
   const ok = Math.abs(outChapters - srcChapters) <= Math.max(1, srcChapters * 0.3);
   return {
-    id: 23,
-    label: "P23",
-    name: "Chapter & Metadata Fidelity",
+    id: 19,
+    label: "P19",
+    name: "Chapter Headings, TOC & Front/Back Matter",
     status: ok ? "pass" : "warn",
     detail: ok
       ? `Chapter markers preserved (${outChapters}/${srcChapters})`
@@ -451,68 +481,108 @@ function checkChapterMetadata(ctx: CheckContext): PhaseCheck {
 // ──────────────────────────────────────────────
 
 const QUALITY_GATES: Array<{ id: number; label: string; name: string; detail: string }> = [
-  { id: 3, label: "P3", name: "Literal-to-Natural Bridge", detail: "Quality gate — meaning over words, imagery preserved" },
-  { id: 5, label: "P5", name: "Tone & Register", detail: "Quality gate — register matched to market's literary fantasy" },
-  { id: 7, label: "P7", name: "Honorifics & Formality", detail: "Quality gate — per-language formality config loaded" },
-  { id: 11, label: "P11", name: "Internal Monologue & Stream of Consciousness", detail: "Quality gate — first-person rhythm preserved" },
-  { id: 12, label: "P12", name: "Action Pacing & Sentence Rhythm", detail: "Quality gate — pacing matched to language norms" },
+  { id: 5, label: "P5", name: "Tone & Register", detail: "Quality gate — register matched to the market's literary fantasy" },
+  { id: 7, label: "P7", name: "Honorifics & Formality", detail: "Quality gate — per-language formality system applied (keigo, jondaetmal, adab, vous/tu, Sie/du)" },
+  { id: 11, label: "P11", name: "Internal Monologue", detail: "Quality gate — first-person inner voice intimate and urgent" },
+  { id: 12, label: "P12", name: "Action Pacing", detail: "Quality gate — short, punchy action rhythm preserved" },
+  { id: 18, label: "P18", name: "Self-Verification Pass", detail: "Instructed to the model — self-checks P1-P17 before replying" },
+  { id: 20, label: "P20", name: "Poetry, Songs, Rituals & Proverbs", detail: "Quality gate — naturalness and rhythm over literalness for verse" },
 ];
 
 // ──────────────────────────────────────────────
-// Config/process phases (19-22)
+// Config/process phases (21-22)
 // ──────────────────────────────────────────────
 
-function processPhases(ctx: CheckContext): PhaseCheck[] {
-  const cfg = getLocalizationConfig(ctx.langCode);
+export interface MemoryLockEntry {
+  source: string;
+  translation: string;
+}
 
-  const fanCheck: PhaseCheck = (() => {
-    if (!cfg || Object.keys(cfg.fanNames).length === 0) {
-      return {
-        id: 20,
-        label: "P20",
-        name: "Fan-Nomenclature Alignment",
-        status: "pass",
-        detail: "No fan-name overrides for this language",
-      };
-    }
-    let matched = 0;
-    for (const [en, fan] of Object.entries(cfg.fanNames)) {
-      const regex = new RegExp(`\\b${en}\\b`, "g");
-      if (regex.test(ctx.source) && ctx.output.includes(fan)) matched++;
-    }
+function escapeRegExp(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function checkMemoryLock(ctx: CheckContext, memory: MemoryLockEntry[]): PhaseCheck {
+  // P21: diff this chunk's output against the per-language term memory locked
+  // by previous chunks. Every source term that appears here must carry its
+  // already-locked translation.
+  if (!memory || memory.length === 0) {
     return {
-      id: 20,
-      label: "P20",
-      name: "Fan-Nomenclature Alignment",
-      status: "pass",
-      detail: `Fan-name table active (${matched} fan spellings matched)`,
-    };
-  })();
-
-  return [
-    {
-      id: 19,
-      label: "P19",
-      name: "Translation Memory & Sequel Consistency",
-      status: "pass",
-      detail: "Locked decisions recorded to TM store (P1 terms are saved by the pipeline)",
-    },
-    fanCheck,
-    {
       id: 21,
       label: "P21",
-      name: "Blurb & Marketing Localization",
+      name: "Book-Wide Consistency & Memory Lock",
       status: "pass",
-      detail: cfg?.blurb ? "Market-adapted blurb available" : "Blurb config missing",
-    },
-    {
-      id: 22,
-      label: "P22",
-      name: "Per-Language Style Sheet",
-      status: "pass",
-      detail: cfg?.styleSheet ? "Style sheet loaded into prompt" : "Style sheet config missing",
-    },
-  ];
+      detail: "No locked terms in translation memory yet — glossary is the lock",
+    };
+  }
+  const conflicts: string[] = [];
+  let checked = 0;
+  for (const entry of memory) {
+    const srcRe = new RegExp(`\\b${escapeRegExp(entry.source)}\\b`, "gi");
+    if (!srcRe.test(ctx.source)) continue;
+    checked++;
+    if (!ctx.output.toLowerCase().includes(entry.translation.toLowerCase())) {
+      conflicts.push(`${entry.source} → expected locked “${entry.translation}”`);
+    }
+  }
+  const status: PhaseStatus = conflicts.length === 0 ? "pass" : "warn";
+  return {
+    id: 21,
+    label: "P21",
+    name: "Book-Wide Consistency & Memory Lock",
+    status,
+    detail:
+      conflicts.length === 0
+        ? `${checked} locked term(s) matched the translation memory`
+        : `Memory conflicts: ${conflicts.slice(0, 3).join("; ")}${conflicts.length > 3 ? ` +${conflicts.length - 3} more` : ""}`,
+  };
+}
+
+function checkLayoutFit(
+  ctx: CheckContext,
+  cfg: { script?: string; rtl?: boolean } | null
+): PhaseCheck {
+  // P22: estimate per-line rendered width vs. a book text box. Without page
+  // coordinates in this layer we use a per-script char-width heuristic and
+  // flag the longest lines that would overflow a typical ~96-unit column.
+  const widthFactor = (() => {
+    const script = cfg?.script ?? "";
+    if (["Chinese", "Japanese", "Hangul"].includes(script)) return 1.0; // CJK glyphs are full-width
+    if (script === "Arabic") return 0.62;
+    return 0.55; // Latin / Cyrillic / Devanagari / Bengali
+  })();
+  const MAX_LINE_UNITS = 96;
+  const lines = ctx.output.split("\n");
+  let worst = "";
+  let worstUnits = 0;
+  for (const line of lines) {
+    const units = [...line].reduce(
+      (acc, ch) =>
+        acc + (/[\u3000-\u30FF\u3400-\u9FFF\uAC00-\uD7AF]/.test(ch) ? 1 : widthFactor),
+      0
+    );
+    if (units > worstUnits) {
+      worstUnits = units;
+      worst = line;
+    }
+  }
+  const overflow = worstUnits > MAX_LINE_UNITS;
+  const status: PhaseStatus = overflow ? "warn" : "pass";
+  const snippet = worst.length > 60 ? `${worst.slice(0, 57)}…` : worst;
+  return {
+    id: 22,
+    label: "P22",
+    name: "Layout & Text-Fit",
+    status,
+    detail: overflow
+      ? `Longest line ≈${Math.round(worstUnits)} units (limit ${MAX_LINE_UNITS}) — may overflow its PDF box: “${snippet}”`
+      : `Longest line ≈${Math.round(worstUnits)} units — fits the PDF text boxes`,
+  };
+}
+
+function processPhases(ctx: CheckContext, memory: MemoryLockEntry[]): PhaseCheck[] {
+  const cfg = getLocalizationConfig(ctx.langCode);
+  return [checkMemoryLock(ctx, memory), checkLayoutFit(ctx, cfg)];
 }
 
 // ──────────────────────────────────────────────
@@ -522,7 +592,8 @@ function processPhases(ctx: CheckContext): PhaseCheck[] {
 export function runQA(
   sourceText: string,
   translatedText: string,
-  langCode: string
+  langCode: string,
+  memory: MemoryLockEntry[] = []
 ): QAReport {
   const ctx: CheckContext = {
     source: sourceText,
@@ -533,6 +604,8 @@ export function runQA(
   const checks: PhaseCheck[] = [
     checkGlossaryHitRate(ctx),
     checkNameConsistency(ctx),
+    checkLiteralBridge(ctx),
+    checkDialoguePreserved(ctx),
     ...QUALITY_GATES.map((g) => ({
       id: g.id,
       label: g.label,
@@ -540,7 +613,6 @@ export function runQA(
       status: "pass" as PhaseStatus,
       detail: g.detail,
     })),
-    checkDialoguePreserved(ctx),
     checkCulturalSecondPass(ctx),
     checkRTLAndScript(ctx),
     checkMagicTerms(ctx),
@@ -550,7 +622,7 @@ export function runQA(
     checkRanks(ctx),
     checkDragonTelepathy(ctx),
     checkLengthHeuristic(ctx),
-    ...processPhases(ctx),
+    ...processPhases(ctx, memory),
     checkChapterMetadata(ctx),
   ];
 

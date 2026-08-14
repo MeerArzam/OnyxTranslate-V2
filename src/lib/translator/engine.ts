@@ -18,9 +18,10 @@ import {
   type NeuralProgressCallback,
 } from "./neural";
 import { runQA, type QAReport } from "./qa";
-import { vlyTranslateChunk } from "./vlyTranslate";
+import { vlyTranslateChunk, type VlyUsage } from "./vlyTranslate";
 import {
   saveTerminologyBatch,
+  getAllTerminology,
   type TerminologyEntry,
 } from "./storage";
 
@@ -56,6 +57,10 @@ export interface TranslationResult {
   qaReport?: QAReport;
   /** Which engine produced this chunk */
   mode?: TranslationMode;
+  /** Model that served this chunk (e.g. "deepseek-chat") */
+  model?: string;
+  /** Token/credit usage reported by the gateway */
+  usage?: VlyUsage;
 }
 
 export interface TranslationReport {
@@ -530,16 +535,17 @@ export async function runNeuralTranslationPipeline(
 // ─── Primary: VLY AI Localization Pipeline (18+5 phases) ─────────────────────
 
 /**
- * Run the full 18+5-phase localization pipeline with VLY AI as the primary
- * engine (Part D):
+ * Run the full 23-phase DeepSeek localization pipeline via the VLY gateway:
  *
  *   1. Bible pass — lock glossary terms + proper nouns behind placeholders
- *   2. VLY AI translation with the full phase SYSTEM_PROMPT (vlyTranslate.ts)
+ *   2. DeepSeek AI translation (server-side, VLY gateway) with the full
+ *      23-phase SYSTEM_PROMPT (vlyTranslate.ts)
  *   3. Fallback chain: neural MT → 5-tier enhanced glossary ("Glossary Mode")
  *   4. Post-process — restore placeholders, cultural second pass, dragon
  *      telepathy, RTL marker
- *   5. Code-level QA (qa.ts) — per-phase pass/warn/fail report
- *   6. Translation memory (P19) — lock glossary decisions into IndexedDB
+ *   5. Code-level QA (qa.ts) — per-phase pass/warn/fail report, diffed
+ *      against the IndexedDB translation memory (P21 lock)
+ *   6. Translation memory (P21) — lock glossary decisions into IndexedDB
  */
 export async function runLocalizedTranslationPipeline(
   config: TranslationConfig,
@@ -559,6 +565,8 @@ export async function runLocalizedTranslationPipeline(
 
   let translatedText = sourceText;
   let mode: TranslationMode = "glossary";
+  let model: string | undefined;
+  let usage: VlyUsage | undefined;
 
   // ── Phase 1: Bible Pass (lock terms before the AI sees them) ──
   phases[0].status = "active";
@@ -571,8 +579,9 @@ export async function runLocalizedTranslationPipeline(
   // ── Phase 2: Engine selection (VLY AI → neural → glossary) ──
   phases[1].status = "active";
 
-  // 2a. VLY AI (self-guards when the integration isn't injected into the build)
-  onProgress?.("neural", `Running 18-phase VLY AI localization → ${targetLanguage}…`);
+  // 2a. DeepSeek AI via the VLY gateway (self-guards when the integration
+  //     isn't injected into the build)
+  onProgress?.("neural", `Running 23-phase DeepSeek AI localization → ${targetLanguage}…`);
   try {
     const vlyResult = await vlyTranslateChunk(
       bibleText,
@@ -583,12 +592,14 @@ export async function runLocalizedTranslationPipeline(
     if (vlyResult.ok && vlyResult.text) {
       translatedText = vlyResult.text;
       mode = "vly";
-      phases[1].result = "VLY AI localization complete";
-      phases[1].notes = "18+5-phase prompt with per-language config applied";
+      model = vlyResult.model;
+      usage = vlyResult.usage;
+      phases[1].result = "DeepSeek AI localization complete";
+      phases[1].notes = `23-phase prompt · model: ${vlyResult.model ?? "gateway default"} · per-language config applied`;
     }
   } catch (error) {
     // Fall through to neural/glossary
-    phases[1].notes = `VLY AI unavailable (${error instanceof Error ? error.message : "error"}); falling back`;
+    phases[1].notes = `DeepSeek AI unavailable (${error instanceof Error ? error.message : "error"}); falling back`;
   }
 
   // 2b. Neural MT fallback
@@ -682,8 +693,17 @@ export async function runLocalizedTranslationPipeline(
   phases[16].status = "completed";
 
   // ── Phase 18: Code-level QA (qa.ts) ──
+  // Load the per-language translation memory (P21 lock) so this chunk is
+  // diffed against every term locked by previous chunks of this book.
   phases[17].status = "active";
-  const qaReport = runQA(sourceText, translatedText, targetLanguage);
+  let memoryEntries: Array<{ source: string; translation: string }> = [];
+  try {
+    const stored = await getAllTerminology(targetLanguage);
+    memoryEntries = stored.map((e) => ({ source: e.source, translation: e.translation }));
+  } catch {
+    // Memory is best-effort — the glossary checks still run without it.
+  }
+  const qaReport = runQA(sourceText, translatedText, targetLanguage, memoryEntries);
   phases[17].result = "Final QA complete";
   phases[17].notes =
     qaReport.overall === "pass"
@@ -734,7 +754,7 @@ export async function runLocalizedTranslationPipeline(
     glossaryAdherence: 98,
     issues: qaReport.checks.filter((c) => c.status === "fail").map((c) => `${c.label}: ${c.detail}`),
     warnings: qaReport.checks.filter((c) => c.status === "warn").map((c) => `${c.label}: ${c.detail}`),
-    recommendations: mode === "glossary" ? ["VLY AI was unreachable — rerun with VLY configured for full localization"] : [],
+    recommendations: mode === "glossary" ? ["DeepSeek AI was unreachable (offline or credits exhausted) — this chunk used Glossary Mode, a word-swap fallback. Retry when the VLY gateway is reachable for true localization."] : [],
   };
 
   const csvData: CSVExportData = {
@@ -745,7 +765,7 @@ export async function runLocalizedTranslationPipeline(
 
   onProgress?.("complete", "Translation pipeline complete");
 
-  return { translatedText, phases, report, csvData, voiceNotes, qaReport, mode };
+  return { translatedText, phases, report, csvData, voiceNotes, qaReport, mode, model, usage };
 }
 
 function LOCKED_TERM_CATEGORY(term: string): TerminologyEntry["category"] {

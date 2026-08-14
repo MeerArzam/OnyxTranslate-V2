@@ -1,9 +1,15 @@
 /**
- * VLY AI translation module (Part D.1-D.2 of the 18-phase spec).
+ * DeepSeek localization engine via the Freebuff VLY gateway (23-phase spec).
  *
- * Builds the full 18-phase (+5 extra) localization SYSTEM_PROMPT by injecting
- * the per-language Part C config, the locked glossary column, the name
- * transliterations and the character voice matrix, then calls
+ * The LLM runs server-side on the VLY gateway — the browser only holds the
+ * platform-injected VLY_INTEGRATION_KEY, so no external API keys and no
+ * on-device model are needed (works on Chrome 95 / Android 5 WebView / 2GB
+ * RAM devices).
+ *
+ * Builds the full 23-phase SYSTEM_PROMPT (P1-P23 + the deep-reasoning
+ * protocol) by injecting the per-language config, the locked glossary column,
+ * the name transliterations and the character voice matrix, resolves the
+ * DeepSeek model through a fallback probe chain, then calls
  * vly.ai.completion(). Used by engine.ts as the primary translation engine,
  * with neural MT and glossary-swap as fallbacks.
  */
@@ -34,8 +40,18 @@ interface VlyCompletionResponse {
     choices?: Array<{
       message?: { content?: string };
     }>;
+    usage?: {
+      promptTokens?: number;
+      completionTokens?: number;
+      totalTokens?: number;
+    };
   };
   error?: string;
+  /** Gateway-level billing info (AI completions report tokens in data.usage). */
+  usage?: {
+    credits?: number;
+    operation?: string;
+  };
 }
 
 interface VlyClient {
@@ -46,14 +62,72 @@ interface VlyClient {
   };
 }
 
+export interface VlyUsage {
+  credits?: number;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+}
+
 export interface VlyTranslateResult {
   ok: boolean;
   text: string;
   mode: "vly" | "fallback";
+  /** Which model served this chunk (e.g. "deepseek-chat"). */
+  model?: string;
+  /** Token/credit usage reported by the gateway. */
+  usage?: VlyUsage;
   reason?: string;
 }
 
 export type VlyStatusCallback = (message: string) => void;
+
+// ──────────────────────────────────────────────
+// Model configuration (server-side DeepSeek via the VLY gateway)
+// ──────────────────────────────────────────────
+
+/**
+ * The single place that defines the DeepSeek model identifiers. The gateway
+ * is OpenAI-compatible, so an unknown slug simply errors and we fall through
+ * to the next candidate. Change the order here to prefer a different model.
+ */
+export const DEEPSEEK_MODEL_CANDIDATES = [
+  "deepseek-chat",
+  "deepseek-v4-flash",
+  "deepseek-r1",
+  "deepseek-thinking",
+] as const;
+
+/** undefined = not probed yet, null = no DeepSeek candidate answered. */
+let resolvedDeepSeekModel: string | null | undefined;
+
+/**
+ * Probe each DeepSeek candidate in order with a tiny completion and cache the
+ * first one that responds. Falls back to null (gateway default model) when
+ * none of the candidates answer, so translation never hard-fails on a model
+ * naming mismatch.
+ */
+async function getDeepSeekModel(client: VlyClient): Promise<string | null> {
+  if (resolvedDeepSeekModel !== undefined) return resolvedDeepSeekModel;
+  for (const model of DEEPSEEK_MODEL_CANDIDATES) {
+    try {
+      const probe = await client.ai.completion({
+        model,
+        messages: [{ role: "user", content: "Reply with the single word: OK" }],
+        temperature: 0,
+        maxTokens: 4,
+      });
+      if (probe.success && probe.data?.choices?.[0]?.message?.content) {
+        resolvedDeepSeekModel = model;
+        return model;
+      }
+    } catch {
+      // Candidate failed — try the next identifier.
+    }
+  }
+  resolvedDeepSeekModel = null;
+  return null;
+}
 
 // ──────────────────────────────────────────────
 // Prompt building
@@ -65,33 +139,38 @@ const LOCKED_TERM_LIST = [
   "Basgiath", "Rune", "Scribe", "Rider",
 ];
 
-const PHASE_RULES_A = [
+const PHASE_RULES = [
   ["P1", "GLOSSARY & TERM FIDELITY", "Use EXACTLY the per-language terms from the locked glossary below (magic/military terms + proper nouns). Never invent synonyms."],
-  ["P2", "PROPER NOUN & NAME CONSISTENCY", "Use the language's locked name spellings from the Name Map below. Same name = same spelling every time, book-wide."],
-  ["P3", "LITERAL-TO-NATURAL BRIDGE", "Translate meaning, not words. If a literal rendering sounds unnatural, rephrase naturally while keeping the meaning and the book's imagery."],
-  ["P4", "CHARACTER VOICE & DIALOGUE", "Apply the Voice Matrix below. Keep speaker attributions and line breaks; preserve dialogue turns 1:1."],
-  ["P5", "TONE & REGISTER", "Match the register of this language's literary fantasy (elevated/poetic where the culture expects it, grounded where it doesn't). First-person internal monologue stays intimate."],
-  ["P6", "CULTURAL CONTEXTUALIZATION & CENSORSHIP", "Apply market rules: profanity euphemized per market, intimacy handled per cultural norms, political/religious content adapted."],
-  ["P7", "HONORIFICS & FORMALITY", "Apply the language's formality system below. Drop formality in emotional-breaking scenes; escalate in formal/military scenes."],
-  ["P8", "MULTI-SCRIPT & RTL FORMATTING", "Use the correct script. For RTL languages (ur/ar/ks) render naturally with no leftover English order artifacts. For script languages, ZERO Latin-script words outside the allowed names."],
-  ["P9", "MAGIC SYSTEM & TECHNICAL FANTASY TERMS", "Translate the magic system as a coherent hierarchy per the Magic System note below. 'Rune' must never become a generic spell; keep ward/conduit/signet consistent."],
-  ["P10", "DIALOGUE FLOW & QUOTATION CONVENTIONS", "Use this language's dialogue punctuation from the Dialogue Marks below. Preserve paragraph breaks and speaker turns."],
-  ["P11", "INTERNAL MONOLOGUE & STREAM OF CONSCIOUSNESS", "Preserve Violet's internal thoughts (dashes/italics as the language uses), self-interruption, and the 'I won't. I refuse.' rhythm — keep it first-person."],
-  ["P12", "ACTION PACING & SENTENCE RHYTHM", "Match action-scene norms per language (short punchy sentences for combat; flowing rhythm for Romance languages). Keep tension and chapter momentum."],
-  ["P13", "ROMANCE & INTIMACY FILTERING", "Apply market romance norms from the Profanity/Cultural map. France/Italy = poetic; Japan/Korea = fated-pair subtlety; Germany/Russia = grim endurance."],
-  ["P14", "PROFANITY & MATURE CONTENT", "Map English expletives to culturally appropriate equivalents or euphemisms from the Profanity Map below; keep character authenticity without gratuitousness."],
-  ["P15", "POLITICAL & MILITARY SENSITIVITY", "Adapt ranks and hierarchy from the Rank Map below — no literal calques."],
-  ["P16", "DRAGON TELEPATHY & BOND SPEECH", "Render dragon-mind speech with the language's markers (「」/『』/【】) and differentiate dragon voices from human dialogue; keep the bond's intimacy."],
-  ["P17", "VISUAL & LAYOUT AWARENESS", "Translate chapter titles and front matter too. Keep translated text length-aware (expansion/shrink per the Style Sheet) so it fits the original PDF text areas."],
-  ["P18", "FINAL QA & SELF-VERIFICATION", "Self-check before returning: consistency, no English leftovers (script languages), no commentary/notes, grammar, cultural fit."],
+  ["P2", "PROPER NOUN & NAME CONSISTENCY", "Use the language's locked name spellings from the Name Map. Same name = same spelling every time, book-wide."],
+  ["P3", "LITERAL-TO-NATURAL BRIDGE", "Translate the meaning, not word-for-word. If a literal rendering sounds unnatural, rephrase naturally while preserving meaning, imagery, and the book's voice."],
+  ["P4", "CHARACTER VOICE & DIALOGUE", "Apply the Voice Matrix. Keep speaker attributions and line breaks intact; preserve dialogue turns 1:1."],
+  ["P5", "TONE & REGISTER", "Match the register of this language's literary fantasy (poetic where the culture expects it, grounded where it doesn't). First-person internal monologue stays intimate; narration stays immersive."],
+  ["P6", "CULTURAL CONTEXTUALIZATION & CENSORSHIP", "Apply market rules from the Market Context and the Profanity/Cultural map: euphemize profanity per market, handle intimacy per cultural norms, adapt political/religious content."],
+  ["P7", "HONORIFICS & FORMALITY", "Apply the language's formality system (Japanese keigo, Korean jondaetmal, Urdu adab, French vous/tu, German Sie/du…). Drop formality in emotional-breaking scenes; escalate in formal/military scenes."],
+  ["P8", "MULTI-SCRIPT & RTL FORMATTING", "Use the correct script. For RTL languages (ur/ar/ks) render naturally with ZERO English-order artifacts; use the language's native punctuation. For script languages, ZERO Latin-script words outside the allowed names."],
+  ["P9", "MAGIC SYSTEM & FANTASY TERMINOLOGY", "Translate the magic system as a coherent hierarchy per the Magic System note (French: sceau/maîtriser/puiser; German: Wappen|Siegel/handhaben/schöpfen; Korean: 인장/구사하다…). 'Rune' must never become a generic spell; keep ward/conduit/signet consistent."],
+  ["P10", "DIALOGUE FLOW & PUNCTUATION", "Use this language's dialogue punctuation from the Dialogue Marks (French « », German „…“, Japanese 「」, Spanish —, etc.). Keep interruptions, mid-sentence cuts (em-dashes) and beat breaks natural."],
+  ["P11", "INTERNAL MONOLOGUE", "Keep Violet's first-person inner voice intimate, urgent, and emphasis-aware (reproduce italics/emphasis naturally in the target language); keep self-interruption and the 'I won't. I refuse.' rhythm."],
+  ["P12", "ACTION PACING", "Keep fight scenes short, punchy, and immediate; preserve the sentence rhythm of action and chapter momentum."],
+  ["P13", "ROMANCE & INTIMACY FILTERS", "Apply the language's market norms for romantic/intimate content — tasteful, natural, never clinical, never overly sanitized unless the market requires it."],
+  ["P14", "PROFANITY & SLANG LOCALIZATION", "Replace English profanity with culturally equivalent (not literal) expressions; keep intensity levels matching the scene (mild vs. strong)."],
+  ["P15", "POLITICAL & MILITARY SENSITIVITY", "Adapt war and political content per market rules; keep the story's meaning, don't editorialize. Use the Rank Map for military hierarchy."],
+  ["P16", "DRAGON TELEPATHY FORMATTING", "Format dragon mental speech per language convention (「」/【】 for ja/ko/zh, italics or guillemets elsewhere); keep it distinct from spoken dialogue and keep the bond's intimacy."],
+  ["P17", "VISUAL-ELEMENT EXTRACTION (PDF-AWARE)", "When translating text near images, maps or illustrations, keep captions and map labels translated and short enough to fit their text boxes."],
+  ["P18", "SELF-VERIFICATION PASS", "Before replying, self-check this chunk against P1-P17 and fix violations silently."],
+  ["P19", "CHAPTER HEADINGS, TOC & FRONT/BACK MATTER", "Translate chapter titles, the Contents list, the copyright page and acknowledgments in the same style as the body; keep chapter numbering consistent."],
+  ["P20", "POETRY, SONGS, RITUALS & PROVERBS", "For verse, songs and ritual chants, prioritize naturalness and rhythm over literalness; keep line structure where possible; adapt proverbs idiomatically."],
+  ["P21", "BOOK-WIDE CONSISTENCY & MEMORY LOCK", "The glossary, names, terms and style are locked: the same term must translate identically in every chapter, forever."],
+  ["P22", "LAYOUT & TEXT-FIT", "Keep translated lines reasonably short so they fit the PDF text boxes; prefer concise phrasings; for RTL, expect right-aligned flow."],
+  ["P23", "FINAL QA & PROOFREAD (deep reasoning)", "Do a final read-through as a native editor: fix grammar, unnatural phrasing, typos and any phase violations; the chunk must read like published fiction."],
 ];
 
-const PHASE_RULES_B = [
-  ["P19", "TRANSLATION MEMORY & SEQUEL CONSISTENCY", "Lock every term/name decision to a fixed choice; future books must reuse it. Be maximally consistent with the glossary below."],
-  ["P20", "FAN-NOMENCLATURE ALIGNMENT", "For zh/ko/ru, adopt the fan-name spellings in the Fan Names map where given, so the translation matches what readers already use."],
-  ["P21", "BLURB & MARKETING LOCALIZATION", "N/A for body text — blurbs are handled separately per market."],
-  ["P22", "PER-LANGUAGE STYLE SHEET", "Follow the Style Sheet below: formality level, gender handling, archaic-vs-modern register, sentence-length preference, numerals/units."],
-  ["P23", "CHAPTER & METADATA FIDELITY", "Translate chapter titles, TOC entries, epigraphs, and the Jesinia frame ('transcribed by Jesinia Neilwart…') with the same fidelity as body text."],
+const REASONING_PROTOCOL = [
+  "1. PLAN — identify dialogue vs. narration vs. telepathy; spot glossary and name hits; flag culturally sensitive lines.",
+  "2. DRAFT — translate with the language's natural grammar and register.",
+  "3. SELF-CRITIQUE — check P1-P23 violations, unnatural phrasing, Latin leftovers.",
+  "4. REFINE — rewrite once, silently fixing everything found.",
+  "The user only ever sees the final refined text — never show the reasoning.",
 ];
 
 const VOICE_MATRIX = [
@@ -167,8 +246,8 @@ export function buildSystemPrompt(langCode: string, marketContext = "standard"):
 
   const magicSystem = cfg ? cfg.magicSystem : "(none)";
 
-  const phaseA = PHASE_RULES_A.map(([id, name, rule]) => `### ${id}. ${name}\n${rule}`).join("\n\n");
-  const phaseB = PHASE_RULES_B.map(([id, name, rule]) => `### ${id}. ${name}\n${rule}`).join("\n\n");
+  const phaseRules = PHASE_RULES.map(([id, name, rule]) => `### ${id}. ${name}\n${rule}`).join("\n\n");
+  const reasoning = REASONING_PROTOCOL.join("\n");
   const voices = VOICE_MATRIX.map(
     ([name, style, example], i) => `${i + 1}. ${name}: ${style}\n   Example: ${example}`
   ).join("\n");
@@ -180,11 +259,11 @@ export function buildSystemPrompt(langCode: string, marketContext = "standard"):
     `TARGET LANGUAGE: ${langLine}`,
     `MARKET CONTEXT: ${buildMarketContext(marketContext)}`,
     "",
-    "# PART A — THE 18 PHASES",
-    phaseA,
+    "# THE 23 PHASES",
+    phaseRules,
     "",
-    "# PART B — 5 EXTRA PHASES",
-    phaseB,
+    "# DEEP REASONING PROTOCOL (think before you write)",
+    reasoning,
     "",
     "# PART C — PER-LANGUAGE CONFIG",
     `DIALOGUE MARKS:\n${dialogueMarks}`,
@@ -215,7 +294,7 @@ export function buildSystemPrompt(langCode: string, marketContext = "standard"):
     voices,
     "",
     "# OUTPUT RULES",
-    "1. Return ONLY the translated text. No commentary, no notes, no explanations, no metadata, no markdown fences.",
+    "1. Return ONLY the translated text — no explanations, no notes, no metadata, no markdown fences, and no quotation marks around the reply.",
     "2. Preserve paragraph breaks, speaker turns and dialogue lines 1:1 with the source.",
     "3. Use the language's dialogue punctuation (P10) and telepathy markers (P16).",
     "4. For script languages (non-Latin scripts): ZERO Latin-script words may remain, except the allowed names listed in the Name Map.",
@@ -270,13 +349,17 @@ export async function vlyTranslateChunk(
     };
   }
 
-  onStatus?.("Building 18-phase localization prompt…");
+  // Resolve the DeepSeek model once per session (probe chain, cached).
+  const model = await getDeepSeekModel(client);
+
+  onStatus?.("Building 23-phase DeepSeek localization prompt…");
 
   const systemPrompt = buildSystemPrompt(langCode, marketContext);
 
-  onStatus?.("Calling VLY AI…");
+  onStatus?.(`Calling DeepSeek (${model ?? "gateway default"})…`);
 
   const resp = await client.ai.completion({
+    model: model ?? undefined,
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: sourceText },
@@ -297,5 +380,16 @@ export async function vlyTranslateChunk(
   // Strip accidental markdown fences
   const cleaned = content.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim();
 
-  return { ok: true, text: cleaned, mode: "vly" };
+  return {
+    ok: true,
+    text: cleaned,
+    mode: "vly",
+    model: model ?? "gateway-default",
+    usage: {
+      credits: resp.usage?.credits,
+      promptTokens: resp.data?.usage?.promptTokens,
+      completionTokens: resp.data?.usage?.completionTokens,
+      totalTokens: resp.data?.usage?.totalTokens,
+    },
+  };
 }

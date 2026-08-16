@@ -9,6 +9,7 @@
  */
 
 import type * as health from "../health.js";
+import type * as translate from "../translate.js";
 
 import type {
   ApiFromModules,
@@ -18,6 +19,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   health: typeof health;
+  translate: typeof translate;
 }>;
 
 /**

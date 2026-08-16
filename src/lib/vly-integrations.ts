@@ -1,9 +1,7 @@
-// VLY Integrations Configuration
-// See /integrations.md for usage documentation
-
-import { createVlyIntegrations } from '@vly-ai/integrations';
-
-export const vly = createVlyIntegrations({
-  deploymentToken: process.env.VLY_INTEGRATION_KEY!,
-  debug: process.env.NODE_ENV === 'development'
-});
+/**
+ * vly-integrations.ts — GUTTED.
+ *
+ * The VLY SDK must NEVER be imported client-side. The real integration
+ * runs in convex/translate.ts ("use node") where process.env.VLY_INTEGRATION_KEY
+ * is available on the server. This file exists as a build-time no-op.
+ */

@@ -18,7 +18,13 @@ import {
   type NeuralProgressCallback,
 } from "./neural";
 import { runQA, type QAReport } from "./qa";
-import { vlyTranslateChunk, type VlyUsage } from "./vlyTranslate";
+/** Token/credit usage reported by the VLY gateway. */
+export interface VlyUsage {
+  credits?: number;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+}
 import {
   saveTerminologyBatch,
   getAllTerminology,
@@ -547,9 +553,22 @@ export async function runNeuralTranslationPipeline(
  *      against the IndexedDB translation memory (P21 lock)
  *   6. Translation memory (P21) — lock glossary decisions into IndexedDB
  */
+/** Server-side AI translate function injected by the caller (Convex action). */
+export type AiTranslateFn = (input: {
+  text: string;
+  langCode: string;
+  marketContext?: string;
+}) => Promise<{
+  ok: boolean;
+  text: string;
+  model: string;
+  usage?: VlyUsage;
+}>;
+
 export async function runLocalizedTranslationPipeline(
   config: TranslationConfig,
-  onProgress?: NeuralPipelineProgressCallback
+  onProgress?: NeuralPipelineProgressCallback,
+  aiTranslate?: AiTranslateFn
 ): Promise<TranslationResult> {
   const {
     sourceText,
@@ -579,27 +598,29 @@ export async function runLocalizedTranslationPipeline(
   // ── Phase 2: Engine selection (VLY AI → neural → glossary) ──
   phases[1].status = "active";
 
-  // 2a. DeepSeek AI via the VLY gateway (self-guards when the integration
-  //     isn't injected into the build)
-  onProgress?.("neural", `Running 23-phase DeepSeek AI localization → ${targetLanguage}…`);
-  try {
-    const vlyResult = await vlyTranslateChunk(
-      bibleText,
-      targetLanguage,
-      marketContext,
-      (msg) => onProgress?.("model", msg)
-    );
-    if (vlyResult.ok && vlyResult.text) {
-      translatedText = vlyResult.text;
-      mode = "vly";
-      model = vlyResult.model;
-      usage = vlyResult.usage;
-      phases[1].result = "DeepSeek AI localization complete";
-      phases[1].notes = `23-phase prompt · model: ${vlyResult.model ?? "gateway default"} · per-language config applied`;
+  // 2a. DeepSeek AI via server-side Convex action (VLY gateway)
+  if (aiTranslate) {
+    onProgress?.("neural", `Running 23-phase DeepSeek AI localization → ${targetLanguage}…`);
+    try {
+      const aiResult = await aiTranslate({
+        text: bibleText,
+        langCode: targetLanguage,
+        marketContext,
+      });
+      if (aiResult.ok && aiResult.text) {
+        translatedText = aiResult.text;
+        mode = "vly";
+        model = aiResult.model;
+        usage = aiResult.usage;
+        phases[1].result = "DeepSeek AI localization complete";
+        phases[1].notes = `23-phase prompt · model: ${aiResult.model} · server-side VLY gateway`;
+      }
+    } catch (error) {
+      phases[1].notes = `DeepSeek AI failed (${error instanceof Error ? error.message : "unknown error"}); falling back to neural/glossary`;
+      console.warn("[Onyx Translate] Server-side AI failed:", error);
     }
-  } catch (error) {
-    // Fall through to neural/glossary
-    phases[1].notes = `DeepSeek AI unavailable (${error instanceof Error ? error.message : "error"}); falling back`;
+  } else {
+    phases[1].notes = "No aiTranslate function provided; skipping server-side AI";
   }
 
   // 2b. Neural MT fallback

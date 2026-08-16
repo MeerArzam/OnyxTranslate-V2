@@ -1,11 +1,15 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { ConvexProvider, ConvexReactClient } from "convex/react";
 import Translator from "./pages/Translator.tsx";
 import "./index.css";
 
-// Lightweight web tool - no auth, no toolbar, no routing overhead
+const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL!);
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <Translator />
+    <ConvexProvider client={convex}>
+      <Translator />
+    </ConvexProvider>
   </StrictMode>,
 );

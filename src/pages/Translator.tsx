@@ -32,6 +32,8 @@ import {
   FlaskConical,
   ListChecks,
 } from "lucide-react";
+import { useAction } from "convex/react";
+import { api } from "../../convex/_generated/api";
 import {
   runLocalizedTranslationPipeline,
   prepareLanguageModel,
@@ -115,6 +117,9 @@ interface CompletedLanguage {
 }
 
 export default function Translator() {
+  // ─── Convex server-side AI action ───
+  const translateChunkAction = useAction(api.translate.translateChunk);
+
   // ─── Source state ───
   const [pdfFileName, setPdfFileName] = useState<string | null>(null);
   const [pdfPageCount, setPdfPageCount] = useState<number | null>(null);
@@ -754,6 +759,27 @@ export default function Translator() {
               },
               (phase, msg) => {
                 setTranslationProgress((prev) => prev ? { ...prev, phase: msg } : null);
+              },
+              // Server-side AI via Convex action (reads VLY key server-side)
+              async ({ text, langCode, marketContext: mc }) => {
+                const res = await translateChunkAction({
+                  text,
+                  langCode,
+                  marketContext: mc,
+                });
+                return {
+                  ok: res.ok,
+                  text: res.text,
+                  model: res.model,
+                  usage: res.usage
+                    ? {
+                        credits: res.usage.credits ?? undefined,
+                        promptTokens: res.usage.promptTokens ?? undefined,
+                        completionTokens: res.usage.completionTokens ?? undefined,
+                        totalTokens: res.usage.totalTokens ?? undefined,
+                      }
+                    : undefined,
+                };
               }
             );
 

@@ -69,6 +69,49 @@ export const checkVlyKey = action({
 });
 
 /**
+ * Temporary diagnostic — 1-shot probe of the OpenRouter gateway with the
+ * server-side OPENROUTER_API_KEY. Returns HTTP status + body only; the key
+ * is never returned.
+ */
+export const probeOpenRouter = action({
+  args: {},
+  handler: async () => {
+    const key = process.env.OPENROUTER_API_KEY;
+    if (!key) return { hasKey: false };
+    const body = JSON.stringify({
+      model: "deepseek/deepseek-v4-flash-latest",
+      messages: [{ role: "user", content: "Reply with the single word: OK" }],
+      max_tokens: 5,
+    });
+    try {
+      const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${key}`,
+        },
+        body,
+      });
+      const text = await resp.text();
+      return {
+        hasKey: true,
+        keyPrefix: key.slice(0, 6),
+        keyLength: key.length,
+        status: resp.status,
+        statusText: resp.statusText,
+        body: text.slice(0, 600),
+      };
+    } catch (e) {
+      return {
+        hasKey: true,
+        status: "fetch-error",
+        error: e instanceof Error ? e.message : String(e),
+      };
+    }
+  },
+});
+
+/**
  * Temporary diagnostic — lists the NAMES of all env vars available to the
  * Convex server (never their values), to see what the platform injects.
  */

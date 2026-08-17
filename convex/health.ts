@@ -74,12 +74,12 @@ export const checkVlyKey = action({
  * is never returned.
  */
 export const probeOpenRouter = action({
-  args: {},
-  handler: async () => {
+  args: { model: v.optional(v.string()) },
+  handler: async (_ctx, args) => {
     const key = process.env.OPENROUTER_API_KEY;
     if (!key) return { hasKey: false };
     const body = JSON.stringify({
-      model: "deepseek/deepseek-v4-flash-latest",
+      model: args.model ?? "deepseek/deepseek-v4-flash-latest",
       messages: [{ role: "user", content: "Reply with the single word: OK" }],
       max_tokens: 5,
     });

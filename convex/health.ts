@@ -69,6 +69,40 @@ export const checkVlyKey = action({
 });
 
 /**
+ * Temporary diagnostic — 1-shot probe of the SambaNova gateway.
+ */
+export const probeSambaNova = action({
+  args: {},
+  handler: async () => {
+    const key = process.env.SAMBANOVA_API_KEY;
+    if (!key) return { hasKey: false };
+    try {
+      const resp = await fetch("https://api.sambanova.ai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+          model: process.env.SAMBANOVA_MODEL || "Meta-Llama-3.3-70B-Instruct",
+          messages: [{ role: "user", content: "Reply OK" }],
+          max_tokens: 5,
+        }),
+      });
+      const text = await resp.text();
+      return {
+        hasKey: true,
+        keyPrefix: key.slice(0, 7),
+        status: resp.status,
+        body: text.slice(0, 600),
+      };
+    } catch (e) {
+      return { hasKey: true, status: "fetch-error", error: e instanceof Error ? e.message : String(e) };
+    }
+  },
+});
+
+/**
  * Temporary diagnostic — 1-shot probe of the OpenRouter gateway with the
  * server-side OPENROUTER_API_KEY. Returns HTTP status + body only; the key
  * is never returned.

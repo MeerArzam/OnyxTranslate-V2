@@ -154,8 +154,70 @@ export const listEnvVarNames = action({
   handler: async () => {
     return {
       names: Object.keys(process.env).sort().filter((n) =>
-        /VLY|CONVEX|DEEPSEEK|OPENAI|TOKEN|KEY|API|DEPLOY/i.test(n)
+        /VLY|CONVEX|DEEPSEEK|OPENAI|TOKEN|KEY|API|DEPLOY|GEMINI/i.test(n)
       ),
+    };
+  },
+});
+
+/**
+ * Temporary diagnostic — probes all 5 Gemini API keys and returns status for each.
+ * The keys themselves are never returned, only their prefix and status.
+ */
+export const probeGeminiKeys = action({
+  args: {},
+  handler: async () => {
+    const keyNames = [
+      "Gemini_API_Key_1",
+      "Gemini_API_Key_2",
+      "Gemini_API_Key_3",
+      "Gemini_API_Key_4",
+      "Gemini_API_Key_5",
+    ];
+    const results = [];
+    
+    for (const keyName of keyNames) {
+      const key = process.env[keyName];
+      if (!key) {
+        results.push({ key: keyName, status: "missing", error: "Env var not set" });
+        continue;
+      }
+      
+      try {
+        const res = await fetch(
+          "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+          {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${key}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+              messages: [{ role: "user", content: "Reply OK" }],
+              max_tokens: 5,
+            }),
+          }
+        );
+        const text = await res.text();
+        results.push({
+          key: keyName,
+          keyPrefix: key.slice(0, 8),
+          status: res.status,
+          body: text.slice(0, 200),
+        });
+      } catch (e) {
+        results.push({
+          key: keyName,
+          status: "fetch-error",
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+    
+    return {
+      model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+      results,
     };
   },
 });

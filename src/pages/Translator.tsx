@@ -773,7 +773,6 @@ export default function Translator() {
                   model: res.model,
                   usage: res.usage
                     ? {
-                        credits: res.usage.credits ?? undefined,
                         promptTokens: res.usage.promptTokens ?? undefined,
                         completionTokens: res.usage.completionTokens ?? undefined,
                         totalTokens: res.usage.totalTokens ?? undefined,

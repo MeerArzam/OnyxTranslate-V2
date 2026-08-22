@@ -193,7 +193,7 @@ export const probeGeminiKeys = action({
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+              model: process.env.GEMINI_MODEL || "gemini-3.6-flash",
               messages: [{ role: "user", content: "Reply OK" }],
               max_tokens: 5,
             }),
@@ -216,7 +216,7 @@ export const probeGeminiKeys = action({
     }
     
     return {
-      model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+      model: process.env.GEMINI_MODEL || "gemini-3.6-flash",
       results,
     };
   },

@@ -723,6 +723,14 @@ export default function Translator() {
           const totalChunks = pageRanges.length;
           const chunks: TranslationChunk[] = [];
           let mergedText = "";
+          let slidingContext: string | undefined = undefined;
+
+          // Helper: extract last 2 sentences from translated text for P21 sliding window
+          const extractLastSentences = (text: string): string => {
+            // Split on sentence-ending punctuation (handles English . ! ? and Urdu ؟ !)
+            const sentences = text.split(/(?<=[.!?؟])\s+/).filter(Boolean);
+            return sentences.slice(-2).join(" ");
+          };
 
           // Determine starting chunk (resume from saved partial)
           let startChunk = 0;
@@ -733,6 +741,8 @@ export default function Translator() {
             }
             startChunk = completedChunks.length;
             mergedText = mergeChunkTexts(chunks);
+            // Restore sliding window context from the last completed chunk
+            if (mergedText) slidingContext = extractLastSentences(mergedText);
           }
 
           for (let ci = startChunk; ci < totalChunks; ci++) {
@@ -748,24 +758,26 @@ export default function Translator() {
               .slice(range.pageStart, range.pageEnd + 1)
               .join("\n\n");
 
-            // Primary engine: DeepSeek AI via the VLY gateway (23-phase prompt)
-            // Glossary Mode as automatic fallbacks. QA runs after every chunk.
+            // Primary engine: Gemini AI with 23-phase prompt.
+            // Glossary Mode as automatic fallback. QA runs after every chunk.
             const result = await runLocalizedTranslationPipeline(
               {
                 sourceText: chunkText,
                 targetLanguage: lang.code,
                 marketContext,
                 chapterNumber: 1,
+                previousContext: slidingContext,
               },
               (phase, msg) => {
                 setTranslationProgress((prev) => prev ? { ...prev, phase: msg } : null);
               },
-              // Server-side AI via Convex action (reads VLY key server-side)
-              async ({ text, langCode, marketContext: mc }) => {
+              // Server-side AI via Convex action (Gemini, server-side keys)
+              async ({ text, langCode, marketContext: mc, previousContext: pc }) => {
                 const res = await translateChunkAction({
                   text,
                   langCode,
                   marketContext: mc,
+                  previousContext: pc,
                 });
                 return {
                   ok: res.ok,
@@ -794,6 +806,9 @@ export default function Translator() {
             };
 
             chunks.push(chunk);
+
+            // P21: Update sliding window context for next chunk
+            slidingContext = extractLastSentences(result.translatedText);
 
             // Save to IndexedDB after each chunk
             const merged = mergeChunkTexts(chunks);
@@ -1721,10 +1736,10 @@ export default function Translator() {
                           {translationMode && (
                             <Badge variant="outline" className="text-[8px] w-full">
                               {translationMode === "vly"
-                                ? `DeepSeek AI · 23 phases${translationModel && translationModel !== "gateway-default" ? ` · ${translationModel}` : ""}`
+                                ? `Gemini 3.6 Flash · 23 phases${translationModel ? ` · ${translationModel}` : ""}`
                                 : translationMode === "neural"
                                   ? "Neural MT + phases"
-                                  : "Glossary Mode · VLY offline (word-swap fallback)"}
+                                  : "Glossary Mode · word-swap fallback"}
                             </Badge>
                           )}
                         </div>

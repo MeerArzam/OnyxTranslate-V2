@@ -49,6 +49,8 @@ export interface TranslationConfig {
   targetLanguage: string;
   marketContext: string;
   chapterNumber?: number;
+  /** Last 2 sentences from the previous chunk for P21 sliding-window continuity */
+  previousContext?: string;
 }
 
 export type TranslationMode = "vly" | "neural" | "glossary";
@@ -311,6 +313,7 @@ export async function runNeuralTranslationPipeline(
     targetLanguage,
     marketContext,
     chapterNumber = 1,
+    previousContext,
   } = config;
 
   const phases: TranslationPhase[] = PHASES_DEFINITIONS.map((p) => ({
@@ -558,6 +561,7 @@ export type AiTranslateFn = (input: {
   text: string;
   langCode: string;
   marketContext?: string;
+  previousContext?: string;
 }) => Promise<{
   ok: boolean;
   text: string;
@@ -575,6 +579,7 @@ export async function runLocalizedTranslationPipeline(
     targetLanguage,
     marketContext,
     chapterNumber = 1,
+    previousContext,
   } = config;
 
   const phases: TranslationPhase[] = PHASES_DEFINITIONS.map((p) => ({
@@ -606,6 +611,7 @@ export async function runLocalizedTranslationPipeline(
         text: bibleText,
         langCode: targetLanguage,
         marketContext,
+        previousContext: config.previousContext,
       });
       if (aiResult.ok && aiResult.text) {
         translatedText = aiResult.text;

@@ -181,7 +181,7 @@ async function extractPageData(
 // Incremental / Chunked PDF Parser
 // ──────────────────────────────────────────────
 
-export const PARSE_BATCH_SIZE = 3; // Pages per batch — keeps each batch fast (~5-10s)
+export const PARSE_BATCH_SIZE = 10; // Pages per batch — larger batches for faster overall parsing
 
 export interface PDFHeader {
   pdf: PDFDocumentProxyLike;

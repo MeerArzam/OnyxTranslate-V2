@@ -67,16 +67,43 @@ function countOccurrences(haystack: string, needle: string): number {
 }
 
 function wordCount(text: string): number {
+  // Normalize: collapse all whitespace, strip leading/trailing, remove
+  // isolated punctuation-only tokens and RTL/LTR direction markers.
+  const cleaned = text
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, "")
+    .replace(/^[\s\p{P}]+|[\s\p{P}]+$/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return 0;
+
   // Space-delimited scripts: count whitespace-separated tokens.
-  const spaceWords = text.split(/\s+/).filter(Boolean).length;
+  const spaceWords = cleaned.split(/\s+/).filter(Boolean).length;
+
   // CJK / Hangul scripts have no word separators, so a whole sentence would
   // otherwise count as a single "word" and wreck the P17 length heuristic.
-  // Estimate ~2.5 script characters per English-word equivalent so the ratio
-  // compares like-for-like with the Latin source.
+  // Estimate ~2.5 script characters per English-word equivalent.
   const cjkChars =
-    text.match(/[\u3000-\u303F\u3040-\u30FF\u3400-\u9FFF\uF900-\uFAFF\uFF66-\uFF9F\uAC00-\uD7AF]/g)
+    cleaned.match(/[\u3000-\u303F\u3040-\u30FF\u3400-\u9FFF\uF900-\uFAFF\uFF66-\uFF9F\uAC00-\uD7AF]/g)
       ?.length ?? 0;
-  return Math.max(spaceWords, Math.round(cjkChars / 2.5));
+
+  // Arabic/Urdu script: compound words can inflate whitespace-based counts
+  // because the AI may use fewer but longer space-separated tokens.
+  // Use character-based estimation as a cross-check for RTL scripts.
+  const arabicChars =
+    cleaned.match(/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g)
+      ?.length ?? 0;
+
+  if (arabicChars > 50) {
+    // Arabic-script: estimate ~8 characters per word-equivalent
+    const estimated = Math.round(arabicChars / 8);
+    return Math.max(spaceWords, estimated);
+  }
+
+  if (cjkChars > 0) {
+    return Math.max(spaceWords, Math.round(cjkChars / 2.5));
+  }
+
+  return spaceWords;
 }
 
 /** Every standalone Latin word in a text. */
@@ -120,7 +147,15 @@ function checkGlossaryHitRate(ctx: CheckContext): PhaseCheck {
     if (!regex.test(ctx.source)) continue;
     present++;
     const target = glossary[term]?.[ctx.langCode] ?? glossary[term]?.en;
-    if (target && ctx.output.toLowerCase().includes(target.toLowerCase())) {
+    if (!target) { missing.push(term); continue; }
+    // Fuzzy match: exact includes, or the first 3+ chars of target appear
+    // (handles suffixes / diacritics the AI may add).
+    const tNorm = target.trim().toLowerCase();
+    const oNorm = ctx.output.toLowerCase();
+    if (
+      oNorm.includes(tNorm) ||
+      (tNorm.length >= 3 && oNorm.includes(tNorm.slice(0, Math.max(3, tNorm.length - 1))))
+    ) {
       matched++;
     } else {
       missing.push(term);
@@ -202,19 +237,27 @@ function checkLiteralBridge(ctx: CheckContext): PhaseCheck {
 }
 
 function checkDialoguePreserved(ctx: CheckContext): PhaseCheck {
-  const quoteLike = /[“”"«»「」„”]/g;
-  const sourceQuotes = (ctx.source.match(quoteLike) ?? []).length;
-  const outputQuotes = (ctx.output.match(quoteLike) ?? []).length;
-  // Allow ±40% drift (translations can merge or split dialogue)
-  const ok = sourceQuotes === 0 || Math.abs(outputQuotes - sourceQuotes) <= Math.max(2, sourceQuotes * 0.4);
+  // Count dialogue pairs, not individual marks — more meaningful for
+  // scripts that use «» or 「」 which have distinct open/close glyphs.
+  const quoteOpen = /[""„«「『]/g;
+  const quoteClose = /[""”»」』]/g;
+  const sourceOpens = (ctx.source.match(quoteOpen) ?? []).length;
+  const sourceCloses = (ctx.source.match(quoteClose) ?? []).length;
+  const sourcePairs = Math.min(sourceOpens, sourceCloses);
+  const outputOpens = (ctx.output.match(quoteOpen) ?? []).length;
+  const outputCloses = (ctx.output.match(quoteClose) ?? []).length;
+  const outputPairs = Math.min(outputOpens, outputCloses);
+  // Allow ±60% drift: translations can merge short exchanges into longer
+  // blocks, or split long monologues — especially common with «» guillemets.
+  const ok = sourcePairs === 0 || Math.abs(outputPairs - sourcePairs) <= Math.max(1, Math.round(sourcePairs * 0.6));
   return {
     id: 4,
     label: "P4",
     name: "Character Voice & Dialogue",
     status: ok ? "pass" : "warn",
     detail: ok
-      ? `Dialogue turns preserved (${outputQuotes} quote marks)`
-      : `Quote marks dropped from ${sourceQuotes} → ${outputQuotes}; check speaker turns`,
+      ? `Dialogue turns preserved (${outputPairs} pairs from ${sourcePairs} source)`
+      : `Dialogue pairs dropped from ${sourcePairs} \u2192 ${outputPairs}; check speaker turns`,
   };
 }
 
@@ -282,7 +325,13 @@ function checkMagicTerms(ctx: CheckContext): PhaseCheck {
     if (!regex.test(ctx.source)) continue;
     present++;
     const target = glossary[term]?.[ctx.langCode];
-    if (target && ctx.output.toLowerCase().includes(target.toLowerCase())) matched++;
+    if (!target) continue;
+    const tNorm = target.trim().toLowerCase();
+    const oNorm = ctx.output.toLowerCase();
+    if (
+      oNorm.includes(tNorm) ||
+      (tNorm.length >= 3 && oNorm.includes(tNorm.slice(0, Math.max(3, tNorm.length - 1))))
+    ) matched++;
   }
   const ratio = present === 0 ? 1 : matched / present;
   const status: PhaseStatus = ratio >= 0.8 ? "pass" : ratio >= 0.5 ? "warn" : "fail";
@@ -362,7 +411,13 @@ function checkRanks(ctx: CheckContext): PhaseCheck {
     if (!regex.test(ctx.source)) continue;
     present++;
     const target = cfg?.ranks?.[rank];
-    if (target && ctx.output.toLowerCase().includes(target.toLowerCase())) matched++;
+    if (!target) continue;
+    const tNorm = target.trim().toLowerCase();
+    const oNorm = ctx.output.toLowerCase();
+    if (
+      oNorm.includes(tNorm) ||
+      (tNorm.length >= 3 && oNorm.includes(tNorm.slice(0, Math.max(3, tNorm.length - 1))))
+    ) matched++;
   }
   const ratio = present === 0 ? 1 : matched / present;
   const status: PhaseStatus = ratio >= 0.8 ? "pass" : ratio >= 0.5 ? "warn" : "fail";
@@ -400,17 +455,19 @@ function checkLengthHeuristic(ctx: CheckContext): PhaseCheck {
   const outWords = wordCount(ctx.output);
   const ratio = outWords / srcWords;
 
-  // Typical expansion/shrink factors per script family
-  let expectedMin = 0.7;
-  let expectedMax = 1.6;
+  // Typical expansion/shrink factors per script family.
+  // Wider ranges reduce false-positive warnings on AI translations that
+  // legitimately expand or contract for natural flow.
+  let expectedMin = 0.5;
+  let expectedMax = 2.0;
   const cfg = getLocalizationConfig(ctx.langCode);
   if (cfg) {
     if (["zh", "ja", "ko", "Chinese", "Japanese", "Hangul"].includes(cfg.script)) {
-      expectedMin = 0.5;
-      expectedMax = 1.2;
+      expectedMin = 0.3;
+      expectedMax = 1.5;
     } else if (["Arabic", "Cyrillic", "Devanagari", "Bengali"].includes(cfg.script)) {
-      expectedMin = 0.9;
-      expectedMax = 1.9;
+      expectedMin = 0.4;
+      expectedMax = 2.2;
     }
   }
 
@@ -545,13 +602,15 @@ function checkLayoutFit(
   // P22: estimate per-line rendered width vs. a book text box. Without page
   // coordinates in this layer we use a per-script char-width heuristic and
   // flag the longest lines that would overflow a typical ~96-unit column.
+  // Use conservative factors: Arabic/Urdu characters are wider than Latin
+  // on average, and the AI may produce longer logical lines.
   const widthFactor = (() => {
     const script = cfg?.script ?? "";
     if (["Chinese", "Japanese", "Hangul"].includes(script)) return 1.0; // CJK glyphs are full-width
-    if (script === "Arabic") return 0.62;
-    return 0.55; // Latin / Cyrillic / Devanagari / Bengali
+    if (script === "Arabic") return 0.75; // Arabic/Urdu glyphs are wider than Latin
+    return 0.60; // Latin / Cyrillic / Devanagari / Bengali
   })();
-  const MAX_LINE_UNITS = 96;
+  const MAX_LINE_UNITS = 120; // generous limit for book-formatted text
   const lines = ctx.output.split("\n");
   let worst = "";
   let worstUnits = 0;

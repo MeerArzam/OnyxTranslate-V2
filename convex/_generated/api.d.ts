@@ -9,7 +9,10 @@
  */
 
 import type * as health from "../health.js";
+import type * as mutations from "../mutations.js";
+import type * as queries from "../queries.js";
 import type * as translate from "../translate.js";
+import type * as upload from "../upload.js";
 
 import type {
   ApiFromModules,
@@ -19,7 +22,10 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   health: typeof health;
+  mutations: typeof mutations;
+  queries: typeof queries;
   translate: typeof translate;
+  upload: typeof upload;
 }>;
 
 /**

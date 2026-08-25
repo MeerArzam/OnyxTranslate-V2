@@ -32,8 +32,7 @@ import {
   FlaskConical,
   ListChecks,
 } from "lucide-react";
-import { useAction } from "convex/react";
-import { api } from "../../convex/_generated/api";
+// Convex hooks imported below with storage replacement
 import {
   runLocalizedTranslationPipeline,
   prepareLanguageModel,
@@ -61,26 +60,13 @@ import {
   type PDFGenerationProgress,
 } from "@/lib/translator/pdfGenerator";
 import {
-  saveProject,
-  getProject,
-  deleteProject,
-  saveTranslationChunk,
-  saveTranslationPdf,
-  saveQAReport,
-  getTranslationPdf,
-  deleteTranslation,
-  getAllTranslations,
   mergeChunkTexts,
   chunkPageTexts,
-  exportAllProgress,
-  serializeProgress,
-  importAllProgress,
-  deserializeProgress,
-  isIndexedDBAvailable,
   type TranslationChunk,
-  type LanguageProgress,
-  type ProjectData,
 } from "@/lib/translator/storage";
+import { useQuery, useMutation, useAction } from "convex/react";
+import type { Id } from "../../convex/_generated/dataModel";
+import { api } from "../../convex/_generated/api";
 
 const targetLanguages = [
   { code: "ur", name: "Urdu", nativeName: "اردو", script: "Arabic" },
@@ -119,6 +105,28 @@ interface CompletedLanguage {
 export default function Translator() {
   // ─── Convex server-side AI action ───
   const translateChunkAction = useAction(api.translate.translateChunk);
+  const storePdfAction = useAction(api.upload.storePdf);
+
+  // ─── Convex database state ───
+  const [projectId, setProjectId] = useState<Id<"projects"> | null>(null);
+  const createProjectMutation = useMutation(api.mutations.createProject);
+  const deleteProjectMutation = useMutation(api.mutations.deleteProject);
+  const upsertChunkMutation = useMutation(api.mutations.upsertChunk);
+  const updateChunkMutation = useMutation(api.mutations.updateChunk);
+  const upsertTranslationMutation = useMutation(api.mutations.upsertTranslation);
+  const updateTranslationMutation = useMutation(api.mutations.updateTranslation);
+  const deleteChunksForLangMutation = useMutation(api.mutations.deleteChunksForLang);
+
+  // ─── Convex reactive subscriptions ───
+  const latestProject = useQuery(api.queries.getLatestProject);
+  const convexProject = useQuery(
+    api.queries.getProject,
+    projectId ? { projectId } : "skip"
+  );
+  const convexTranslations = useQuery(
+    api.queries.getProjectTranslations,
+    projectId ? { projectId } : "skip"
+  );
 
   // ─── Source state ───
   const [pdfFileName, setPdfFileName] = useState<string | null>(null);
@@ -194,36 +202,25 @@ export default function Translator() {
   // ─── Persistence warnings ───
   const [dbWarning, setDbWarning] = useState<string | null>(null);
 
-  // ─── Check for saved progress on mount ───
+  // ─── Check for saved progress on mount via Convex ───
   useEffect(() => {
-    (async () => {
-      try {
-        const project = await getProject();
-        if (project && project.parsedPages > 0) {
-          setHasSavedProgress(true);
-          setSavedFileName(project.fileName);
-        }
-      } catch {
-        // IndexedDB not available or corrupted — ignore
-      }
-    })();
+    if (latestProject && latestProject.parsedPages > 0) {
+      setHasSavedProgress(true);
+      setSavedFileName(latestProject.fileName);
+      setProjectId(latestProject._id);
+    }
+  }, [latestProject]);
+
+  // ─── Convex connectivity check ───
+  useEffect(() => {
+    // Convex is always available if the app loads — no local DB health check needed
   }, []);
 
-  // ─── Check IndexedDB health on mount ───
-  useEffect(() => {
-    (async () => {
-      const available = await isIndexedDBAvailable();
-      if (!available) {
-        setDbWarning("IndexedDB is not available. Progress will not be saved. Please export your work regularly.");
-      }
-    })();
-  }, []);
 
-  // ─── Resume saved progress ───
+  // ─── Resume saved progress from Convex ───
   const handleResume = useCallback(async () => {
     try {
-      const project = await getProject();
-      if (!project) {
+      if (!latestProject) {
         setHasSavedProgress(false);
         return;
       }
@@ -231,120 +228,46 @@ export default function Translator() {
       setIsUploading(true);
       setUploadError(null);
       setParsePhase("loading");
-      setParseProgress({ current: project.parsedPages, total: project.pageCount });
+      setParseProgress({ current: latestProject.parsedPages, total: latestProject.pageCount });
 
-      // Restore project state
-      // NOTE: project.arrayBuffer comes freshly decoded from IndexedDB —
-      // it has NOT been touched by pdfjs-dist yet, so it's fully usable.
-      setSourceText(project.fullText);
-      setPdfFileName(project.fileName);
-      setPdfPageCount(project.pageCount);
-      setPdfWarnings(project.warnings);
-      setPageData(project.pageData);
-      setOriginalPageTexts(project.pageTexts);
-      setOriginalArrayBuffer(project.arrayBuffer);
+      // Restore project state from Convex
+      setSourceText(latestProject.fullText);
+      setPdfFileName(latestProject.fileName);
+      setPdfPageCount(latestProject.pageCount);
+      setPdfWarnings([]);
+      setPageData(latestProject.pageData);
+      setOriginalPageTexts(latestProject.pageData.map((p: any) => p.text));
+      setOriginalArrayBuffer(null);
+      setProjectId(latestProject._id);
 
-      // If parsing was incomplete, resume parsing from the saved page.
-      // This is wrapped in its own try/catch so a failure here NEVER wipes
-      // out the restored state — the user can still translate/download
-      // whatever pages were already parsed and saved.
-      if (project.parsedPages < project.pageCount) {
-        setParsePhase("parsing");
-        try {
-          // getPDFJS() already wires the worker to the local /vendor copy.
-          const pdfjsLib = await getPDFJS();
-          // CRITICAL: pdfjs-dist v5 detaches/transfers any ArrayBuffer passed
-          // to getDocument(). Pass a CLONE so the saved buffer stays intact
-          // for IndexedDB saves and later PDF generation. Without this, the
-          // next saveProject() throws "attempting to access detached ArrayBuffer"
-          // and resume fails with "try fresh" every single time.
-          const bufferForPdfjs = project.arrayBuffer.slice(0);
-          const loadingTask = pdfjsLib.getDocument({
-            data: bufferForPdfjs,
-            disableFontFace: true,
-            disableRange: true,
-            disableAutoFetch: true,
-            useSystemFonts: false,
-          });
-          const pdf = await loadingTask.promise;
-
-          let updatedPageData = [...project.pageData];
-          let updatedPageTexts = [...project.pageTexts];
-
-          for (
-            let batchStart = project.parsedPages + 1;
-            batchStart <= project.pageCount;
-            batchStart += PARSE_BATCH_SIZE
-          ) {
-            const batchEnd = Math.min(batchStart + PARSE_BATCH_SIZE - 1, project.pageCount);
-            const batchResults = await parsePDFBatch(pdf, batchStart, batchEnd);
-
-            for (const result of batchResults) {
-              updatedPageData.push(result);
-              updatedPageTexts.push(result.text);
-            }
-
-            updatedPageData.sort((a, b) => a.num - b.num);
-
-            const incrementalText = updatedPageTexts.filter(Boolean).join("\n\n").trim();
-
-            setParseProgress({ current: batchEnd, total: project.pageCount });
-            setPageData([...updatedPageData]);
-            setOriginalPageTexts([...updatedPageTexts]);
-            setSourceText(incrementalText);
-
-            // Save after each batch — uses the untouched original buffer
-            await saveProject({
-              id: "current",
-              fileName: project.fileName,
-              pageCount: project.pageCount,
-              wordCount: incrementalText.split(/\s+/).filter(Boolean).length,
-              warnings: project.warnings,
-              arrayBuffer: project.arrayBuffer,
-              pageData: updatedPageData,
-              pageTexts: updatedPageTexts,
-              fullText: incrementalText,
-              parsedPages: batchEnd,
-              createdAt: project.createdAt,
+      // Load saved translations from Convex
+      if (convexTranslations && convexTranslations.length > 0) {
+        const completed: CompletedLanguage[] = [];
+        for (const lang of targetLanguages) {
+          const translation = convexTranslations.find((t) => t.langCode === lang.code);
+          if (translation?.status === "complete" && translation.mergedText) {
+            completed.push({
+              index: targetLanguages.indexOf(lang),
+              code: lang.code,
+              name: lang.name,
+              nativeName: lang.nativeName,
+              translatedText: translation.mergedText,
             });
           }
-        } catch (parseErr) {
-          // Non-fatal: keep whatever pages were already parsed & saved.
-          console.error("Failed to continue parsing during resume:", parseErr);
         }
-      }
 
-      // Load saved translations
-      const translations = await getAllTranslations();
-      const completed: CompletedLanguage[] = [];
-      for (const lang of targetLanguages) {
-        const data = translations[lang.code];
-        if (data?.progress?.complete) {
-          completed.push({
-            index: targetLanguages.indexOf(lang),
-            code: lang.code,
-            name: lang.name,
-            nativeName: lang.nativeName,
-            translatedText: data.progress.mergedText || mergeChunkTexts(data.chunks),
-            pdfBlob: data.pdfBlob || undefined,
-          });
-        }
-      }
-
-      if (completed.length > 0) {
-        setCompletedLanguages(completed);
-        if (completed.length >= targetLanguages.length) {
-          setFlowPhase("all-complete");
-          setCurrentLanguageIndex(targetLanguages.length);
-        } else {
-          // Find first incomplete language
-          const nextIncomplete = targetLanguages.findIndex(
-            (lang) => !completed.some((c) => c.code === lang.code)
-          );
-          if (nextIncomplete >= 0) {
+        if (completed.length > 0) {
+          setCompletedLanguages(completed);
+          if (completed.length >= targetLanguages.length) {
+            setFlowPhase("all-complete");
+            setCurrentLanguageIndex(targetLanguages.length);
+          } else {
             setFlowPhase("idle");
             setCurrentLanguageIndex(-1);
           }
+        } else {
+          setFlowPhase("idle");
+          setCurrentLanguageIndex(-1);
         }
       } else {
         setFlowPhase("idle");
@@ -361,7 +284,7 @@ export default function Translator() {
       setHasSavedProgress(false);
       setIsUploading(false);
     }
-  }, []);
+  }, [latestProject, convexTranslations]);
 
   // ─── PDF Upload (chunked) ───
   const handleFileSelect = useCallback(async (file: File | null) => {
@@ -373,7 +296,9 @@ export default function Translator() {
     setParsePhase("loading");
     resetFlow();
     // Discard any previous saved progress when uploading a new file
-    await deleteProject().catch(() => {});
+    if (projectId) {
+      await deleteProjectMutation({ projectId }).catch(() => {});
+    }
     setHasSavedProgress(false);
 
     try {
@@ -383,21 +308,6 @@ export default function Translator() {
       setPdfFileName(file.name);
       setPdfPageCount(header.totalPages);
       setOriginalArrayBuffer(header.arrayBuffer);
-
-      // Initial save with header only
-      await saveProject({
-        id: "current",
-        fileName: file.name,
-        pageCount: header.totalPages,
-        wordCount: 0,
-        warnings: [],
-        arrayBuffer: header.arrayBuffer,
-        pageData: [],
-        pageTexts: [],
-        fullText: "",
-        parsedPages: 0,
-        createdAt: new Date().toISOString(),
-      });
 
       setParsePhase("parsing");
       setParseProgress({ current: 0, total: header.totalPages });
@@ -421,29 +331,12 @@ export default function Translator() {
 
         allPageData.sort((a, b) => a.num - b.num);
 
-        // Build incremental full text for live word count
         const incrementalText = allPageTexts.filter(Boolean).join("\n\n").trim();
 
         setParseProgress({ current: batchEnd, total: header.totalPages });
         setPageData([...allPageData]);
         setOriginalPageTexts([...allPageTexts]);
         setSourceText(incrementalText);
-
-        // Save to IndexedDB after each batch
-        const fullText = incrementalText;
-        await saveProject({
-          id: "current",
-          fileName: file.name,
-          pageCount: header.totalPages,
-          wordCount: fullText.split(/\s+/).filter(Boolean).length,
-          warnings: [],
-          arrayBuffer: header.arrayBuffer,
-          pageData: allPageData,
-          pageTexts: allPageTexts,
-          fullText,
-          parsedPages: batchEnd,
-          createdAt: new Date().toISOString(),
-        });
       }
 
       // Final text
@@ -468,20 +361,40 @@ export default function Translator() {
       }
       setPdfWarnings(warnings);
 
-      // Final save with complete data
-      await saveProject({
-        id: "current",
+      // Upload PDF to Convex File Storage
+      const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+        const bytes = new Uint8Array(buffer);
+        let binary = "";
+        const chunkSize = 8192;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          const chunk = bytes.subarray(i, i + chunkSize);
+          binary += String.fromCharCode(...chunk);
+        }
+        return btoa(binary);
+      };
+
+      const pdfBase64 = arrayBufferToBase64(header.arrayBuffer);
+      setParsePhase("parsing");
+      setParseProgress({ current: header.totalPages, total: header.totalPages });
+
+      const { storageId } = await storePdfAction({
+        fileName: file.name,
+        pdfBase64,
+      });
+
+      // Create project record in Convex DB
+      const newProjectId = await createProjectMutation({
         fileName: file.name,
         pageCount: header.totalPages,
         wordCount: fullText.split(/\s+/).filter(Boolean).length,
-        warnings,
-        arrayBuffer: header.arrayBuffer,
+        pdfStorageId: storageId,
         pageData: allPageData,
-        pageTexts: allPageTexts,
         fullText,
         parsedPages: header.totalPages,
-        createdAt: new Date().toISOString(),
+        status: "ready",
       });
+
+      setProjectId(newProjectId);
 
       const validation = validateTextForTranslation(fullText);
       if (!validation.valid) {
@@ -498,7 +411,7 @@ export default function Translator() {
     } finally {
       setIsUploading(false);
     }
-  }, []);
+  }, [projectId, deleteProjectMutation, storePdfAction, createProjectMutation]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -521,71 +434,18 @@ export default function Translator() {
 
   // ─── Export / Import Progress ───
   const handleExportProgress = useCallback(async () => {
-    try {
-      const data = await exportAllProgress();
-      const json = serializeProgress(data);
-      const blob = new Blob([json], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `onyx-translate-progress-${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error("Export failed:", err);
-    }
+    // With Convex, data is stored server-side — export is a no-op placeholder
+    // Future: export project data as JSON from Convex queries
   }, []);
-
   const handleImportProgress = useCallback(async () => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".json";
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-      try {
-        const text = await file.text();
-        const data = deserializeProgress(text);
-        await importAllProgress(data);
-        // Reset any in-session state so the restored project is picked up
-        // cleanly and the Resume banner appears.
-        setCurrentLanguageIndex(-1);
-        setIsTranslating(false);
-        setCurrentTranslation(null);
-        setTranslationError(null);
-        setCompletedLanguages([]);
-        setFlowPhase("idle");
-        setPdfProgress(null);
-        setCurrentPdfBlob(null);
-        setTranslationProgress(null);
-        setSourceText("");
-        setPdfFileName(null);
-        setPdfPageCount(null);
-        setPdfWarnings([]);
-        setUploadError(null);
-        setOriginalArrayBuffer(null);
-        setPageData([]);
-        setOriginalPageTexts([]);
-        setParsePhase("idle");
-        // Reload the saved progress state
-        const project = await getProject();
-        if (project && project.parsedPages > 0) {
-          setHasSavedProgress(true);
-          setSavedFileName(project.fileName);
-        } else {
-          setHasSavedProgress(false);
-          setSavedFileName(null);
-        }
-      } catch (err) {
-        console.error("Import failed:", err);
-        setUploadError("Failed to import progress file. Make sure it is a valid .onyx-progress.json file.");
-      }
-    };
-    input.click();
+    // With Convex, data is stored server-side — import is a no-op placeholder
+    // Future: import project data into Convex from a JSON file
   }, []);
-
   const clearSource = useCallback(async () => {
-    await deleteProject();
+    if (projectId) {
+      await deleteProjectMutation({ projectId }).catch(() => {});
+    }
+    setProjectId(null);
     setSourceText("");
     setPdfFileName(null);
     setPdfPageCount(null);
@@ -598,7 +458,7 @@ export default function Translator() {
     setHasSavedProgress(false);
     resetFlow();
     if (fileInputRef.current) fileInputRef.current.value = "";
-  }, []);
+  }, [projectId, deleteProjectMutation]);
 
   const loadSample = useCallback(() => {
     setSourceText(generateSampleText());
@@ -697,23 +557,22 @@ export default function Translator() {
         // A forced retranslate wipes the old saved chunks + cached PDF first
         // so the new run starts fresh from chunk 0.
         if (force) {
-          await deleteTranslation(lang.code).catch(() => {});
+          await deleteChunksForLangMutation({ projectId: projectId!, langCode: lang.code }).catch(() => {});
         }
 
         // Check if we already have saved translations for this language
-        const allTranslations = await getAllTranslations();
-        const saved = allTranslations[lang.code];
+        const saved = convexTranslations?.find((t) => t.langCode === lang.code);
 
-        if (!force && saved?.progress?.complete && saved.progress.mergedText) {
+        if (!force && saved?.status === "complete" && saved.mergedText) {
           // Use saved translation
-          setCurrentTranslation(saved.progress.mergedText);
-          setCurrentQaReport(saved.qaReport ?? null);
-          setTranslationMode(saved.qaReport ? "vly" : null);
+          setCurrentTranslation(saved.mergedText);
+          setCurrentQaReport(null);
+          setTranslationMode(null);
           setTranslationModel(null);
           setTranslationUsage(null);
           setTranslationProgress({
-            current: saved.progress.totalChunks,
-            total: saved.progress.totalChunks,
+            current: saved.totalChunks,
+            total: saved.totalChunks,
             phase: "Complete (restored from save)",
           });
         } else {
@@ -735,18 +594,8 @@ export default function Translator() {
             return sentences.slice(-2).join(" ");
           };
 
-          // Determine starting chunk (resume from saved partial)
+          // Determine starting chunk (always start from 0 with Convex)
           let startChunk = 0;
-          if (saved?.chunks) {
-            const completedChunks = saved.chunks.filter((c) => c.complete);
-            for (const sc of completedChunks) {
-              chunks.push(sc);
-            }
-            startChunk = completedChunks.length;
-            mergedText = mergeChunkTexts(chunks);
-            // Restore sliding window context from the last completed chunk
-            if (mergedText) slidingContext = extractLastSentences(mergedText);
-          }
 
           for (let ci = startChunk; ci < totalChunks; ci++) {
             const range = pageRanges[ci];
@@ -813,17 +662,38 @@ export default function Translator() {
             // P21: Update sliding window context for next chunk
             slidingContext = extractLastSentences(result.translatedText);
 
-            // Save to IndexedDB after each chunk
+            // Save to Convex DB after each chunk
             const merged = mergeChunkTexts(chunks);
             mergedText = merged;
-            await saveTranslationChunk(
-              lang.code,
-              lang.name,
-              lang.nativeName,
-              chunks,
-              merged,
-              ci === totalChunks - 1
-            );
+            if (projectId) {
+              // Upsert chunk record
+              const chunkId = await upsertChunkMutation({
+                projectId,
+                langCode: lang.code,
+                chunkIndex: ci,
+                sourceText: chunkText,
+              });
+              await updateChunkMutation({
+                chunkId,
+                translatedText: result.translatedText,
+                status: "done",
+                model: result.model,
+                usage: result.usage,
+              });
+              // Upsert or update translation record
+              const translationId = await upsertTranslationMutation({
+                projectId,
+                langCode: lang.code,
+                totalChunks,
+              });
+              await updateTranslationMutation({
+                translationId,
+                status: ci === totalChunks - 1 ? "complete" : "in_progress",
+                completedChunks: ci + 1,
+                mergedText: merged,
+                ...(ci === totalChunks - 1 ? { completedAt: Date.now() } : {}),
+              });
+            }
 
             // Cache the latest QA report so refresh never loses it
             if (result.qaReport) {
@@ -831,7 +701,7 @@ export default function Translator() {
               setTranslationMode(result.mode ?? (neuralAvailable ? "neural" : "glossary"));
               setTranslationModel(result.model ?? null);
               setTranslationUsage(result.usage ?? null);
-              await saveQAReport(lang.code, result.qaReport).catch(() => {});
+              // QA report stored in React state (Convex doesn't store QA reports)
             }
 
             setTranslationProgress({
@@ -860,7 +730,7 @@ export default function Translator() {
         setModelStatus(null);
       }
     },
-    [sourceText, originalPageTexts, completedLanguages, marketContext]
+    [sourceText, originalPageTexts, completedLanguages, marketContext, projectId, convexTranslations, deleteChunksForLangMutation, upsertChunkMutation, updateChunkMutation, upsertTranslationMutation, updateTranslationMutation, translateChunkAction]
   );
 
   const handleContinue = useCallback(async () => {
@@ -1003,13 +873,8 @@ export default function Translator() {
 
       setCurrentPdfBlob(blob);
 
-      // Cache the generated PDF so "Download All ZIP" never regenerates it
-      // (and it survives page refresh / resume).
-      try {
-        await saveTranslationPdf(lang.code, blob);
-      } catch (e) {
-        console.warn("Failed to cache PDF in IndexedDB:", e);
-      }
+      // PDF blob is cached in React state for the current session
+      // Convex stores the original PDF; translated PDFs are generated on demand
 
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -1084,12 +949,8 @@ export default function Translator() {
         );
 
         // 1) Use the blob already in memory
-        // 2) Otherwise use the cached blob from IndexedDB (survives refresh)
-        // 3) Only as a last resort regenerate (worker makes this fast)
+        // 2) Regenerate if needed (worker makes this fast)
         let pdfBlob: Blob | null | undefined = completed.pdfBlob;
-        if (!pdfBlob) {
-          pdfBlob = await getTranslationPdf(langCode).catch(() => null);
-        }
         if (
           !pdfBlob &&
           originalArrayBuffer &&
@@ -1427,7 +1288,8 @@ export default function Translator() {
                       </Button>
                       <Button
                         onClick={() => {
-                          deleteProject();
+                          if (projectId) deleteProjectMutation({ projectId });
+                          setProjectId(null);
                           setHasSavedProgress(false);
                         }}
                         variant="outline"
@@ -1477,7 +1339,7 @@ export default function Translator() {
                         clearSource();
                       } else if (e.target.value.trim()) {
                         // Discard saved progress when pasting new text
-                        await deleteProject().catch(() => {});
+                        if (projectId) await deleteProjectMutation({ projectId }).catch(() => {});
                         setHasSavedProgress(false);
                         resetFlow();
                       }

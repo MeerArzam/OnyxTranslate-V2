@@ -162,7 +162,7 @@ export default function Translator() {
   const [modelStatus, setModelStatus] = useState<string | null>(null);
   const [isNeural, setIsNeural] = useState(false);
 
-  // ─── 23-phase DeepSeek QA state ───
+  // ─── 23-phase Gemini QA state ───
   const [currentQaReport, setCurrentQaReport] = useState<QAReport | null>(null);
   const [translationMode, setTranslationMode] = useState<TranslationMode | null>(null);
   const [translationModel, setTranslationModel] = useState<string | null>(null);
@@ -174,7 +174,7 @@ export default function Translator() {
   } | null>(null);
   const [showAllQaPhases, setShowAllQaPhases] = useState(false);
 
-  // ─── Baseline test state (Part 2 of the 18-phase spec) ───
+  // ─── Baseline test state (Part 2 of the 23-phase spec) ───
   const [baselineSummary, setBaselineSummary] = useState<BaselineSummary | null>(null);
   const [baselineRunning, setBaselineRunning] = useState(false);
   const [baselineOpen, setBaselineOpen] = useState(false);
@@ -1170,10 +1170,10 @@ export default function Translator() {
       />
 
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-xl border-b border-border/40">
+      <header className="sticky top-0 z-40 backdrop-blur-xl" style={{ background: 'rgba(6,6,14,0.85)', borderBottom: '1px solid rgba(0,229,255,0.10)' }}>
         <div className="max-w-[1200px] mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="size-8 rounded-lg bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center">
+            <div className="size-8 rounded-lg neon-glow flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #00e5ff, #a78bfa)' }}>
               <Languages className="size-4 text-primary-foreground" />
             </div>
             <div>
@@ -1186,10 +1186,10 @@ export default function Translator() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="text-[10px]">
+            <Badge variant="secondary" className="text-[10px]" style={{ borderColor: 'rgba(0,229,255,0.3)' }}>
               Images Preserved
             </Badge>
-            <Badge variant="outline" className="text-[10px]">
+            <Badge variant="outline" className="text-[10px]" style={{ borderColor: 'rgba(0,229,255,0.3)', color: '#00e5ff' }}>
               {targetLanguages.length} Languages
             </Badge>
             <div className="flex items-center gap-1 ml-1">
@@ -1240,12 +1240,12 @@ export default function Translator() {
             <div className="rounded-xl border border-border/50 bg-card overflow-hidden">
               <div className="px-4 py-3 border-b border-border/30 bg-muted/30">
                 <div className="flex items-center gap-2">
-                  <span className="size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold shrink-0">
+                  <span className="size-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 neon-glow" style={{ background: 'linear-gradient(135deg, #00e5ff, #a78bfa)', color: '#06060e' }}>
                     1
                   </span>
                   <span className="text-xs font-semibold">Upload English PDF</span>
                   {pdfFileName && (
-                    <CheckCircle2 className="size-3.5 text-green-500 ml-auto" />
+                    <CheckCircle2 className="size-3.5 ml-auto" style={{ color: '#00e5ff' }} />
                   )}
                 </div>
               </div>
@@ -1289,8 +1289,8 @@ export default function Translator() {
                     </div>
                   ) : pdfFileName ? (
                     <>
-                      <div className="size-10 rounded-lg bg-green-500/10 flex items-center justify-center">
-                        <FileUp className="size-5 text-green-500" />
+                      <div className="size-10 rounded-lg flex items-center justify-center" style={{ background: 'rgba(0,229,255,0.1)' }}>
+                        <FileUp className="size-5" style={{ color: '#00e5ff' }} />
                       </div>
                       <div className="text-center">
                         <p className="text-xs font-medium">{pdfFileName}</p>
@@ -1385,8 +1385,8 @@ export default function Translator() {
                 {/* Resume saved progress */}
                 {hasSavedProgress && !isUploading && !pdfFileName && (
                   <div className="space-y-2">
-                    <div className="flex items-start gap-2 p-2.5 rounded-lg bg-green-500/5 border border-green-500/20 text-[11px]">
-                      <CheckCircle2 className="size-3.5 text-green-500 shrink-0 mt-0.5" />
+                    <div className="flex items-start gap-2 p-2.5 rounded-lg text-[11px]" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.10)' }}>
+                      <CheckCircle2 className="size-3.5 shrink-0 mt-0.5" style={{ color: '#00e5ff' }} />
                       <span>
                         Found saved progress for <strong>{savedFileName}</strong>.
                         Resume where you left off?
@@ -1482,7 +1482,7 @@ export default function Translator() {
                               <div key={r.langCode} className="px-2.5 py-1.5 text-[10px]">
                                 <div className="flex items-center gap-1.5">
                                   {r.overall === "pass" ? (
-                                    <CheckCircle2 className="size-3 text-green-500 shrink-0" />
+                                    <CheckCircle2 className="size-3 shrink-0" style={{ color: '#00e5ff' }} />
                                   ) : r.overall === "warn" ? (
                                     <AlertCircle className="size-3 text-amber-500 shrink-0" />
                                   ) : (
@@ -1497,10 +1497,10 @@ export default function Translator() {
                                   <span
                                     className={`ml-auto font-mono ${
                                       r.overall === "pass"
-                                        ? "text-green-600"
+                                        ? "text-cyan-400"
                                         : r.overall === "warn"
-                                          ? "text-amber-600"
-                                          : "text-red-600"
+                                          ? "text-yellow-400"
+                                          : "text-red-400"
                                     }`}
                                   >
                                     {r.score}/100
@@ -1590,7 +1590,7 @@ export default function Translator() {
               <div className="rounded-xl border border-border/50 bg-card overflow-hidden">
                 <div className="px-4 py-3 border-b border-border/30 bg-muted/30">
                   <div className="flex items-center gap-2">
-                    <span className="size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold shrink-0">
+                    <span className="size-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 neon-glow" style={{ background: 'linear-gradient(135deg, #00e5ff, #a78bfa)', color: '#06060e' }}>
                       2
                     </span>
                     <span className="text-xs font-semibold">
@@ -1676,9 +1676,9 @@ export default function Translator() {
                         {completedLanguages.map((cl) => (
                           <div
                             key={cl.code}
-                            className="flex items-center gap-2 py-1.5 px-2 rounded-md text-[11px] bg-green-500/5"
+                            className="flex items-center gap-2 py-1.5 px-2 rounded-md text-[11px]" style={{ background: 'rgba(0,229,255,0.04)' }}
                           >
-                            <CheckCircle2 className="size-3 text-green-500 shrink-0" />
+                            <CheckCircle2 className="size-3 shrink-0" style={{ color: '#00e5ff' }} />
                             <span className="min-w-0 truncate flex-1">
                               <span className="font-medium">{cl.name}</span>
                               <span className="text-muted-foreground ml-1">
@@ -1690,10 +1690,10 @@ export default function Translator() {
                                 variant="outline"
                                 className={`text-[8px] shrink-0 ${
                                   cl.qaReport.overall === "pass"
-                                    ? "text-green-600 border-green-500/30"
+                                    ? "text-cyan-400 border-cyan-500/30"
                                     : cl.qaReport.overall === "warn"
-                                      ? "text-amber-600 border-amber-500/30"
-                                      : "text-red-600 border-red-500/30"
+                                      ? "text-yellow-400 border-yellow-500/30"
+                                      : "text-red-400 border-red-500/30"
                                 }`}
                                 title={`QA ${cl.qaReport.score}/100 — ${cl.qaReport.checks.filter((c) => c.status === "pass").length} phases pass`}
                               >
@@ -1708,7 +1708,7 @@ export default function Translator() {
                               disabled={
                                 isTranslating || flowPhase === "generating-pdf"
                               }
-                              className="shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-muted-foreground transition-colors hover:bg-green-500/10 hover:text-green-600 disabled:pointer-events-none disabled:opacity-40"
+                              className="shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-muted-foreground transition-colors hover:bg-cyan-500/10 hover:text-cyan-400 disabled:pointer-events-none disabled:opacity-40"
                               title={`Retranslate ${cl.name} from the original source`}
                             >
                               <RotateCcw className="size-2.5" />
@@ -1726,17 +1726,17 @@ export default function Translator() {
                     !isTranslating && (
                       <div className="rounded-lg border border-border/40 bg-muted/20 p-2 space-y-1.5">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <CheckCircle2 className="size-3 text-green-500 shrink-0" />
+                          <CheckCircle2 className="size-3 shrink-0" style={{ color: '#00e5ff' }} />
                           <span className="text-[10px] font-semibold">
                             23-Phase QA
                           </span>
                           <span
                             className={`text-[10px] font-mono ml-auto ${
                               currentQaReport.overall === "pass"
-                                ? "text-green-600"
+                                ? "text-cyan-400"
                                 : currentQaReport.overall === "warn"
-                                  ? "text-amber-600"
-                                  : "text-red-600"
+                                  ? "text-yellow-400"
+                                  : "text-red-400"
                             }`}
                           >
                             {currentQaReport.score}/100
@@ -1790,9 +1790,9 @@ export default function Translator() {
                                 <span
                                   className={`shrink-0 font-semibold ${
                                     c.status === "pass"
-                                      ? "text-green-600"
+                                      ? "text-cyan-400"
                                       : c.status === "fail"
-                                        ? "text-red-500"
+                                        ? "text-red-400"
                                         : "text-amber-500"
                                   }`}
                                 >
@@ -1806,7 +1806,7 @@ export default function Translator() {
                             ))}
                             {!showAllQaPhases &&
                               currentQaReport.checks.every((c) => c.status === "pass") && (
-                                <p className="text-[9px] text-green-600">
+                                <p className="text-[9px] text-cyan-400">
                                   All phases pass ✓
                                 </p>
                               )}
@@ -1862,9 +1862,9 @@ export default function Translator() {
 
                     {flowPhase === "all-complete" && (
                       <>
-                        <div className="flex items-center gap-2 p-2 rounded-lg bg-green-500/10 border border-green-500/20">
-                          <CheckCheck className="size-4 text-green-500 shrink-0" />
-                          <span className="text-[11px] font-medium">
+                        <div className="flex items-center gap-2 p-2 rounded-lg" style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.15)' }}>
+                          <CheckCheck className="size-4 shrink-0" style={{ color: '#00e5ff' }} />
+                          <span className="text-[11px] font-medium neon-text">
                             All {targetLanguages.length} languages completed!
                           </span>
                         </div>
@@ -1959,7 +1959,7 @@ export default function Translator() {
                     >
                       {copiedPreview ? (
                         <>
-                          <Check className="size-3 text-green-500" /> Copied
+                          <Check className="size-3" style={{ color: '#00e5ff' }} /> Copied
                         </>
                       ) : (
                         <>
@@ -1971,16 +1971,16 @@ export default function Translator() {
                   {flowPhase === "translating" && currentLang && (
                     <Badge variant="secondary" className="text-[9px] animate-pulse">
                       <Loader2 className="size-2.5 mr-1 animate-spin" />
-                      {isNeural ? "Neural MT + 18-Phase" : "18-Phase Pipeline"}
+                      Gemini 23-Phase AI
                     </Badge>
                   )}
                   {flowPhase === "translation-done" && currentLang && (
-                    <Badge variant="default" className="text-[9px] bg-green-600">
-                      <CheckCircle2 className="size-2.5 mr-1" /> Ready
+                    <Badge variant="default" className="text-[9px]" style={{ background: 'linear-gradient(135deg, #00e5ff, #a78bfa)', color: '#06060e' }}>
+                      <CheckCircle2 className="size-2.5 mr-1" /> Gemini Done
                     </Badge>
                   )}
                   {flowPhase === "all-complete" && (
-                    <Badge variant="default" className="text-[9px] bg-green-600">
+                    <Badge variant="default" className="text-[9px]" style={{ background: 'linear-gradient(135deg, #00e5ff, #a78bfa)', color: '#06060e' }}>
                       <CheckCheck className="size-2.5 mr-1" /> Complete
                     </Badge>
                   )}
@@ -2020,13 +2020,13 @@ export default function Translator() {
                         </Button>
                       </div>
                       <div className="flex items-center gap-1.5 justify-center mt-3 text-[10px] text-muted-foreground">
-                        <CheckCircle2 className="size-2.5 text-green-500" /> Images
+                        <CheckCircle2 className="size-2.5" style={{ color: '#00e5ff' }} /> Images
                         preserved
                         <span className="mx-1">•</span>
-                        <CheckCircle2 className="size-2.5 text-green-500" /> 18-phase
+                        <CheckCircle2 className="size-2.5" style={{ color: '#00e5ff' }} /> 23-phase
                         localization
                         <span className="mx-1">•</span>
-                        <CheckCircle2 className="size-2.5 text-green-500" /> PDF
+                        <CheckCircle2 className="size-2.5" style={{ color: '#00e5ff' }} /> PDF
                         download per language
                       </div>
                     </div>
@@ -2068,7 +2068,7 @@ export default function Translator() {
                       )}
                       <div className="flex items-center justify-center gap-2 flex-wrap mt-3">
                         <Badge variant="secondary" className="text-[9px]">
-                          {isNeural ? "Neural MT + 18-Phase" : "18-Phase Glossary"}
+                          Gemini 23-Phase AI
                         </Badge>
                         <Badge variant="outline" className="text-[9px]">
                           {currentLang.script} Script
@@ -2120,8 +2120,18 @@ export default function Translator() {
                             </Badge>
                           )}
                         </div>
-                        <div className="whitespace-pre-wrap font-serif text-[13px] leading-[1.8] p-4 rounded-xl bg-muted/20 border border-border/30 text-foreground/90">
+                        <div className="whitespace-pre-wrap font-serif text-[13px] leading-[1.8] p-4 rounded-xl neon-border" style={{ background: '#0a0a16' }}>
                           {currentTranslation}
+                        </div>
+                        <div className="flex gap-2 pt-2">
+                          {originalArrayBuffer && pageData.length > 0 && (
+                            <Button onClick={handleDownloadPDF} size="sm" className="h-8 text-[11px] neon-glow">
+                              <FileDown className="size-3 mr-1" /> Download {currentLang.name} PDF
+                            </Button>
+                          )}
+                          <Button onClick={() => handleRetranslate(currentLang.code)} variant="outline" size="sm" className="h-8 text-[11px]" disabled={isTranslating}>
+                            <RotateCcw className="size-3 mr-1" /> Retranslate
+                          </Button>
                         </div>
                       </div>
                     </ScrollArea>
@@ -2130,10 +2140,10 @@ export default function Translator() {
                 {flowPhase === "all-complete" && (
                   <div className="flex items-center justify-center h-[400px]">
                     <div className="text-center max-w-sm">
-                      <div className="size-16 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-4">
-                        <CheckCheck className="size-8 text-green-500" />
+                      <div className="size-16 rounded-full neon-glow-strong flex items-center justify-center mx-auto mb-4" style={{ background: 'linear-gradient(135deg, rgba(0,229,255,0.15), rgba(167,139,250,0.15))' }}>
+                        <CheckCheck className="size-8" style={{ color: '#00e5ff' }} />
                       </div>
-                      <h3 className="text-lg font-bold mb-1">
+                      <h3 className="text-lg font-bold mb-1 neon-text">
                         All Translations Complete!
                       </h3>
                       <p className="text-xs text-muted-foreground mb-2">
@@ -2144,13 +2154,13 @@ export default function Translator() {
                         words translated into {targetLanguages.length} languages
                       </p>
                       <div className="flex items-center justify-center gap-1.5 text-[10px]">
-                        <CheckCircle2 className="size-2.5 text-green-500" />{" "}
+                        <CheckCircle2 className="size-2.5" style={{ color: '#00e5ff' }} />{" "}
                         {completedLanguages.length} languages
                         <span className="mx-1">•</span>
-                        <CheckCircle2 className="size-2.5 text-green-500" /> Download
+                        <CheckCircle2 className="size-2.5" style={{ color: '#00e5ff' }} /> Download
                         individual PDFs
                         <span className="mx-1">•</span>
-                        <CheckCircle2 className="size-2.5 text-green-500" /> or all as
+                        <CheckCircle2 className="size-2.5" style={{ color: '#00e5ff' }} /> or all as
                         ZIP
                       </div>
                     </div>

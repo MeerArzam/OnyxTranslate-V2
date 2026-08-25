@@ -904,26 +904,51 @@ export default function Translator() {
 
   const handleRetranslate = useCallback(
     async (langCode: string) => {
-      const target = completedLanguages.find((c) => c.code === langCode);
-      if (!target || isTranslating) return;
+      if (isTranslating) return;
 
-      // Drop it from the completed list so it can be re-added on Continue
-      setCompletedLanguages((prev) =>
-        prev.filter((c) => c.code !== langCode)
-      );
+      // Case 1: Language is in completedLanguages (sidebar Retranslate button)
+      const completedTarget = completedLanguages.find((c) => c.code === langCode);
+      if (completedTarget) {
+        // Drop it from the completed list so it can be re-added on Continue
+        setCompletedLanguages((prev) =>
+          prev.filter((c) => c.code !== langCode)
+        );
 
-      // Clear the current-view state so the old result disappears
-      setCurrentTranslation(null);
-      setCurrentPdfBlob(null);
-      setPdfProgress(null);
-      setTranslationProgress(null);
-      setTranslationError(null);
-      setCurrentQaReport(null);
-      setTranslationMode(null);
+        // Clear the current-view state so the old result disappears
+        setCurrentTranslation(null);
+        setCurrentPdfBlob(null);
+        setPdfProgress(null);
+        setTranslationProgress(null);
+        setTranslationError(null);
+        setCurrentQaReport(null);
+        setTranslationMode(null);
+        setTranslationModel(null);
+        setTranslationUsage(null);
 
-      await translateCurrentLanguage(target.index, true);
+        await translateCurrentLanguage(completedTarget.index, true);
+        return;
+      }
+
+      // Case 2: Language is the current language in preview panel (translation-done phase,
+      // but not yet added to completedLanguages — user hasn't clicked Continue yet)
+      const currentIdx = targetLanguages.findIndex((t) => t.code === langCode);
+      if (currentIdx >= 0) {
+        // Clear the current-view state
+        setCurrentTranslation(null);
+        setCurrentPdfBlob(null);
+        setPdfProgress(null);
+        setTranslationProgress(null);
+        setTranslationError(null);
+        setCurrentQaReport(null);
+        setTranslationMode(null);
+        setTranslationModel(null);
+        setTranslationUsage(null);
+
+        await translateCurrentLanguage(currentIdx, true);
+        return;
+      }
     },
-    [completedLanguages, isTranslating, translateCurrentLanguage]
+    [completedLanguages, isTranslating, translateCurrentLanguage, targetLanguages]
   );
 
   // ─── Copy current translation to clipboard ───

@@ -372,6 +372,9 @@ export default function Translator() {
     setParseProgress(null);
     setParsePhase("loading");
     resetFlow();
+    // Discard any previous saved progress when uploading a new file
+    await deleteProject().catch(() => {});
+    setHasSavedProgress(false);
 
     try {
       // Step 1: Parse header (fast — no page processing)
@@ -1443,10 +1446,15 @@ export default function Translator() {
                   </div>
                   <Textarea
                     value={sourceText}
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       setSourceText(e.target.value);
                       if (pdfFileName) {
                         clearSource();
+                      } else if (e.target.value.trim()) {
+                        // Discard saved progress when pasting new text
+                        await deleteProject().catch(() => {});
+                        setHasSavedProgress(false);
+                        resetFlow();
                       }
                     }}
                     placeholder="Paste your text here or upload a PDF..."

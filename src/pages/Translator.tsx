@@ -106,6 +106,7 @@ export default function Translator() {
   // ─── Convex server-side AI action ───
   const translateChunkAction = useAction(api.translate.translateChunk);
   const storePdfAction = useAction(api.upload.storePdf);
+  const parsePdfAction = useAction(api.parsePdf.parseUploadedPdf);
 
   // ─── Convex database state ───
   const [projectId, setProjectId] = useState<Id<"projects"> | null>(null);
@@ -382,14 +383,55 @@ export default function Translator() {
         pdfBase64,
       });
 
-      // Create project record in Convex DB
+      // Server-side re-parse with proper text merging (fixes broken words/missing letters)
+      setParsePhase("parsing");
+      setParseProgress({ current: header.totalPages, total: header.totalPages });
+
+      let serverPageData = allPageData;
+      let serverFullText = fullText;
+      let serverWordCount = fullText.split(/\s+/).filter(Boolean).length;
+
+      try {
+        const serverResult = await parsePdfAction({ pdfStorageId: storageId });
+        // Use server-parsed data if it returned valid results
+        if (serverResult.fullText && serverResult.fullText.length > 10) {
+          serverFullText = serverResult.fullText;
+          serverWordCount = serverResult.wordCount;
+          // Map server page data to client PDFPageData format
+          serverPageData = serverResult.pageData.map((p: any) => ({
+            num: p.num,
+            text: p.text,
+            textItems: (p.textItems || []).map((it: any) => ({
+              str: it.str,
+              // Convert PDF bottom-origin coords to top-origin for client rendering
+              x: it.x,
+              y: p.pageHeight - it.y - it.height,
+              width: it.width,
+              height: it.height,
+              fontName: it.fontName,
+            })),
+            pageWidth: p.pageWidth,
+            pageHeight: p.pageHeight,
+          }));
+          // Update page data and texts from server result
+          setPageData(serverPageData);
+          const serverTexts = serverPageData.map((p) => p.text);
+          setOriginalPageTexts(serverTexts);
+          setSourceText(serverFullText);
+        }
+      } catch (serverErr) {
+        // Server parse failed — fall back to browser-parsed data
+        console.warn("Server-side parse failed, using browser result:", serverErr);
+      }
+
+      // Create project record in Convex DB with the best available data
       const newProjectId = await createProjectMutation({
         fileName: file.name,
         pageCount: header.totalPages,
-        wordCount: fullText.split(/\s+/).filter(Boolean).length,
+        wordCount: serverWordCount,
         pdfStorageId: storageId,
-        pageData: allPageData,
-        fullText,
+        pageData: serverPageData,
+        fullText: serverFullText,
         parsedPages: header.totalPages,
         status: "ready",
       });
@@ -411,7 +453,7 @@ export default function Translator() {
     } finally {
       setIsUploading(false);
     }
-  }, [projectId, deleteProjectMutation, storePdfAction, createProjectMutation]);
+  }, [projectId, deleteProjectMutation, storePdfAction, createProjectMutation, parsePdfAction]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {

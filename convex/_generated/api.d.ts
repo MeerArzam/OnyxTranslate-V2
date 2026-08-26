@@ -8,8 +8,10 @@
  * @module
  */
 
+import type * as generatePdf from "../generatePdf.js";
 import type * as health from "../health.js";
 import type * as mutations from "../mutations.js";
+import type * as parsePdf from "../parsePdf.js";
 import type * as queries from "../queries.js";
 import type * as translate from "../translate.js";
 import type * as upload from "../upload.js";
@@ -21,8 +23,10 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  generatePdf: typeof generatePdf;
   health: typeof health;
   mutations: typeof mutations;
+  parsePdf: typeof parsePdf;
   queries: typeof queries;
   translate: typeof translate;
   upload: typeof upload;

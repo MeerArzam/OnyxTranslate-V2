@@ -471,12 +471,33 @@ export default function Translator() {
 
   // ─── Export / Import Progress ───
   const handleExportProgress = useCallback(async () => {
-    // With Convex, data is stored server-side — export is a no-op placeholder
-    // Future: export project data as JSON from Convex queries
-  }, []);
+    if (!convexProject) return;
+    const data = {
+      project: {
+        fileName: convexProject.fileName,
+        pageCount: convexProject.pageCount,
+        wordCount: convexProject.wordCount,
+        status: convexProject.status,
+      },
+      translations: activeTranslations.map((t) => ({
+        langCode: t.langCode,
+        status: t.status,
+        totalChunks: t.totalChunks,
+        completedChunks: t.completedChunks,
+      })),
+      exportedAt: new Date().toISOString(),
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `onyx-translate-progress-${convexProject.fileName.replace(/\.pdf$/i, "")}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [convexProject, activeTranslations]);
   const handleImportProgress = useCallback(async () => {
-    // With Convex, data is stored server-side — import is a no-op placeholder
-    // Future: import project data into Convex from a JSON file
+    // Import is not needed with Convex — data persists server-side.
+    // If user wants to restore, they just reopen the app.
   }, []);
   const clearSource = useCallback(async () => {
     if (projectId) {
@@ -612,12 +633,21 @@ export default function Translator() {
   // ─── PDF Generation ───
 
   const handleDownloadPDF = useCallback(async () => {
+    const lang = currentLang;
+    if (!lang) return;
+
+    // Prefer server-generated PDF from Convex Storage
+    if (previewTranslation?.pdfUrl) {
+      window.open(previewTranslation.pdfUrl, "_blank");
+      return;
+    }
+
+    // Fall back to client-side PDF generation
     if (!currentTranslation || !originalArrayBuffer || !pageData.length || !originalPageTexts.length)
       return;
 
     setFlowPhase("generating-pdf");
     setPdfProgress(null);
-    const lang = targetLanguages[currentLanguageIndex];
 
     try {
       const blob = await generateTranslatedPDF(
@@ -632,9 +662,6 @@ export default function Translator() {
       );
 
       setCurrentPdfBlob(blob);
-
-      // PDF blob is cached in React state for the current session
-      // Convex stores the original PDF; translated PDFs are generated on demand
 
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -660,13 +687,20 @@ export default function Translator() {
     originalArrayBuffer,
     pageData,
     originalPageTexts,
-    currentLanguageIndex,
+    currentLang,
+    previewTranslation,
     pdfFileName,
   ]);
 
   // ─── ZIP Download ───
 
   const handleDownloadAllZIP = useCallback(async () => {
+    // Prefer server-generated ZIP from Convex Storage
+    if (convexProject?.zipUrl) {
+      window.open(convexProject.zipUrl, "_blank");
+      return;
+    }
+
     if (completedLanguages.length === 0) return;
     const allCompleted = [...completedLanguages];
 
@@ -762,6 +796,7 @@ export default function Translator() {
     pdfFileName,
     pdfPageCount,
     sourceText,
+    convexProject,
   ]);
 
   // ─── Helpers ───
@@ -1237,12 +1272,20 @@ export default function Translator() {
                     />
                   </div>
 
+                  {activeTranslations.some((t) => t.status === "generating_pdf") && (
+                    <div className="flex items-center gap-1.5 text-[9px] text-muted-foreground">
+                      <Loader2 className="size-2.5 animate-spin" style={{ color: '#a78bfa' }} />
+                      <span>PDFs generating in background…</span>
+                    </div>
+                  )}
+
                   <ScrollArea className="max-h-[320px]">
                     <div className="space-y-1">
                       {targetLanguages.map((lang) => {
                         const t = activeTranslations.find((tr) => tr.langCode === lang.code);
                         const isComplete = t?.status === "complete";
                         const isActive = t?.status === "in_progress";
+                        const isGeneratingPdf = t?.status === "generating_pdf" || t?.pdfGenerating;
                         const progress = t ? (t.completedChunks / Math.max(t.totalChunks, 1)) * 100 : 0;
                         const pct = isComplete ? 100 : Math.round(progress);
 
@@ -1251,13 +1294,15 @@ export default function Translator() {
                             key={lang.code}
                             className="flex items-center gap-2 py-1 px-2 rounded-md text-[11px] hover:bg-primary/5 cursor-pointer transition-colors"
                             onClick={() => {
-                              if (isComplete || isActive) setCurrentPreviewLangCode(lang.code);
+                              if (isComplete || isActive || isGeneratingPdf) setCurrentPreviewLangCode(lang.code);
                             }}
                           >
                             {isComplete ? (
                               <CheckCircle2 className="size-3 shrink-0" style={{ color: '#00e5ff' }} />
                             ) : isActive ? (
                               <Loader2 className="size-3 shrink-0 text-primary animate-spin" />
+                            ) : isGeneratingPdf ? (
+                              <Loader2 className="size-3 shrink-0 animate-spin" style={{ color: '#a78bfa' }} />
                             ) : (
                               <div className="size-3 rounded-full border border-muted-foreground/30 shrink-0" />
                             )}
@@ -1270,6 +1315,11 @@ export default function Translator() {
                             {isActive && (
                               <Badge variant="secondary" className="text-[8px] animate-pulse">
                                 {pct}%
+                              </Badge>
+                            )}
+                            {t?.pdfGenerating && (
+                              <Badge variant="secondary" className="text-[8px] animate-pulse" style={{ background: 'rgba(167,139,250,0.15)', color: '#a78bfa' }}>
+                                PDF…
                               </Badge>
                             )}
                             {isComplete && (
@@ -1684,7 +1734,7 @@ export default function Translator() {
                           {currentTranslation}
                         </div>
                         <div className="flex gap-2 pt-2">
-                          {originalArrayBuffer && pageData.length > 0 && (
+                          {(previewTranslation?.pdfUrl || (originalArrayBuffer && pageData.length > 0)) && (
                             <Button onClick={handleDownloadPDF} size="sm" className="h-8 text-[11px] neon-glow">
                               <FileDown className="size-3 mr-1" /> Download {currentLang.name} PDF
                             </Button>

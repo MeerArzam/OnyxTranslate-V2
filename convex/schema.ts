@@ -11,6 +11,8 @@ export default defineSchema({
     fullText: v.string(),
     parsedPages: v.number(),
     status: v.string(),
+    zipStorageId: v.optional(v.string()),
+    zipUrl: v.optional(v.string()),
     createdAt: v.number(),
   }),
 
@@ -36,6 +38,7 @@ export default defineSchema({
     mergedText: v.optional(v.string()),
     pdfStorageId: v.optional(v.string()),
     pdfUrl: v.optional(v.string()),
+    pdfGenerating: v.optional(v.boolean()),
     startedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
   }).index("by_project_lang", ["projectId", "langCode"]),

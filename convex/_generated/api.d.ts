@@ -16,6 +16,7 @@ import type * as queries from "../queries.js";
 import type * as translate from "../translate.js";
 import type * as translateQueue from "../translateQueue.js";
 import type * as upload from "../upload.js";
+import type * as zipAssembly from "../zipAssembly.js";
 
 import type {
   ApiFromModules,
@@ -32,6 +33,7 @@ declare const fullApi: ApiFromModules<{
   translate: typeof translate;
   translateQueue: typeof translateQueue;
   upload: typeof upload;
+  zipAssembly: typeof zipAssembly;
 }>;
 
 /**

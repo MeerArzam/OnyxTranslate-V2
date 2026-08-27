@@ -496,20 +496,40 @@ export const processLanguage = action({
     );
 
     if (result.allDone) {
-      // Language done — start next language
-      const langIndex = LANGUAGES.indexOf(args.langCode);
-      if (langIndex < LANGUAGES.length - 1) {
-        const nextLang = LANGUAGES[langIndex + 1];
-        await ctx.scheduler.runAfter(0, api.translateQueue.processLanguage, {
+      // Language done — merge chunks, schedule PDF generation
+      // (generatePdf chains to next language or ZIP after saving PDF)
+      const allChunks: Array<{ chunkIndex: number; translatedText?: string }> =
+        await ctx.runQuery(api.queries.getChunksForLang, {
           projectId: args.projectId,
-          langCode: nextLang,
-          chunkIndex: 0,
+          langCode: args.langCode,
         });
-      } else {
-        // ALL languages done!
-        await ctx.runMutation(api.mutations.updateProject, {
+      const mergedText = allChunks
+        .sort((a: { chunkIndex: number }, b: { chunkIndex: number }) => a.chunkIndex - b.chunkIndex)
+        .map((c: { translatedText?: string }) => c.translatedText || "")
+        .join("\n\n");
+
+      // Find the translation record for this language
+      const translations: Array<{ _id: Id<"translations">; langCode: string }> =
+        await ctx.runQuery(api.queries.getProjectTranslations, { projectId: args.projectId });
+      const translation = translations.find(
+        (t: { langCode: string }) => t.langCode === args.langCode
+      );
+
+      if (translation) {
+        await ctx.runMutation(api.mutations.updateTranslation, {
+          translationId: translation._id,
+          status: "generating_pdf",
+          completedChunks: allChunks.length,
+          mergedText,
+          pdfGenerating: true,
+        });
+
+        // Schedule PDF generation (it chains to next lang or ZIP)
+        await ctx.scheduler.runAfter(0, api.generatePdf.generateTranslatedPdf, {
           projectId: args.projectId,
-          status: "all_translated",
+          langCode: args.langCode,
+          translationId: translation._id,
+          mergedText,
         });
       }
     } else if (!result.skipped) {
@@ -520,7 +540,7 @@ export const processLanguage = action({
         chunkIndex: args.chunkIndex + 1,
       });
     } else {
-      // Skipped — move to next
+      // Skipped — move to next chunk or language
       if (args.chunkIndex + 1 < sourceChunks.length) {
         await ctx.scheduler.runAfter(0, api.translateQueue.processLanguage, {
           projectId: args.projectId,
@@ -528,17 +548,36 @@ export const processLanguage = action({
           chunkIndex: args.chunkIndex + 1,
         });
       } else {
-        const langIndex = LANGUAGES.indexOf(args.langCode);
-        if (langIndex < LANGUAGES.length - 1) {
-          await ctx.scheduler.runAfter(0, api.translateQueue.processLanguage, {
+        // All chunks skipped for this language — schedule PDF generation
+        const allChunks: Array<{ chunkIndex: number; translatedText?: string }> =
+          await ctx.runQuery(api.queries.getChunksForLang, {
             projectId: args.projectId,
-            langCode: LANGUAGES[langIndex + 1],
-            chunkIndex: 0,
+            langCode: args.langCode,
           });
-        } else {
-          await ctx.runMutation(api.mutations.updateProject, {
+        const mergedText = allChunks
+          .sort((a: { chunkIndex: number }, b: { chunkIndex: number }) => a.chunkIndex - b.chunkIndex)
+          .map((c: { translatedText?: string }) => c.translatedText || "")
+          .join("\n\n");
+
+        const translations: Array<{ _id: Id<"translations">; langCode: string }> =
+          await ctx.runQuery(api.queries.getProjectTranslations, { projectId: args.projectId });
+        const translation = translations.find(
+          (t: { langCode: string }) => t.langCode === args.langCode
+        );
+
+        if (translation) {
+          await ctx.runMutation(api.mutations.updateTranslation, {
+            translationId: translation._id,
+            status: "generating_pdf",
+            completedChunks: allChunks.length,
+            mergedText,
+            pdfGenerating: true,
+          });
+          await ctx.scheduler.runAfter(0, api.generatePdf.generateTranslatedPdf, {
             projectId: args.projectId,
-            status: "all_translated",
+            langCode: args.langCode,
+            translationId: translation._id,
+            mergedText,
           });
         }
       }

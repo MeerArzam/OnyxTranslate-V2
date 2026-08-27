@@ -5,34 +5,37 @@ import { action } from "./_generated/server";
 import { api } from "./_generated/api";
 
 /**
- * convex/generatePdf.ts — Server-side translated PDF generation.
+ * convex/generatePdf.ts — Server-side translated PDF generation (Segment B).
  *
- * Reads the original PDF from Convex Storage, overlays translated text on
- * each page using pdf-lib vector text drawing (no canvas rasterization),
- * stores the result back in Convex Storage, and returns a download URL.
- *
- * Font handling: Downloads Noto Sans fonts for non-Latin scripts and embeds
- * them once. For Latin scripts, uses Helvetica (built-in).
+ * Reads the original PDF from Convex Storage, copies each page (preserving
+ * images/maps), whites out English text, overlays translated text using
+ * Noto Sans fonts for non-Latin scripts, stores the result in Convex Storage,
+ * and chains to the NEXT language's translation or ZIP assembly.
  */
 
 // ─── Font URLs for non-Latin scripts ────────────────────────────────────
 
 const FONT_URLS: Record<string, string> = {
-  ar: "https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io/fonts/NotoNaskhArabic/hinted/ttf/NotoNaskhArabic-Regular.ttf",
-  ur: "https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io/fonts/NotoNaskhArabic/hinted/ttf/NotoNaskhArabic-Regular.ttf",
-  ks: "https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io/fonts/NotoNaskhArabic/hinted/ttf/NotoNaskhArabic-Regular.ttf",
-  hi: "https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io/fonts/NotoSansDevanagari/hinted/ttf/NotoSansDevanagari-Regular.ttf",
-  ne: "https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io/fonts/NotoSansDevanagari/hinted/ttf/NotoSansDevanagari-Regular.ttf",
-  bn: "https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io/fonts/NotoSansBengali/hinted/ttf/NotoSansBengali-Regular.ttf",
-  ru: "https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf",
-  tr: "https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf",
-  ro: "https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf",
-  ja: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf",
-  zh: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf",
-  ko: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanskr/NotoSansKR%5Bwght%5D.ttf",
+  ur: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoNastaliqUrdu-Regular.ttf",
+  ar: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansArabic-Regular.ttf",
+  ks: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansArabic-Regular.ttf",
+  ja: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansJP-Regular.ttf",
+  zh: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansSC-Regular.ttf",
+  ko: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansKR-Regular.ttf",
+  hi: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansDevanagari-Regular.ttf",
+  ne: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansDevanagari-Regular.ttf",
+  bn: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansBengali-Regular.ttf",
+  // Latin-script languages use Helvetica (built-in)
 };
 
-const RTL_CODES = ["ar", "ur", "ks"];
+const RTL_CODES = new Set(["ar", "ur", "ks"]);
+
+const LANGUAGES = [
+  "ur", "ar", "fr", "ja", "es", "hi", "tr", "zh", "ru", "ko",
+  "de", "ks", "ro", "sw", "it", "la", "id", "ne", "bn", "pt",
+];
+
+// ─── Font cache (across calls within same action worker) ────────────────
 
 const fontCache = new Map<string, ArrayBuffer>();
 
@@ -40,24 +43,19 @@ async function getFontBytes(url: string): Promise<ArrayBuffer> {
   const cached = fontCache.get(url);
   if (cached) return cached;
   const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`Font download failed (HTTP ${resp.status})`);
+  if (!resp.ok) throw new Error(`Font download failed (HTTP ${resp.status}): ${url}`);
   const bytes = await resp.arrayBuffer();
   fontCache.set(url, bytes);
   return bytes;
 }
 
-function clamp(v: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, v));
-}
+// ─── Text wrapping ──────────────────────────────────────────────────────
 
-/**
- * Wrap text into lines that fit maxWidth using the font's real metrics.
- */
 function wrapText(
   font: { widthOfTextAtSize: (text: string, size: number) => number },
   text: string,
   maxWidth: number,
-  size: number
+  size: number,
 ): string[] {
   const paragraphs = text.split("\n");
   const lines: string[] = [];
@@ -76,6 +74,7 @@ function wrapText(
           lines.push(current);
           current = "";
         }
+        // Break very long words character by character
         let chunk = "";
         for (const ch of word) {
           if (chunk && font.widthOfTextAtSize(chunk + ch, size) > maxWidth) {
@@ -108,12 +107,13 @@ export const generateTranslatedPdf = action({
   args: {
     projectId: v.id("projects"),
     langCode: v.string(),
-    translatedText: v.string(),
+    translationId: v.id("translations"),
+    mergedText: v.string(),
   },
   handler: async (ctx, args) => {
     const { PDFDocument, rgb, StandardFonts } = await import("pdf-lib");
 
-    // 1. Get the project's original PDF from storage
+    // 1. Get project and original PDF
     const project = await ctx.runQuery(api.queries.getProject, {
       projectId: args.projectId,
     });
@@ -126,10 +126,9 @@ export const generateTranslatedPdf = action({
     const pdfArrayBuffer = await pdfBlob.arrayBuffer();
     const pdfBytes = new Uint8Array(pdfArrayBuffer);
 
-    // 2. Load the original PDF
+    // 2. Load original PDF
     const srcDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
     const srcPageCount = srcDoc.getPageCount();
-
     if (srcPageCount === 0) throw new Error("Source PDF has no pages");
 
     // 3. Create output document
@@ -140,8 +139,8 @@ export const generateTranslatedPdf = action({
     const fontkit = (fontkitModule as { default?: unknown }).default ?? fontkitModule;
     outDoc.registerFontkit(fontkit as never);
 
-    // 4. Embed font
-    const isRTL = RTL_CODES.includes(args.langCode);
+    // 4. Embed font for this language
+    const isRTL = RTL_CODES.has(args.langCode);
     const fontUrl = FONT_URLS[args.langCode];
     let font;
     try {
@@ -151,22 +150,20 @@ export const generateTranslatedPdf = action({
         font = await outDoc.embedFont(StandardFonts.Helvetica);
       }
     } catch {
-      // Fallback to Helvetica if custom font fails
       font = await outDoc.embedFont(StandardFonts.Helvetica);
     }
 
     const black = rgb(0, 0, 0);
     const white = rgb(1, 1, 1);
-    const pad = 2;
 
     // 5. Split translated text proportionally across pages
-    const translatedWords = args.translatedText.split(/\s+/).filter(Boolean);
+    const translatedWords = args.mergedText.split(/\s+/).filter(Boolean);
     const totalWords = translatedWords.length;
     const perPageWords = Math.ceil(totalWords / srcPageCount);
 
     let wordIdx = 0;
 
-    // 6. Process each page: copy original → white-out → overlay translation
+    // 6. Process each page: copy original → whiteout → overlay translation
     for (let i = 0; i < srcPageCount; i++) {
       const [copiedPage] = await outDoc.copyPages(srcDoc, [i]);
       outDoc.addPage(copiedPage);
@@ -174,49 +171,73 @@ export const generateTranslatedPdf = action({
       const pageWidth = copiedPage.getWidth();
       const pageHeight = copiedPage.getHeight();
 
-      // Get text from the original page (using simple text extraction)
-      const origPage = srcDoc.getPage(i);
-      // We'll estimate text positions from page dimensions
-      // Use generous margins and standard text area
+      // Text area: generous margins for book layout
       const margin = 50;
       const textLeft = margin;
       const textRight = pageWidth - margin;
-      const textTop = pageHeight - margin;
-      const textBottom = margin;
       const maxWidth = textRight - textLeft;
 
-      // Font size estimation (standard 10-12pt for most PDFs)
+      // Font size (standard 10-12pt for most PDFs)
       const fontSize = 10;
       const lineHeight = fontSize * 1.4;
+      const textBottom = margin + 10;
+
+      // White-out the English text area
+      copiedPage.drawRectangle({
+        x: textLeft - 5,
+        y: textBottom - 5,
+        width: maxWidth + 10,
+        height: pageHeight - textBottom - margin + 10,
+        color: white,
+        borderWidth: 0,
+      });
 
       // Get words for this page
       const endIdx = Math.min(wordIdx + perPageWords, totalWords);
-      const pageText = translatedWords.slice(wordIdx, endIdx).join(" ");
+      let pageText = translatedWords.slice(wordIdx, endIdx).join(" ");
       wordIdx = endIdx;
 
       // Append remaining to last page
       if (i === srcPageCount - 1 && wordIdx < totalWords) {
         const remaining = translatedWords.slice(wordIdx).join(" ");
-        const pageTextFinal = pageText ? pageText + " " + remaining : remaining;
-        overlayText(outDoc, copiedPage, pageTextFinal, font, isRTL, {
-          textLeft,
-          textBottom,
-          maxWidth,
-          fontSize,
-          lineHeight,
-          pageHeight,
-          black,
-        });
-      } else {
-        overlayText(outDoc, copiedPage, pageText, font, isRTL, {
-          textLeft,
-          textBottom,
-          maxWidth,
-          fontSize,
-          lineHeight,
-          pageHeight,
-          black,
-        });
+        pageText = pageText ? pageText + " " + remaining : remaining;
+      }
+
+      // Overlay translated text
+      if (pageText.trim()) {
+        const wrappedLines = wrapText(font, pageText, maxWidth, fontSize);
+        let baseline = pageHeight - margin - fontSize;
+
+        for (const line of wrappedLines) {
+          if (baseline - fontSize < textBottom) break;
+          if (line.trim()) {
+            try {
+              if (isRTL) {
+                // RTL: draw from right edge
+                const visual = [...line].reverse().join("");
+                const lineWidth = font.widthOfTextAtSize(visual, fontSize);
+                copiedPage.drawText(visual, {
+                  x: textLeft + maxWidth - lineWidth,
+                  y: baseline,
+                  size: fontSize,
+                  font,
+                  color: black,
+                });
+              } else {
+                copiedPage.drawText(line, {
+                  x: textLeft,
+                  y: baseline,
+                  size: fontSize,
+                  font,
+                  color: black,
+                });
+              }
+            } catch {
+              // Skip lines with unencodable glyphs
+            }
+          }
+          baseline -= lineHeight;
+        }
       }
     }
 
@@ -224,79 +245,41 @@ export const generateTranslatedPdf = action({
     const resultBytes = await outDoc.save();
     const resultBlob = new Blob(
       [new Uint8Array(resultBytes).buffer as ArrayBuffer],
-      { type: "application/pdf" }
+      { type: "application/pdf" },
     );
     const storageId = await ctx.storage.store(resultBlob);
+    const url = (await ctx.storage.getUrl(storageId)) ?? undefined;
 
-    // 8. Update the translation record with the PDF storage ID
-    // Query translations for this project/lang
-    const translations = await ctx.runQuery(
-      api.queries.getProjectTranslations,
-      { projectId: args.projectId }
-    );
-    const translation = translations.find((t) => t.langCode === args.langCode);
-    if (translation) {
-      await ctx.runMutation(api.mutations.updateTranslation, {
-        translationId: translation._id,
-        pdfStorageId: storageId,
+    // 8. Update translation record
+    await ctx.runMutation(api.mutations.updateTranslation, {
+      translationId: args.translationId,
+      pdfStorageId: storageId,
+      pdfUrl: url,
+      status: "complete",
+      pdfGenerating: false,
+      completedAt: Date.now(),
+    });
+
+    // 9. Chain to next language or build ZIP
+    const langIndex = LANGUAGES.indexOf(args.langCode);
+    if (langIndex < LANGUAGES.length - 1) {
+      const nextLang = LANGUAGES[langIndex + 1];
+      await ctx.scheduler.runAfter(0, api.translateQueue.processLanguage, {
+        projectId: args.projectId,
+        langCode: nextLang,
+        chunkIndex: 0,
+      });
+    } else {
+      // Last language done — build ZIP
+      await ctx.runMutation(api.mutations.updateProject, {
+        projectId: args.projectId,
+        status: "all_translated",
+      });
+      await ctx.scheduler.runAfter(0, api.zipAssembly.buildZip, {
+        projectId: args.projectId,
       });
     }
 
-    return { storageId };
+    return { storageId, url };
   },
 });
-
-// ─── Helper: Overlay text on a page ─────────────────────────────────────
-
-function overlayText(
-  outDoc: any,
-  page: any,
-  text: string,
-  font: any,
-  isRTL: boolean,
-  opts: {
-    textLeft: number;
-    textBottom: number;
-    maxWidth: number;
-    fontSize: number;
-    lineHeight: number;
-    pageHeight: number;
-    black: any;
-  }
-) {
-  if (!text.trim()) return;
-
-  const wrappedLines = wrapText(font, text, opts.maxWidth, opts.fontSize);
-  let baseline = opts.pageHeight - opts.textBottom - opts.fontSize;
-
-  for (const line of wrappedLines) {
-    if (baseline - opts.fontSize < opts.textBottom) break;
-    if (line.trim()) {
-      try {
-        if (isRTL) {
-          // Simple RTL: reverse characters (pdf-lib draws LTR)
-          const visual = [...line].reverse().join("");
-          const lineWidth = font.widthOfTextAtSize(visual, opts.fontSize);
-          page.drawText(visual, {
-            x: opts.textLeft + opts.maxWidth - lineWidth,
-            y: baseline,
-            size: opts.fontSize,
-            font,
-            color: opts.black,
-          });
-        } else {
-          page.drawText(line, {
-            x: opts.textLeft,
-            y: baseline,
-            size: opts.fontSize,
-            font,
-            color: opts.black,
-          });
-        }
-      } catch {
-        // Skip lines with unencodable glyphs
-      }
-    }
-    baseline -= opts.lineHeight;
-  }
-}

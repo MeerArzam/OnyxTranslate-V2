@@ -31,6 +31,8 @@ export const updateProject = mutation({
     fullText: v.optional(v.string()),
     parsedPages: v.optional(v.number()),
     status: v.optional(v.string()),
+    zipStorageId: v.optional(v.string()),
+    zipUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { projectId, ...updates } = args;
@@ -150,6 +152,7 @@ export const updateTranslation = mutation({
     mergedText: v.optional(v.string()),
     pdfStorageId: v.optional(v.string()),
     pdfUrl: v.optional(v.string()),
+    pdfGenerating: v.optional(v.boolean()),
     startedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
   },

@@ -35,8 +35,7 @@ import {
 // Convex hooks imported below with storage replacement
 import {
   runLocalizedTranslationPipeline,
-  prepareLanguageModel,
-  releaseLanguageModel,
+
   generateSampleText,
   type TranslationMode,
 } from "@/lib/translator/engine";
@@ -61,7 +60,7 @@ import {
 } from "@/lib/translator/pdfGenerator";
 import {
   mergeChunkTexts,
-  chunkPageTexts,
+
   type TranslationChunk,
 } from "@/lib/translator/storage";
 import { useQuery, useMutation, useAction } from "convex/react";
@@ -107,6 +106,8 @@ export default function Translator() {
   const translateChunkAction = useAction(api.translate.translateChunk);
   const storePdfAction = useAction(api.upload.storePdf);
   const parsePdfAction = useAction(api.parsePdf.parseUploadedPdf);
+  const startTranslationAction = useAction(api.translateQueue.startTranslation);
+  const cancelTranslationAction = useAction(api.translateQueue.cancelTranslation);
 
   // ─── Convex database state ───
   const [projectId, setProjectId] = useState<Id<"projects"> | null>(null);
@@ -146,30 +147,47 @@ export default function Translator() {
   const [parsePhase, setParsePhase] = useState<"idle" | "loading" | "parsing" | "done">("idle");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ─── Translation flow ───
-  const [currentLanguageIndex, setCurrentLanguageIndex] = useState<number>(-1);
+  // ─── Translation flow (autonomous queue) ───
   const [isTranslating, setIsTranslating] = useState(false);
-  const [currentTranslation, setCurrentTranslation] = useState<string | null>(null);
   const [translationError, setTranslationError] = useState<string | null>(null);
-  const [completedLanguages, setCompletedLanguages] = useState<CompletedLanguage[]>([]);
   const [flowPhase, setFlowPhase] = useState<
     "idle" | "translating" | "translation-done" | "generating-pdf" | "all-complete"
   >("idle");
-  const [translationProgress, setTranslationProgress] = useState<{
-    current: number;
-    total: number;
-    phase: string;
-  } | null>(null);
   const [copiedPreview, setCopiedPreview] = useState(false);
   const copyTimerRef = useRef<number | null>(null);
+  const [currentPreviewLangCode, setCurrentPreviewLangCode] = useState<string | null>(null);
+
+  // ─── Derived state from Convex ───
+  const activeTranslations = convexTranslations ?? [];
+  const completedCount = activeTranslations.filter((t) => t.status === "complete").length;
+  const isAllComplete = convexProject?.status === "all_translated" || completedCount >= targetLanguages.length;
+  const inProgressTranslation = activeTranslations.find((t) => t.status === "in_progress");
+  const previewTranslation = currentPreviewLangCode
+    ? activeTranslations.find((t) => t.langCode === currentPreviewLangCode)
+    : inProgressTranslation ?? activeTranslations.find((t) => t.status === "complete");
+  const currentTranslation = previewTranslation?.mergedText ?? null;
+  const currentLang = targetLanguages.find((t) => t.code === (previewTranslation?.langCode ?? inProgressTranslation?.langCode));
+  const currentLanguageIndex = currentLang ? targetLanguages.indexOf(currentLang) : -1;
+
+  // Derive completedLanguages for display from Convex
+  const completedLanguages: CompletedLanguage[] = activeTranslations
+    .filter((t) => t.status === "complete")
+    .map((t) => {
+      const lang = targetLanguages.find((l) => l.code === t.langCode)!;
+      return {
+        index: targetLanguages.indexOf(lang),
+        code: lang.code,
+        name: lang.name,
+        nativeName: lang.nativeName,
+        translatedText: t.mergedText ?? "",
+      };
+    });
 
   // ─── PDF generation ───
   const [pdfProgress, setPdfProgress] = useState<PDFGenerationProgress | null>(null);
   const [currentPdfBlob, setCurrentPdfBlob] = useState<Blob | null>(null);
 
-  // ─── Neural model state ───
-  const [modelStatus, setModelStatus] = useState<string | null>(null);
-  const [isNeural, setIsNeural] = useState(false);
+
 
   // ─── 23-phase Gemini QA state ───
   const [currentQaReport, setCurrentQaReport] = useState<QAReport | null>(null);
@@ -241,38 +259,15 @@ export default function Translator() {
       setOriginalArrayBuffer(null);
       setProjectId(latestProject._id);
 
-      // Load saved translations from Convex
-      if (convexTranslations && convexTranslations.length > 0) {
-        const completed: CompletedLanguage[] = [];
-        for (const lang of targetLanguages) {
-          const translation = convexTranslations.find((t) => t.langCode === lang.code);
-          if (translation?.status === "complete" && translation.mergedText) {
-            completed.push({
-              index: targetLanguages.indexOf(lang),
-              code: lang.code,
-              name: lang.name,
-              nativeName: lang.nativeName,
-              translatedText: translation.mergedText,
-            });
-          }
-        }
-
-        if (completed.length > 0) {
-          setCompletedLanguages(completed);
-          if (completed.length >= targetLanguages.length) {
-            setFlowPhase("all-complete");
-            setCurrentLanguageIndex(targetLanguages.length);
-          } else {
-            setFlowPhase("idle");
-            setCurrentLanguageIndex(-1);
-          }
-        } else {
-          setFlowPhase("idle");
-          setCurrentLanguageIndex(-1);
-        }
+      // Detect project state from Convex (derived state auto-updates via reactive queries)
+      if (convexProject?.status === "all_translated") {
+        setFlowPhase("all-complete");
+        setIsTranslating(false);
+      } else if (convexProject?.status === "translating") {
+        setFlowPhase("translating");
+        setIsTranslating(true);
       } else {
         setFlowPhase("idle");
-        setCurrentLanguageIndex(-1);
       }
 
       setParsePhase("done");
@@ -528,339 +523,62 @@ export default function Translator() {
   }, []);
 
   const resetFlow = useCallback(() => {
-    setCurrentLanguageIndex(-1);
     setIsTranslating(false);
-    setCurrentTranslation(null);
     setTranslationError(null);
-    setCompletedLanguages([]);
     setFlowPhase("idle");
     setPdfProgress(null);
     setCurrentPdfBlob(null);
-    setTranslationProgress(null);
     setCurrentQaReport(null);
     setTranslationMode(null);
+    setCurrentPreviewLangCode(null);
   }, []);
 
-  // ─── Cleanup model on unmount ───
+  // ─── Cleanup on unmount ───
   useEffect(() => {
     return () => {
       if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
-      releaseLanguageModel().catch(() => {});
     };
   }, []);
 
-  // ─── Step-by-Step Translation ───
+  // ─── Autonomous Translation Queue ───
 
   const startTranslation = useCallback(async () => {
-    if (!sourceText.trim() || currentLanguageIndex >= 0) return;
-    await translateCurrentLanguage(0);
-  }, [sourceText, currentLanguageIndex]);
-
-  const translateCurrentLanguage = useCallback(
-    async (langIndex: number, force = false) => {
-      // Skip languages already completed in this session (e.g. restored after
-      // a resume) so they are never re-translated or added twice to the list.
-      // With force=true (retranslate) the skip is bypassed on purpose.
-      const completedCodes = new Set(completedLanguages.map((c) => c.code));
-      while (
-        langIndex < targetLanguages.length &&
-        completedCodes.has(targetLanguages[langIndex].code) &&
-        !force
-      ) {
-        langIndex++;
-      }
-
-      if (langIndex >= targetLanguages.length) {
-        setFlowPhase("all-complete");
-        return;
-      }
-
+    if (!sourceText.trim() || !projectId) return;
+    try {
       setIsTranslating(true);
       setFlowPhase("translating");
-      setCurrentLanguageIndex(langIndex);
       setTranslationError(null);
-      setCurrentPdfBlob(null);
-      setTranslationModel(null);
-      setTranslationUsage(null);
-
-      const lang = targetLanguages[langIndex];
-
-      try {
-        // ── Load neural model for this language ──
-        const neuralAvailable = await prepareLanguageModel(
-          lang.code,
-          (phase, msg) => {
-            setModelStatus(msg);
-          }
-        );
-        setIsNeural(neuralAvailable);
-        setModelStatus(null);
-
-        // A forced retranslate wipes the old saved chunks + cached PDF first
-        // so the new run starts fresh from chunk 0.
-        if (force) {
-          await deleteChunksForLangMutation({ projectId: projectId!, langCode: lang.code }).catch(() => {});
-        }
-
-        // Check if we already have saved translations for this language
-        const saved = convexTranslations?.find((t) => t.langCode === lang.code);
-
-        if (!force && saved?.status === "complete" && saved.mergedText) {
-          // Use saved translation
-          setCurrentTranslation(saved.mergedText);
-          setCurrentQaReport(null);
-          setTranslationMode(null);
-          setTranslationModel(null);
-          setTranslationUsage(null);
-          setTranslationProgress({
-            current: saved.totalChunks,
-            total: saved.totalChunks,
-            phase: "Complete (restored from save)",
-          });
-        } else {
-          // Translate in chunks
-          const pageTexts = originalPageTexts.length > 0
-            ? originalPageTexts
-            : sourceText.split("\n\n");
-
-          const pageRanges = chunkPageTexts(pageTexts, 2000);
-          const totalChunks = pageRanges.length;
-          const chunks: TranslationChunk[] = [];
-          let mergedText = "";
-          let slidingContext: string | undefined = undefined;
-
-          // Helper: extract last 2 sentences from translated text for P21 sliding window
-          const extractLastSentences = (text: string): string => {
-            // Split on sentence-ending punctuation (handles English . ! ? and Urdu ؟ !)
-            const sentences = text.split(/(?<=[.!?؟])\s+/).filter(Boolean);
-            return sentences.slice(-2).join(" ");
-          };
-
-          // Determine starting chunk (always start from 0 with Convex)
-          let startChunk = 0;
-
-          for (let ci = startChunk; ci < totalChunks; ci++) {
-            const range = pageRanges[ci];
-            setTranslationProgress({
-              current: ci,
-              total: totalChunks,
-              phase: `Translating pages ${range.pageStart + 1}-${range.pageEnd + 1}`,
-            });
-
-            // Combine text for this chunk
-            const chunkText = pageTexts
-              .slice(range.pageStart, range.pageEnd + 1)
-              .join("\n\n");
-
-            // Primary engine: Gemini AI with 23-phase prompt.
-            // Glossary Mode as automatic fallback. QA runs after every chunk.
-            const result = await runLocalizedTranslationPipeline(
-              {
-                sourceText: chunkText,
-                targetLanguage: lang.code,
-                marketContext,
-                chapterNumber: 1,
-                previousContext: slidingContext,
-              },
-              (phase, msg) => {
-                setTranslationProgress((prev) => prev ? { ...prev, phase: msg } : null);
-              },
-              // Server-side AI via Convex action (Gemini, server-side keys)
-              async ({ text, langCode, marketContext: mc, previousContext: pc }) => {
-                const res = await translateChunkAction({
-                  text,
-                  langCode,
-                  marketContext: mc,
-                  previousContext: pc,
-                });
-                return {
-                  ok: res.ok,
-                  text: res.text,
-                  model: res.model,
-                  usage: res.usage
-                    ? {
-                        promptTokens: res.usage.promptTokens ?? undefined,
-                        completionTokens: res.usage.completionTokens ?? undefined,
-                        totalTokens: res.usage.totalTokens ?? undefined,
-                      }
-                    : undefined,
-                };
-              }
-            );
-
-            const chunk: TranslationChunk = {
-              langCode: lang.code,
-              langName: lang.name,
-              langNativeName: lang.nativeName,
-              translatedText: result.translatedText,
-              pageStart: range.pageStart,
-              pageEnd: range.pageEnd,
-              chunkIndex: ci,
-              complete: true,
-            };
-
-            chunks.push(chunk);
-
-            // P21: Update sliding window context for next chunk
-            slidingContext = extractLastSentences(result.translatedText);
-
-            // Save to Convex DB after each chunk
-            const merged = mergeChunkTexts(chunks);
-            mergedText = merged;
-            if (projectId) {
-              // Upsert chunk record
-              const chunkId = await upsertChunkMutation({
-                projectId,
-                langCode: lang.code,
-                chunkIndex: ci,
-                sourceText: chunkText,
-              });
-              await updateChunkMutation({
-                chunkId,
-                translatedText: result.translatedText,
-                status: "done",
-                model: result.model,
-                usage: result.usage,
-              });
-              // Upsert or update translation record
-              const translationId = await upsertTranslationMutation({
-                projectId,
-                langCode: lang.code,
-                totalChunks,
-              });
-              await updateTranslationMutation({
-                translationId,
-                status: ci === totalChunks - 1 ? "complete" : "in_progress",
-                completedChunks: ci + 1,
-                mergedText: merged,
-                ...(ci === totalChunks - 1 ? { completedAt: Date.now() } : {}),
-              });
-            }
-
-            // Cache the latest QA report so refresh never loses it
-            if (result.qaReport) {
-              setCurrentQaReport(result.qaReport);
-              setTranslationMode(result.mode ?? (neuralAvailable ? "neural" : "glossary"));
-              setTranslationModel(result.model ?? null);
-              setTranslationUsage(result.usage ?? null);
-              // QA report stored in React state (Convex doesn't store QA reports)
-            }
-
-            setTranslationProgress({
-              current: ci + 1,
-              total: totalChunks,
-              phase: `Chunk ${ci + 1}/${totalChunks} saved`,
-            });
-          }
-
-          setCurrentTranslation(mergedText);
-        }
-
-        // Dispose model to free memory before next language
-        await releaseLanguageModel();
-
-        setFlowPhase("translation-done");
-      } catch (error) {
-        // Always release model on error
-        await releaseLanguageModel();
-        setTranslationError(
-          error instanceof Error ? error.message : "Translation failed"
-        );
-        setFlowPhase("translation-done");
-      } finally {
-        setIsTranslating(false);
-        setModelStatus(null);
-      }
-    },
-    [sourceText, originalPageTexts, completedLanguages, marketContext, projectId, convexTranslations, deleteChunksForLangMutation, upsertChunkMutation, updateChunkMutation, upsertTranslationMutation, updateTranslationMutation, translateChunkAction]
-  );
-
-  const handleContinue = useCallback(async () => {
-    // Save current translation to completed list
-    if (currentTranslation && currentLanguageIndex >= 0) {
-      const lang = targetLanguages[currentLanguageIndex];
-      setCompletedLanguages((prev) => [
-        ...prev,
-        {
-          index: currentLanguageIndex,
-          code: lang.code,
-          name: lang.name,
-          nativeName: lang.nativeName,
-          translatedText: currentTranslation,
-          pdfBlob: currentPdfBlob || undefined,
-          qaReport: currentQaReport || undefined,
-          mode: translationMode || undefined,
-        },
-      ]);
+      await startTranslationAction({ projectId });
+    } catch (error) {
+      setTranslationError(
+        error instanceof Error ? error.message : "Failed to start translation"
+      );
+      setIsTranslating(false);
+      setFlowPhase("idle");
     }
+  }, [sourceText, projectId, startTranslationAction]);
 
-    setCurrentTranslation(null);
-    setCurrentPdfBlob(null);
-    setPdfProgress(null);
-    setTranslationProgress(null);
-    setCurrentQaReport(null);
-    setTranslationMode(null);
-    setTranslationModel(null);
-    setTranslationUsage(null);
-
-    const nextIndex = currentLanguageIndex + 1;
-    if (nextIndex >= targetLanguages.length) {
-      setFlowPhase("all-complete");
-      setCurrentLanguageIndex(targetLanguages.length);
-    } else {
-      await translateCurrentLanguage(nextIndex);
-    }
-  }, [currentTranslation, currentLanguageIndex, currentPdfBlob, currentQaReport, translationMode, translateCurrentLanguage]);
-
-  // ─── Retranslate an already-completed language from the original source ───
+  // ─── Retranslate: cancel queue, delete language chunks, restart queue ───
 
   const handleRetranslate = useCallback(
     async (langCode: string) => {
-      if (isTranslating) return;
-
-      // Case 1: Language is in completedLanguages (sidebar Retranslate button)
-      const completedTarget = completedLanguages.find((c) => c.code === langCode);
-      if (completedTarget) {
-        // Drop it from the completed list so it can be re-added on Continue
-        setCompletedLanguages((prev) =>
-          prev.filter((c) => c.code !== langCode)
+      if (!projectId) return;
+      try {
+        setIsTranslating(true);
+        setFlowPhase("translating");
+        setTranslationError(null);
+        // Delete old chunks for this language
+        await deleteChunksForLangMutation({ projectId, langCode });
+        // Restart autonomous queue
+        await startTranslationAction({ projectId });
+      } catch (error) {
+        setTranslationError(
+          error instanceof Error ? error.message : "Retranslate failed"
         );
-
-        // Clear the current-view state so the old result disappears
-        setCurrentTranslation(null);
-        setCurrentPdfBlob(null);
-        setPdfProgress(null);
-        setTranslationProgress(null);
-        setTranslationError(null);
-        setCurrentQaReport(null);
-        setTranslationMode(null);
-        setTranslationModel(null);
-        setTranslationUsage(null);
-
-        await translateCurrentLanguage(completedTarget.index, true);
-        return;
-      }
-
-      // Case 2: Language is the current language in preview panel (translation-done phase,
-      // but not yet added to completedLanguages — user hasn't clicked Continue yet)
-      const currentIdx = targetLanguages.findIndex((t) => t.code === langCode);
-      if (currentIdx >= 0) {
-        // Clear the current-view state
-        setCurrentTranslation(null);
-        setCurrentPdfBlob(null);
-        setPdfProgress(null);
-        setTranslationProgress(null);
-        setTranslationError(null);
-        setCurrentQaReport(null);
-        setTranslationMode(null);
-        setTranslationModel(null);
-        setTranslationUsage(null);
-
-        await translateCurrentLanguage(currentIdx, true);
-        return;
+        setIsTranslating(false);
       }
     },
-    [completedLanguages, isTranslating, translateCurrentLanguage, targetLanguages]
+    [projectId, deleteChunksForLangMutation, startTranslationAction]
   );
 
   // ─── Copy current translation to clipboard ───
@@ -949,23 +667,8 @@ export default function Translator() {
   // ─── ZIP Download ───
 
   const handleDownloadAllZIP = useCallback(async () => {
-    const allCompleted = [
-      ...completedLanguages,
-      ...(currentTranslation &&
-      currentLanguageIndex >= 0 &&
-      currentLanguageIndex < targetLanguages.length
-        ? [
-            {
-              index: currentLanguageIndex,
-              code: targetLanguages[currentLanguageIndex].code,
-              name: targetLanguages[currentLanguageIndex].name,
-              nativeName: targetLanguages[currentLanguageIndex].nativeName,
-              translatedText: currentTranslation,
-              pdfBlob: currentPdfBlob || undefined,
-            },
-          ]
-        : []),
-    ];
+    if (completedLanguages.length === 0) return;
+    const allCompleted = [...completedLanguages];
 
     if (allCompleted.length === 0) return;
 
@@ -1077,13 +780,7 @@ export default function Translator() {
     }
     return 0;
   })();
-  const currentLang =
-    currentLanguageIndex >= 0 && currentLanguageIndex < targetLanguages.length
-      ? targetLanguages[currentLanguageIndex]
-      : null;
-  const nextLangIndex = currentLanguageIndex >= 0 ? currentLanguageIndex + 1 : 0;
-  const nextLang =
-    nextLangIndex < targetLanguages.length ? targetLanguages[nextLangIndex] : null;
+  const nextLang = null; // No Continue button in autonomous mode
 
   // ─── Render ───
 
@@ -1540,114 +1237,69 @@ export default function Translator() {
                     />
                   </div>
 
-                  <div className="space-y-1.5">
-                    {modelStatus && isTranslating && (
-                      <div className="flex items-center gap-2 p-2 rounded-lg bg-yellow-500/5 border border-yellow-500/20">
-                        <Loader2 className="size-3.5 text-yellow-500 animate-spin shrink-0" />
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-medium truncate text-yellow-600">
-                            {modelStatus}
-                          </p>
-                        </div>
-                      </div>
-                    )}
+                  <ScrollArea className="max-h-[320px]">
+                    <div className="space-y-1">
+                      {targetLanguages.map((lang) => {
+                        const t = activeTranslations.find((tr) => tr.langCode === lang.code);
+                        const isComplete = t?.status === "complete";
+                        const isActive = t?.status === "in_progress";
+                        const progress = t ? (t.completedChunks / Math.max(t.totalChunks, 1)) * 100 : 0;
+                        const pct = isComplete ? 100 : Math.round(progress);
 
-                    {isTranslating && currentLang && !modelStatus && (
-                      <div className="flex items-center gap-2 p-2 rounded-lg bg-primary/5 border border-primary/20">
-                        <Loader2 className="size-3.5 text-primary animate-spin shrink-0" />
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-medium truncate">
-                            {currentLang.name}
-                          </p>
-                          <p className="text-[9px] text-muted-foreground">
-                            {translationProgress?.phase || "Translating..."}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0 ml-auto">
-                          {isNeural && (
-                            <Badge variant="default" className="text-[8px] bg-blue-600">
-                              Neural MT
-                            </Badge>
-                          )}
-                          <Badge
-                            variant="secondary"
-                            className="text-[9px]"
-                          >
-                            {currentLang.nativeName}
-                          </Badge>
-                        </div>
-                      </div>
-                    )}
-
-                    {flowPhase === "generating-pdf" && currentLang && (
-                      <div className="flex items-center gap-2 p-2 rounded-lg bg-blue-500/5 border border-blue-500/20">
-                        <Loader2 className="size-3.5 text-blue-500 animate-spin shrink-0" />
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-medium truncate">
-                            Generating PDF...
-                          </p>
-                          <p className="text-[9px] text-muted-foreground">
-                            {pdfProgress?.message || `Processing ${currentLang.name}`}
-                          </p>
-                        </div>
-                        {pdfProgress && (
-                          <div className="text-[9px] text-muted-foreground shrink-0 font-mono">
-                            {pdfProgress.currentPage}/{pdfProgress.totalPages}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {completedLanguages.length > 0 && (
-                    <ScrollArea className="max-h-[200px]">
-                      <div className="space-y-0.5">
-                        {completedLanguages.map((cl) => (
+                        return (
                           <div
-                            key={cl.code}
-                            className="flex items-center gap-2 py-1.5 px-2 rounded-md text-[11px]" style={{ background: 'rgba(0,229,255,0.04)' }}
+                            key={lang.code}
+                            className="flex items-center gap-2 py-1 px-2 rounded-md text-[11px] hover:bg-primary/5 cursor-pointer transition-colors"
+                            onClick={() => {
+                              if (isComplete || isActive) setCurrentPreviewLangCode(lang.code);
+                            }}
                           >
-                            <CheckCircle2 className="size-3 shrink-0" style={{ color: '#00e5ff' }} />
+                            {isComplete ? (
+                              <CheckCircle2 className="size-3 shrink-0" style={{ color: '#00e5ff' }} />
+                            ) : isActive ? (
+                              <Loader2 className="size-3 shrink-0 text-primary animate-spin" />
+                            ) : (
+                              <div className="size-3 rounded-full border border-muted-foreground/30 shrink-0" />
+                            )}
                             <span className="min-w-0 truncate flex-1">
-                              <span className="font-medium">{cl.name}</span>
+                              <span className="font-medium">{lang.name}</span>
                               <span className="text-muted-foreground ml-1">
-                                {cl.nativeName}
+                                {lang.nativeName}
                               </span>
                             </span>
-                            {cl.qaReport && (
-                              <Badge
-                                variant="outline"
-                                className={`text-[8px] shrink-0 ${
-                                  cl.qaReport.overall === "pass"
-                                    ? "text-cyan-400 border-cyan-500/30"
-                                    : cl.qaReport.overall === "warn"
-                                      ? "text-yellow-400 border-yellow-500/30"
-                                      : "text-red-400 border-red-500/30"
-                                }`}
-                                title={`QA ${cl.qaReport.score}/100 — ${cl.qaReport.checks.filter((c) => c.status === "pass").length} phases pass`}
-                              >
-                                QA {cl.qaReport.score}
+                            {isActive && (
+                              <Badge variant="secondary" className="text-[8px] animate-pulse">
+                                {pct}%
                               </Badge>
                             )}
-                            <Badge variant="outline" className="text-[8px] shrink-0">
-                              {cl.pdfBlob ? "PDF" : "Text"}
-                            </Badge>
-                            <button
-                              onClick={() => handleRetranslate(cl.code)}
-                              disabled={
-                                isTranslating || flowPhase === "generating-pdf"
-                              }
-                              className="shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-muted-foreground transition-colors hover:bg-cyan-500/10 hover:text-cyan-400 disabled:pointer-events-none disabled:opacity-40"
-                              title={`Retranslate ${cl.name} from the original source`}
-                            >
-                              <RotateCcw className="size-2.5" />
-                              Retranslate
-                            </button>
+                            {isComplete && (
+                              <Badge variant="outline" className="text-[8px] shrink-0" style={{ borderColor: 'rgba(0,229,255,0.3)' }}>
+                                Done
+                              </Badge>
+                            )}
+                            {!isComplete && !isActive && (
+                              <span className="text-[9px] text-muted-foreground font-mono">
+                                {pct}%
+                              </span>
+                            )}
+                            {(isComplete || isActive) && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRetranslate(lang.code);
+                                }}
+                                disabled={isTranslating}
+                                className="shrink-0 inline-flex items-center gap-1 rounded px-1 py-0.5 text-[9px] text-muted-foreground transition-colors hover:bg-cyan-500/10 hover:text-cyan-400 disabled:pointer-events-none disabled:opacity-40"
+                                title={`Retranslate ${lang.name}`}
+                              >
+                                <RotateCcw className="size-2.5" />
+                              </button>
+                            )}
                           </div>
-                        ))}
-                      </div>
-                    </ScrollArea>
-                  )}
+                        );
+                      })}
+                    </div>
+                  </ScrollArea>
 
                   {flowPhase === "translation-done" &&
                     currentQaReport &&
@@ -1765,26 +1417,10 @@ export default function Translator() {
                             </div>
                           )}
 
-                          {nextLang ? (
-                            <Button
-                              onClick={handleContinue}
-                              className="w-full h-9 text-xs"
-                              variant="outline"
-                            >
-                              Continue to {nextLang.name}
-                              <ChevronRight className="size-3.5 ml-2" />
-                              <Badge variant="secondary" className="text-[9px] ml-1">
-                                {nextLang.nativeName}
-                              </Badge>
-                            </Button>
-                          ) : (
-                            <Button
-                              onClick={handleContinue}
-                              className="w-full h-9 text-xs"
-                              variant="outline"
-                            >
-                              <CheckCheck className="size-3.5 mr-2" /> Finalize All
-                            </Button>
+                          {isTranslating && (
+                            <div className="text-center text-[10px] text-muted-foreground py-1.5 rounded-lg bg-primary/5 border border-primary/10">
+                              Translating all languages automatically...
+                            </div>
                           )}
                         </>
                       )}
@@ -1962,7 +1598,7 @@ export default function Translator() {
                   </div>
                 )}
 
-                {flowPhase === "translating" && isTranslating && currentLang && (
+                {flowPhase === "translating" && isTranslating && (
                   <div className="flex items-center justify-center h-[400px]">
                     <div className="text-center">
                       <div className="relative mb-4">
@@ -1970,28 +1606,23 @@ export default function Translator() {
                         <Globe className="size-5 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
                       </div>
                       <h3 className="text-sm font-semibold mb-1">
-                        Translating to {currentLang.name}
+                        Autonomous Translation Running
                       </h3>
                       <p className="text-[11px] text-muted-foreground mb-2">
-                        {currentLang.nativeName}
+                        {completedCount} of {targetLanguages.length} languages complete
                       </p>
-                      {translationProgress && (
+                      {inProgressTranslation && (
                         <div className="space-y-2">
                           <div className="w-48 h-1.5 rounded-full bg-muted overflow-hidden mx-auto">
                             <div
                               className="h-full rounded-full bg-primary transition-all duration-300"
                               style={{
-                                width: `${(translationProgress.current / Math.max(translationProgress.total, 1)) * 100}%`,
+                                width: `${(inProgressTranslation.completedChunks / Math.max(inProgressTranslation.totalChunks, 1)) * 100}%`,
                               }}
                             />
                           </div>
                           <p className="text-[10px] text-muted-foreground">
-                            {translationProgress.phase}
-                          </p>
-                          <p className="text-[9px] text-muted-foreground font-mono">
-                            Chunk{" "}
-                            {Math.min(translationProgress.current + 1, translationProgress.total)}{" "}
-                            of {translationProgress.total}
+                            {targetLanguages.find((l) => l.code === inProgressTranslation.langCode)?.name} — Chunk {inProgressTranslation.completedChunks}/{inProgressTranslation.totalChunks}
                           </p>
                         </div>
                       )}
@@ -2000,7 +1631,7 @@ export default function Translator() {
                           Gemini 23-Phase AI
                         </Badge>
                         <Badge variant="outline" className="text-[9px]">
-                          {currentLang.script} Script
+                          Server-Side Queue
                         </Badge>
                       </div>
                     </div>

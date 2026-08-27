@@ -14,6 +14,7 @@ import type * as mutations from "../mutations.js";
 import type * as parsePdf from "../parsePdf.js";
 import type * as queries from "../queries.js";
 import type * as translate from "../translate.js";
+import type * as translateQueue from "../translateQueue.js";
 import type * as upload from "../upload.js";
 
 import type {
@@ -29,6 +30,7 @@ declare const fullApi: ApiFromModules<{
   parsePdf: typeof parsePdf;
   queries: typeof queries;
   translate: typeof translate;
+  translateQueue: typeof translateQueue;
   upload: typeof upload;
 }>;
 

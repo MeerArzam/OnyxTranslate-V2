@@ -420,6 +420,7 @@ async function processChunkInternal(
 export const startTranslation = action({
   args: {
     projectId: v.id("projects"),
+    langCodes: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args): Promise<{ started: boolean; languages: number; totalChunks: number }> => {
     const project = await ctx.runQuery(api.queries.getProject, {
@@ -427,11 +428,14 @@ export const startTranslation = action({
     });
     if (!project) throw new Error("Project not found");
 
+    // Use selected languages or fall back to all
+    const selectedLangs = (args.langCodes && args.langCodes.length > 0) ? args.langCodes : LANGUAGES;
+
     const sourceChunks = chunkText(project.fullText, CHUNK_SIZE);
     const totalChunks = sourceChunks.length;
 
-    // Create translation records for all 20 languages
-    for (const lang of LANGUAGES) {
+    // Create translation records for selected languages
+    for (const lang of selectedLangs) {
       await ctx.runMutation(api.mutations.upsertTranslation, {
         projectId: args.projectId,
         langCode: lang,
@@ -439,8 +443,8 @@ export const startTranslation = action({
       });
     }
 
-    // Create chunk records for all languages
-    for (const lang of LANGUAGES) {
+    // Create chunk records for selected languages
+    for (const lang of selectedLangs) {
       for (let i = 0; i < totalChunks; i++) {
         await ctx.runMutation(api.mutations.upsertChunk, {
           projectId: args.projectId,
@@ -457,14 +461,14 @@ export const startTranslation = action({
       status: "translating",
     });
 
-    // Start processing first language
+    // Start processing first selected language
     await ctx.scheduler.runAfter(0, api.translateQueue.processLanguage, {
       projectId: args.projectId,
-      langCode: LANGUAGES[0],
+      langCode: selectedLangs[0],
       chunkIndex: 0,
     });
 
-    return { started: true, languages: LANGUAGES.length, totalChunks };
+    return { started: true, languages: selectedLangs.length, totalChunks };
   },
 });
 

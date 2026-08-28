@@ -162,7 +162,7 @@ export default function Translator() {
   // ─── Derived state from Convex ───
   const activeTranslations = convexTranslations ?? [];
   const completedCount = activeTranslations.filter((t) => t.status === "complete").length;
-  const isAllComplete = convexProject?.status === "all_translated" || completedCount >= targetLanguages.length;
+  const isAllComplete = convexProject?.status === "all_translated" || (activeTranslations.length > 0 && completedCount >= activeTranslations.length);
   const inProgressTranslation = activeTranslations.find((t) => t.status === "in_progress");
   const previewTranslation = currentPreviewLangCode
     ? activeTranslations.find((t) => t.langCode === currentPreviewLangCode)
@@ -208,6 +208,22 @@ export default function Translator() {
   const [baselineRunning, setBaselineRunning] = useState(false);
   const [baselineOpen, setBaselineOpen] = useState(false);
 
+  // ─── Selected languages for translation ───
+  const [selectedLangCodes, setSelectedLangCodes] = useState<string[]>([]);
+  const allSelected = selectedLangCodes.length === targetLanguages.length;
+  const toggleAllLangs = useCallback(() => {
+    if (allSelected) {
+      setSelectedLangCodes([]);
+    } else {
+      setSelectedLangCodes(targetLanguages.map((l) => l.code));
+    }
+  }, [allSelected]);
+  const toggleLang = useCallback((code: string) => {
+    setSelectedLangCodes((prev) =>
+      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
+    );
+  }, []);
+
   // ─── Target market context (P6/P7/P13/P14 sensitivity filters) ───
   const [marketContext, setMarketContext] = useState<
     "standard" | "high-censorship" | "romance-focused" | "conservative"
@@ -226,7 +242,7 @@ export default function Translator() {
     langCode: string;
   } | null>(null);
   const [isTranslatingImage, setIsTranslatingImage] = useState(false);
-  const [imageTargetLang, setImageTargetLang] = useState("");
+  const [imageSelectedLangs, setImageSelectedLangs] = useState<string[]>([]);
 
   // ─── Resume state ───
   const [hasSavedProgress, setHasSavedProgress] = useState(false);
@@ -603,7 +619,6 @@ export default function Translator() {
   const translateCurrentImage = useCallback(
     async (langCode: string) => {
       if (!currentImageBase64 || !langCode) return;
-      setImageTargetLang(langCode);
       setIsTranslatingImage(true);
       setImageTranslation(null);
       try {
@@ -628,12 +643,40 @@ export default function Translator() {
     [currentImageBase64, translateImageAction]
   );
 
+  const translateImageMultiLang = useCallback(async () => {
+    if (!currentImageBase64 || imageSelectedLangs.length === 0) return;
+    setIsTranslatingImage(true);
+    setImageTranslation(null);
+    const results: Array<{ langCode: string; text: string }> = [];
+    for (const lang of imageSelectedLangs) {
+      try {
+        const result = await translateImageAction({
+          imageBase64: currentImageBase64,
+          langCode: lang,
+        });
+        if (result.ok) {
+          results.push({ langCode: lang, text: result.extractedText });
+        }
+      } catch (err) {
+        console.error(`Image translation to ${lang} failed:`, err);
+      }
+    }
+    if (results.length > 0) {
+      setImageTranslation({
+        extracted: results.map((r) => `[${r.langCode.toUpperCase()}]\n${r.text}`).join("\n\n"),
+        translated: results.map((r) => `[${r.langCode.toUpperCase()}]\n${r.text}`).join("\n\n"),
+        langCode: imageSelectedLangs.join(","),
+      });
+    }
+    setIsTranslatingImage(false);
+  }, [currentImageBase64, imageSelectedLangs, translateImageAction]);
+
   const clearImage = useCallback(() => {
     setImagePreview(null);
     setCurrentImageBase64("");
     setImageTranslation(null);
     setImageMode("none");
-    setImageTargetLang("");
+    setImageSelectedLangs([]);
   }, []);
 
   // ─── Cleanup on unmount ───
@@ -667,7 +710,8 @@ export default function Translator() {
         setProjectId(activeProjectId);
       }
 
-      await startTranslationAction({ projectId: activeProjectId });
+      const langs = selectedLangCodes.length > 0 ? selectedLangCodes : targetLanguages.map((l) => l.code);
+      await startTranslationAction({ projectId: activeProjectId, langCodes: langs });
     } catch (error) {
       setTranslationError(
         error instanceof Error ? error.message : "Failed to start translation"
@@ -675,7 +719,7 @@ export default function Translator() {
       setIsTranslating(false);
       setFlowPhase("idle");
     }
-  }, [sourceText, projectId, startTranslationAction, createProjectMutation]);
+  }, [sourceText, projectId, selectedLangCodes, startTranslationAction, createProjectMutation]);
 
   // ─── Retranslate: cancel queue, delete language chunks, restart queue ───
 
@@ -689,7 +733,7 @@ export default function Translator() {
         // Delete old chunks for this language
         await deleteChunksForLangMutation({ projectId, langCode });
         // Restart autonomous queue
-        await startTranslationAction({ projectId });
+        await startTranslationAction({ projectId, langCodes: [langCode] });
       } catch (error) {
         setTranslationError(
           error instanceof Error ? error.message : "Retranslate failed"
@@ -1151,18 +1195,63 @@ export default function Translator() {
                           alt="Uploaded"
                           className="max-h-40 w-full rounded object-contain mb-2"
                         />
-                        <select
-                          value={imageTargetLang}
-                          onChange={(e) => translateCurrentImage(e.target.value)}
-                          className="w-full p-2 rounded text-[11px] bg-muted/50 border border-border/50 mb-2 focus:outline-none focus:border-primary/50"
-                        >
-                          <option value="">Select language to translate image…</option>
-                          {targetLanguages.map((lang) => (
-                            <option key={lang.code} value={lang.code}>
-                              {lang.name} ({lang.nativeName})
-                            </option>
-                          ))}
-                        </select>
+                        {/* Multi-select language chips for image */}
+                        <div className="space-y-1.5 mb-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] text-muted-foreground uppercase tracking-wider">Translate to</span>
+                            <button
+                              onClick={() => {
+                                if (imageSelectedLangs.length === targetLanguages.length) {
+                                  setImageSelectedLangs([]);
+                                } else {
+                                  setImageSelectedLangs(targetLanguages.map((l) => l.code));
+                                }
+                              }}
+                              className="text-[9px] px-1.5 py-0.5 rounded transition-colors hover:bg-muted/40"
+                              style={{ color: imageSelectedLangs.length === targetLanguages.length ? '#ff4757' : '#a78bfa' }}
+                            >
+                              {imageSelectedLangs.length === targetLanguages.length ? 'Clear' : 'All'}
+                            </button>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {targetLanguages.map((lang) => {
+                              const isImgSel = imageSelectedLangs.includes(lang.code);
+                              return (
+                                <button
+                                  key={lang.code}
+                                  onClick={() => {
+                                    setImageSelectedLangs((prev) =>
+                                      prev.includes(lang.code)
+                                        ? prev.filter((c) => c !== lang.code)
+                                        : [...prev, lang.code]
+                                    );
+                                  }}
+                                  className="px-2 py-0.5 rounded text-[9px] font-medium transition-all border"
+                                  style={{
+                                    background: isImgSel ? 'rgba(167,139,250,0.15)' : 'transparent',
+                                    borderColor: isImgSel ? 'rgba(167,139,250,0.5)' : 'rgba(255,255,255,0.08)',
+                                    color: isImgSel ? '#a78bfa' : 'rgba(255,255,255,0.4)',
+                                  }}
+                                >
+                                  {lang.code.toUpperCase()}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        {imageSelectedLangs.length > 0 && !isTranslatingImage && (
+                          <button
+                            onClick={translateImageMultiLang}
+                            className="w-full py-1.5 rounded text-[10px] font-medium transition-all border"
+                            style={{
+                              background: 'rgba(167,139,250,0.15)',
+                              borderColor: 'rgba(167,139,250,0.5)',
+                              color: '#a78bfa',
+                            }}
+                          >
+                            Translate to {imageSelectedLangs.length} language{imageSelectedLangs.length > 1 ? 's' : ''}
+                          </button>
+                        )}
                         {isTranslatingImage && (
                           <div className="flex items-center gap-2 text-[10px] py-1">
                             <Loader2 className="size-3 animate-spin" style={{ color: '#00e5ff' }} />
@@ -1424,13 +1513,51 @@ export default function Translator() {
                       {marketContext === "conservative" &&
                         "Full sensitivity pass: profanity, intimacy, political, religious and sensitivity filters applied."}
                     </p>
+                    {/* Language Picker */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          Languages ({selectedLangCodes.length}/{targetLanguages.length})
+                        </span>
+                        <button
+                          onClick={toggleAllLangs}
+                          className="text-[9px] px-1.5 py-0.5 rounded transition-colors hover:bg-muted/40"
+                          style={{ color: allSelected ? '#ff4757' : '#00e5ff' }}
+                        >
+                          {allSelected ? 'Deselect All' : 'Select All'}
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {targetLanguages.map((lang) => {
+                          const isSelected = selectedLangCodes.includes(lang.code);
+                          return (
+                            <button
+                              key={lang.code}
+                              onClick={() => toggleLang(lang.code)}
+                              className="px-2 py-1 rounded-md text-[10px] font-medium transition-all duration-150 border"
+                              style={{
+                                background: isSelected ? 'rgba(0,229,255,0.15)' : 'transparent',
+                                borderColor: isSelected ? 'rgba(0,229,255,0.5)' : 'rgba(255,255,255,0.08)',
+                                color: isSelected ? '#00e5ff' : 'rgba(255,255,255,0.4)',
+                              }}
+                            >
+                              {lang.code.toUpperCase()}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     <Button
                       onClick={startTranslation}
                       className="w-full h-9"
                       size="default"
+                      disabled={selectedLangCodes.length === 0}
                     >
                       <Globe className="size-3.5 mr-2" />
-                      Begin Translation Journey
+                      {selectedLangCodes.length === 0
+                        ? "Select languages to begin"
+                        : `Begin Translation (${selectedLangCodes.length} language${selectedLangCodes.length > 1 ? "s" : ""})`}
                     </Button>
                   </div>
                 )}
@@ -1449,7 +1576,7 @@ export default function Translator() {
                       Translation Progress
                     </span>
                     <span className="text-[10px] text-muted-foreground ml-auto font-mono">
-                      {completedLanguages.length}/{targetLanguages.length}
+                      {completedLanguages.length}/{activeTranslations.length || targetLanguages.length}
                     </span>
                   </div>
                 </div>
@@ -1458,7 +1585,7 @@ export default function Translator() {
                     <div
                       className="h-full rounded-full bg-primary transition-all duration-300"
                       style={{
-                        width: `${(completedLanguages.length / targetLanguages.length) * 100}%`,
+                        width: `${(completedLanguages.length / Math.max(activeTranslations.length, 1)) * 100}%`,
                       }}
                     />
                   </div>

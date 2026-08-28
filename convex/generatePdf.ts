@@ -260,17 +260,26 @@ export const generateTranslatedPdf = action({
       completedAt: Date.now(),
     });
 
-    // 9. Chain to next language or build ZIP
-    const langIndex = LANGUAGES.indexOf(args.langCode);
-    if (langIndex < LANGUAGES.length - 1) {
-      const nextLang = LANGUAGES[langIndex + 1];
+    // 9. Chain to next language that has translation records, or build ZIP
+    const allTranslations: Array<{ langCode: string; status: string }> =
+      await ctx.runQuery(api.queries.getProjectTranslations, { projectId: args.projectId });
+    // Find the next language in the queue (has a translation record and is not yet complete)
+    const currentIdx = allTranslations.findIndex((t) => t.langCode === args.langCode);
+    let nextTranslation = null;
+    for (let i = currentIdx + 1; i < allTranslations.length; i++) {
+      if (allTranslations[i].status !== "complete") {
+        nextTranslation = allTranslations[i];
+        break;
+      }
+    }
+    if (nextTranslation) {
       await ctx.scheduler.runAfter(0, api.translateQueue.processLanguage, {
         projectId: args.projectId,
-        langCode: nextLang,
+        langCode: nextTranslation.langCode,
         chunkIndex: 0,
       });
     } else {
-      // Last language done — build ZIP
+      // All languages done — build ZIP
       await ctx.runMutation(api.mutations.updateProject, {
         projectId: args.projectId,
         status: "all_translated",

@@ -646,12 +646,28 @@ export default function Translator() {
   // ─── Autonomous Translation Queue ───
 
   const startTranslation = useCallback(async () => {
-    if (!sourceText.trim() || !projectId) return;
+    if (!sourceText.trim()) return;
     try {
       setIsTranslating(true);
       setFlowPhase("translating");
       setTranslationError(null);
-      await startTranslationAction({ projectId });
+
+      // If no project exists (pasted text, not PDF), create one now
+      let activeProjectId = projectId;
+      if (!activeProjectId) {
+        activeProjectId = await createProjectMutation({
+          fileName: "Pasted Text",
+          pageCount: 1,
+          wordCount: sourceText.split(/\s+/).filter(Boolean).length,
+          pageData: [],
+          fullText: sourceText,
+          parsedPages: 1,
+          status: "ready",
+        });
+        setProjectId(activeProjectId);
+      }
+
+      await startTranslationAction({ projectId: activeProjectId });
     } catch (error) {
       setTranslationError(
         error instanceof Error ? error.message : "Failed to start translation"
@@ -659,7 +675,7 @@ export default function Translator() {
       setIsTranslating(false);
       setFlowPhase("idle");
     }
-  }, [sourceText, projectId, startTranslationAction]);
+  }, [sourceText, projectId, startTranslationAction, createProjectMutation]);
 
   // ─── Retranslate: cancel queue, delete language chunks, restart queue ───
 
@@ -679,6 +695,7 @@ export default function Translator() {
           error instanceof Error ? error.message : "Retranslate failed"
         );
         setIsTranslating(false);
+        setFlowPhase("idle");
       }
     },
     [projectId, deleteChunksForLangMutation, startTranslationAction]

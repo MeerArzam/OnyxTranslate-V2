@@ -43,6 +43,16 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
   }).index("by_project_lang", ["projectId", "langCode"]),
 
+  imageTranslations: defineTable({
+    projectId: v.optional(v.id("projects")),
+    imageBase64: v.string(),
+    extractedText: v.optional(v.string()),
+    translatedText: v.optional(v.string()),
+    targetLangCode: v.string(),
+    status: v.string(),
+    createdAt: v.number(),
+  }),
+
   jobs: defineTable({
     projectId: v.id("projects"),
     type: v.string(),

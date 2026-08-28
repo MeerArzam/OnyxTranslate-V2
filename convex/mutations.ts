@@ -202,3 +202,23 @@ export const createJob = mutation({
     });
   },
 });
+
+export const saveImageTranslation = mutation({
+  args: {
+    imageBase64: v.string(),
+    extractedText: v.optional(v.string()),
+    translatedText: v.optional(v.string()),
+    langCode: v.string(),
+    status: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("imageTranslations", {
+      imageBase64: args.imageBase64,
+      extractedText: args.extractedText,
+      translatedText: args.translatedText,
+      targetLangCode: args.langCode,
+      status: args.status,
+      createdAt: Date.now(),
+    });
+  },
+});

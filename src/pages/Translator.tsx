@@ -31,6 +31,7 @@ import {
   Check,
   FlaskConical,
   ListChecks,
+  Camera,
 } from "lucide-react";
 // Convex hooks imported below with storage replacement
 import {
@@ -108,6 +109,7 @@ export default function Translator() {
   const parsePdfAction = useAction(api.parsePdf.parseUploadedPdf);
   const startTranslationAction = useAction(api.translateQueue.startTranslation);
   const cancelTranslationAction = useAction(api.translateQueue.cancelTranslation);
+  const translateImageAction = useAction(api.translateImage.translateImage);
 
   // ─── Convex database state ───
   const [projectId, setProjectId] = useState<Id<"projects"> | null>(null);
@@ -213,6 +215,18 @@ export default function Translator() {
 
   // ─── ZIP ───
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
+
+  // ─── Image / Camera Translation ───
+  const [imageMode, setImageMode] = useState<"none" | "upload" | "camera">("none");
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [currentImageBase64, setCurrentImageBase64] = useState("");
+  const [imageTranslation, setImageTranslation] = useState<{
+    extracted: string;
+    translated: string;
+    langCode: string;
+  } | null>(null);
+  const [isTranslatingImage, setIsTranslatingImage] = useState(false);
+  const [imageTargetLang, setImageTargetLang] = useState("");
 
   // ─── Resume state ───
   const [hasSavedProgress, setHasSavedProgress] = useState(false);
@@ -552,6 +566,74 @@ export default function Translator() {
     setCurrentQaReport(null);
     setTranslationMode(null);
     setCurrentPreviewLangCode(null);
+  }, []);
+
+  // ─── Image / Camera Handlers ───
+
+  const handleImageUpload = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new window.Image();
+        img.onload = () => {
+          // Downscale to max 1024px width to save memory (Android 5 safe)
+          const canvas = document.createElement("canvas");
+          const maxWidth = 1024;
+          const scale = Math.min(1, maxWidth / img.width);
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          const ctx = canvas.getContext("2d")!;
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const base64 = canvas.toDataURL("image/jpeg", 0.7).split(",")[1];
+          setImagePreview(canvas.toDataURL("image/jpeg", 0.7));
+          setCurrentImageBase64(base64);
+          setImageMode("upload");
+          setImageTranslation(null);
+        };
+        img.src = event.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    },
+    []
+  );
+
+  const translateCurrentImage = useCallback(
+    async (langCode: string) => {
+      if (!currentImageBase64 || !langCode) return;
+      setImageTargetLang(langCode);
+      setIsTranslatingImage(true);
+      setImageTranslation(null);
+      try {
+        const result = await translateImageAction({
+          imageBase64: currentImageBase64,
+          langCode,
+        });
+        if (result.ok) {
+          setImageTranslation({
+            extracted: result.extractedText,
+            translated: result.extractedText,
+            langCode,
+          });
+        } else {
+          console.error("Image translation failed:", result.error);
+        }
+      } catch (err) {
+        console.error("Image translation error:", err);
+      }
+      setIsTranslatingImage(false);
+    },
+    [currentImageBase64, translateImageAction]
+  );
+
+  const clearImage = useCallback(() => {
+    setImagePreview(null);
+    setCurrentImageBase64("");
+    setImageTranslation(null);
+    setImageMode("none");
+    setImageTargetLang("");
   }, []);
 
   // ─── Cleanup on unmount ───
@@ -1000,6 +1082,98 @@ export default function Translator() {
                         <p key={i}>{w}</p>
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {/* ─── Image / Camera Translation ─── */}
+                {!isUploading && !pdfFileName && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                        Image / Camera
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      <label className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border border-dashed cursor-pointer transition-all duration-200 hover:bg-muted/30" style={{ borderColor: 'rgba(167,139,250,0.3)' }}>
+                        <Image className="size-3.5" style={{ color: '#a78bfa' }} />
+                        <span className="text-[10px] font-medium">Upload Image</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleImageUpload}
+                        />
+                      </label>
+                      <label className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border border-dashed cursor-pointer transition-all duration-200 hover:bg-muted/30" style={{ borderColor: 'rgba(52,211,153,0.3)' }}>
+                        <Camera className="size-3.5" style={{ color: '#34d399' }} />
+                        <span className="text-[10px] font-medium">Take Photo</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          className="hidden"
+                          onChange={handleImageUpload}
+                        />
+                      </label>
+                    </div>
+
+                    {/* Image Preview */}
+                    {imagePreview && (
+                      <div className="p-3 rounded-lg border" style={{ background: 'rgba(10,10,22,0.8)', borderColor: 'rgba(0,229,255,0.15)' }}>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[10px] font-semibold" style={{ color: '#00e5ff' }}>Image Preview</span>
+                          <button
+                            onClick={clearImage}
+                            className="text-[9px] text-red-400 hover:text-red-300 transition-colors"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                        <img
+                          src={imagePreview}
+                          alt="Uploaded"
+                          className="max-h-40 w-full rounded object-contain mb-2"
+                        />
+                        <select
+                          value={imageTargetLang}
+                          onChange={(e) => translateCurrentImage(e.target.value)}
+                          className="w-full p-2 rounded text-[11px] bg-muted/50 border border-border/50 mb-2 focus:outline-none focus:border-primary/50"
+                        >
+                          <option value="">Select language to translate image…</option>
+                          {targetLanguages.map((lang) => (
+                            <option key={lang.code} value={lang.code}>
+                              {lang.name} ({lang.nativeName})
+                            </option>
+                          ))}
+                        </select>
+                        {isTranslatingImage && (
+                          <div className="flex items-center gap-2 text-[10px] py-1">
+                            <Loader2 className="size-3 animate-spin" style={{ color: '#00e5ff' }} />
+                            <span style={{ color: '#00e5ff' }}>Extracting and translating text via Gemini…</span>
+                          </div>
+                        )}
+                        {imageTranslation && !isTranslatingImage && (
+                          <div className="space-y-2 mt-2">
+                            <div className="p-2.5 rounded-lg bg-muted/30 border border-border/30">
+                              <div className="text-[9px] text-muted-foreground uppercase tracking-wider mb-1">Translated Text</div>
+                              <div className="text-[11px] leading-relaxed whitespace-pre-wrap" style={{ direction: ['ar', 'ur', 'ks'].includes(imageTranslation.langCode) ? 'rtl' : 'ltr' }}>
+                                {imageTranslation.translated}
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard.writeText(imageTranslation.translated).catch(() => {});
+                                }}
+                                className="flex-1 text-[9px] py-1.5 rounded border border-border/30 hover:bg-muted/30 transition-colors"
+                              >
+                                Copy Translation
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 

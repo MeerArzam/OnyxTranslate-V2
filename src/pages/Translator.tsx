@@ -244,73 +244,37 @@ export default function Translator() {
   const [isTranslatingImage, setIsTranslatingImage] = useState(false);
   const [imageSelectedLangs, setImageSelectedLangs] = useState<string[]>([]);
 
-  // ─── Resume state ───
-  const [hasSavedProgress, setHasSavedProgress] = useState(false);
-  const [savedFileName, setSavedFileName] = useState<string | null>(null);
-
-  // ─── Persistence warnings ───
-  const [dbWarning, setDbWarning] = useState<string | null>(null);
-
-  // ─── Check for saved progress on mount via Convex ───
+  // ─── Auto-load project on mount via Convex ───
   useEffect(() => {
-    if (latestProject && latestProject.parsedPages > 0) {
-      setHasSavedProgress(true);
-      setSavedFileName(latestProject.fileName);
-      setProjectId(latestProject._id);
-    }
+    if (!latestProject) return;
+    // Auto-restore project state — no Resume button needed
+    setProjectId(latestProject._id);
+    setSourceText(latestProject.fullText);
+    setPdfFileName(latestProject.fileName);
+    setPdfPageCount(latestProject.pageCount);
+    setPageData(latestProject.pageData);
+    setOriginalPageTexts(latestProject.pageData.map((p: any) => p.text));
+    setParsePhase("done");
   }, [latestProject]);
 
-  // ─── Convex connectivity check ───
+  // ─── Auto-detect translation state from Convex ───
   useEffect(() => {
-    // Convex is always available if the app loads — no local DB health check needed
-  }, []);
-
-
-  // ─── Resume saved progress from Convex ───
-  const handleResume = useCallback(async () => {
-    try {
-      if (!latestProject) {
-        setHasSavedProgress(false);
-        return;
-      }
-
-      setIsUploading(true);
-      setUploadError(null);
-      setParsePhase("loading");
-      setParseProgress({ current: latestProject.parsedPages, total: latestProject.pageCount });
-
-      // Restore project state from Convex
-      setSourceText(latestProject.fullText);
-      setPdfFileName(latestProject.fileName);
-      setPdfPageCount(latestProject.pageCount);
-      setPdfWarnings([]);
-      setPageData(latestProject.pageData);
-      setOriginalPageTexts(latestProject.pageData.map((p: any) => p.text));
-      setOriginalArrayBuffer(null);
-      setProjectId(latestProject._id);
-
-      // Detect project state from Convex (derived state auto-updates via reactive queries)
-      if (convexProject?.status === "all_translated") {
-        setFlowPhase("all-complete");
-        setIsTranslating(false);
-      } else if (convexProject?.status === "translating") {
-        setFlowPhase("translating");
-        setIsTranslating(true);
-      } else {
-        setFlowPhase("idle");
-      }
-
-      setParsePhase("done");
-      setParseProgress(null);
-      setIsUploading(false);
-      setHasSavedProgress(false);
-    } catch (err) {
-      console.error("Failed to resume:", err);
-      setUploadError("Failed to resume saved progress. Starting fresh.");
-      setHasSavedProgress(false);
-      setIsUploading(false);
+    if (!convexProject) return;
+    if (convexProject.status === "all_translated" || convexProject.status === "complete") {
+      setFlowPhase("all-complete");
+      setIsTranslating(false);
+    } else if (convexProject.status === "translating" && activeTranslations.some((t) => t.status === "in_progress" || t.status === "generating_pdf")) {
+      setFlowPhase("translating");
+      setIsTranslating(true);
+    } else if (activeTranslations.length > 0 && completedCount > 0 && completedCount < activeTranslations.length) {
+      // Some progress exists but not actively translating — could be paused
+      setFlowPhase("translating");
+      setIsTranslating(false);
     }
-  }, [latestProject, convexTranslations]);
+  }, [convexProject, activeTranslations, completedCount]);
+
+
+
 
   // ─── PDF Upload (chunked) ───
   const handleFileSelect = useCallback(async (file: File | null) => {
@@ -325,7 +289,7 @@ export default function Translator() {
     if (projectId) {
       await deleteProjectMutation({ projectId }).catch(() => {});
     }
-    setHasSavedProgress(false);
+    // progress state managed by Convex
 
     try {
       // Step 1: Parse header (fast — no page processing)
@@ -543,7 +507,7 @@ export default function Translator() {
     setPageData([]);
     setOriginalPageTexts([]);
     setParsePhase("idle");
-    setHasSavedProgress(false);
+    // progress state managed by Convex
     resetFlow();
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, [projectId, deleteProjectMutation]);
@@ -722,6 +686,17 @@ export default function Translator() {
   }, [sourceText, projectId, selectedLangCodes, startTranslationAction, createProjectMutation]);
 
   // ─── Retranslate: cancel queue, delete language chunks, restart queue ───
+
+  const handlePause = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      await cancelTranslationAction({ projectId });
+      setIsTranslating(false);
+      // Don't change flowPhase — keep showing progress panel
+    } catch (error) {
+      console.error("Failed to pause:", error);
+    }
+  }, [projectId, cancelTranslationAction]);
 
   const handleRetranslate = useCallback(
     async (langCode: string) => {
@@ -1020,22 +995,7 @@ export default function Translator() {
       </header>
 
       <div className="max-w-[1200px] mx-auto px-6 py-6">
-        {dbWarning && (
-          <div className="mb-4 flex items-center justify-between p-3 rounded-xl bg-yellow-500/5 border border-yellow-500/20 text-[11px]">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="size-3.5 text-yellow-500 shrink-0" />
-              <span>{dbWarning}</span>
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
-              <Button variant="ghost" size="sm" className="h-6 text-[9px]" onClick={handleExportProgress}>
-                Export Now
-              </Button>
-              <Button variant="ghost" size="sm" className="h-6 text-[9px]" onClick={() => setDbWarning(null)}>
-                Dismiss
-              </Button>
-            </div>
-          </div>
-        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6">
           {/* Left Panel */}
           <div className="space-y-4">
@@ -1283,76 +1243,37 @@ export default function Translator() {
                   </div>
                 )}
 
-                {/* Transfer progress between preview and published site */}
-                {!hasSavedProgress && !isUploading && !pdfFileName && (
-                  <div className="space-y-2">
-                    <div className="flex items-start gap-2 p-2.5 rounded-lg bg-blue-500/5 border border-blue-500/20 text-[11px]">
-                      <Globe className="size-3.5 text-blue-500 shrink-0 mt-0.5" />
-                      <div>
-                        <p className="font-medium text-blue-600">
-                          Uploaded in the Freebuff preview?
-                        </p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">
-                          Work is saved only in the tab where you uploaded it. To
-                          continue on the published site,{" "}
-                          <strong>Export</strong> a progress file here, then{" "}
-                          <strong>Import</strong> it on{" "}
-                          <strong>oyxtranslate.freebuff.app</strong>.
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        onClick={handleExportProgress}
-                        variant="outline"
-                        size="sm"
-                        className="flex-1 h-8 text-[11px]"
-                      >
-                        <FileUp className="size-3 mr-1" /> Export Progress
-                      </Button>
-                      <Button
-                        onClick={handleImportProgress}
-                        variant="outline"
-                        size="sm"
-                        className="flex-1 h-8 text-[11px]"
-                      >
-                        <FileDown className="size-3 mr-1" /> Import Progress
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Resume saved progress */}
-                {hasSavedProgress && !isUploading && !pdfFileName && (
+                {/* Auto-resume indicator — progress detected on server */}
+                {latestProject && !isUploading && !pdfFileName && activeTranslations.length > 0 && flowPhase === "idle" && (
                   <div className="space-y-2">
                     <div className="flex items-start gap-2 p-2.5 rounded-lg text-[11px]" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.10)' }}>
                       <CheckCircle2 className="size-3.5 shrink-0 mt-0.5" style={{ color: '#00e5ff' }} />
                       <span>
-                        Found saved progress for <strong>{savedFileName}</strong>.
-                        Resume where you left off?
+                        Previous translation detected — <strong>{completedCount}/{activeTranslations.length}</strong> languages done.
+                        Server is still working.
                       </span>
                     </div>
-                    <div className="flex gap-2">
-                      <Button
-                        onClick={handleResume}
-                        className="flex-1 h-8 text-[11px]"
-                        size="sm"
-                      >
-                        <Loader2 className="size-3 mr-1" /> Resume
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          if (projectId) deleteProjectMutation({ projectId });
-                          setProjectId(null);
-                          setHasSavedProgress(false);
-                        }}
-                        variant="outline"
-                        className="h-8 text-[11px]"
-                        size="sm"
-                      >
-                        Start Fresh
-                      </Button>
-                    </div>
+                    <Button
+                      onClick={() => {
+                        setFlowPhase("translating");
+                        setIsTranslating(true);
+                      }}
+                      className="w-full h-8 text-[11px]"
+                      size="sm"
+                    >
+                      <Globe className="size-3 mr-1" /> View Progress
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        if (projectId) deleteProjectMutation({ projectId });
+                        setProjectId(null);
+                      }}
+                      variant="outline"
+                      className="w-full h-8 text-[11px]"
+                      size="sm"
+                    >
+                      <RotateCcw className="size-3 mr-1" /> Start Fresh
+                    </Button>
                   </div>
                 )}
 
@@ -1394,7 +1315,7 @@ export default function Translator() {
                       } else if (e.target.value.trim()) {
                         // Discard saved progress when pasting new text
                         if (projectId) await deleteProjectMutation({ projectId }).catch(() => {});
-                        setHasSavedProgress(false);
+                        // progress state managed by Convex
                         resetFlow();
                       }
                     }}
@@ -1578,17 +1499,47 @@ export default function Translator() {
                     <span className="text-[10px] text-muted-foreground ml-auto font-mono">
                       {completedLanguages.length}/{activeTranslations.length || targetLanguages.length}
                     </span>
+                    {isTranslating && (
+                      <button
+                        onClick={handlePause}
+                        className="shrink-0 inline-flex items-center gap-1 rounded px-2 py-1 text-[9px] font-medium transition-all border"
+                        style={{
+                          background: 'rgba(255,71,87,0.1)',
+                          borderColor: 'rgba(255,71,87,0.3)',
+                          color: '#ff4757',
+                        }}
+                        title="Pause translation queue"
+                      >
+                        <svg className="size-2.5" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+                        Pause
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div className="p-3 space-y-2">
-                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div className="h-2 rounded-full bg-muted overflow-hidden neon-border">
                     <div
-                      className="h-full rounded-full bg-primary transition-all duration-300"
+                      className="h-full rounded-full transition-all duration-500 neon-progress"
                       style={{
                         width: `${(completedLanguages.length / Math.max(activeTranslations.length, 1)) * 100}%`,
                       }}
                     />
                   </div>
+                  {inProgressTranslation && (
+                    <div className="flex items-center gap-2 text-[9px] text-muted-foreground">
+                      <span style={{ color: '#00e5ff' }}>
+                        {targetLanguages.find((l) => l.code === inProgressTranslation.langCode)?.name}
+                      </span>
+                      <span>•</span>
+                      <span className="font-mono">
+                        Chunk {inProgressTranslation.completedChunks}/{inProgressTranslation.totalChunks}
+                      </span>
+                      <span>•</span>
+                      <span className="font-mono">
+                        {Math.round((inProgressTranslation.completedChunks / Math.max(inProgressTranslation.totalChunks, 1)) * 100)}%
+                      </span>
+                    </div>
+                  )}
 
                   {activeTranslations.some((t) => t.status === "generating_pdf") && (
                     <div className="flex items-center gap-1.5 text-[9px] text-muted-foreground">
@@ -1631,9 +1582,14 @@ export default function Translator() {
                               </span>
                             </span>
                             {isActive && (
-                              <Badge variant="secondary" className="text-[8px] animate-pulse">
-                                {pct}%
-                              </Badge>
+                              <div className="flex items-center gap-1">
+                                <div className="w-12 h-1 rounded-full bg-muted overflow-hidden">
+                                  <div className="h-full rounded-full neon-progress transition-all duration-300" style={{ width: `${pct}%` }} />
+                                </div>
+                                <span className="text-[8px] font-mono" style={{ color: '#00e5ff' }}>
+                                  {t?.completedChunks}/{t?.totalChunks}
+                                </span>
+                              </div>
                             )}
                             {t?.pdfGenerating && (
                               <Badge variant="secondary" className="text-[8px] animate-pulse" style={{ background: 'rgba(167,139,250,0.15)', color: '#a78bfa' }}>
@@ -1798,7 +1754,7 @@ export default function Translator() {
                         <div className="flex items-center gap-2 p-2 rounded-lg" style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.15)' }}>
                           <CheckCheck className="size-4 shrink-0" style={{ color: '#00e5ff' }} />
                           <span className="text-[11px] font-medium neon-text">
-                            All {targetLanguages.length} languages completed!
+                            All {completedLanguages.length} languages completed!
                           </span>
                         </div>
 
@@ -1811,13 +1767,11 @@ export default function Translator() {
                         >
                           {isDownloadingZip ? (
                             <>
-                              <Loader2 className="size-4 mr-2 animate-spin" /> Creating
-                              ZIP...
+                              <Loader2 className="size-4 mr-2 animate-spin" /> Creating ZIP...
                             </>
                           ) : (
                             <>
-                              <Package className="size-4 mr-2" /> Download All PDFs as
-                              ZIP
+                              <Package className="size-4 mr-2" /> Download All as ZIP
                             </>
                           )}
                         </Button>
@@ -1827,28 +1781,52 @@ export default function Translator() {
                           className="w-full h-9 text-xs"
                           variant="outline"
                         >
-                          <RotateCcw className="size-3.5 mr-2" /> Start Over
+                          <RotateCcw className="size-3.5 mr-2" /> Start Fresh
                         </Button>
-
-                        <div className="flex gap-2">
-                          <Button
-                            onClick={handleExportProgress}
-                            className="flex-1 h-8 text-[10px]"
-                            variant="outline"
-                          >
-                            📤 Export Progress
-                          </Button>
-                          <Button
-                            onClick={handleImportProgress}
-                            className="flex-1 h-8 text-[10px]"
-                            variant="outline"
-                          >
-                            📥 Import Progress
-                          </Button>
-                        </div>
                       </>
                     )}
                   </div>
+
+                  {!isTranslating && flowPhase === "translating" && completedCount > 0 && completedCount < (activeTranslations.length || 0) && (
+                    <>
+                      <div className="flex items-center gap-2 p-2 rounded-lg" style={{ background: 'rgba(255,165,0,0.06)', border: '1px solid rgba(255,165,0,0.15)' }}>
+                        <AlertCircle className="size-3.5 shrink-0" style={{ color: '#ffa500' }} />
+                        <span className="text-[10px] font-medium" style={{ color: '#ffa500' }}>
+                          Paused — {completedCount}/{activeTranslations.length} done
+                        </span>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={() => {
+                            setIsTranslating(true);
+                            // Re-trigger queue — it picks up where it left off
+                            if (projectId) startTranslationAction({ projectId, langCodes: activeTranslations.filter((t) => t.status !== "complete").map((t) => t.langCode) });
+                          }}
+                          className="flex-1 h-8 text-[11px]"
+                          size="sm"
+                        >
+                          <Globe className="size-3 mr-1" /> Resume
+                        </Button>
+                        <Button
+                          onClick={handleDownloadAllZIP}
+                          variant="outline"
+                          className="flex-1 h-8 text-[11px]"
+                          size="sm"
+                          disabled={isDownloadingZip}
+                        >
+                          <Package className="size-3 mr-1" /> Download Done
+                        </Button>
+                        <Button
+                          onClick={clearSource}
+                          variant="outline"
+                          className="h-8 text-[11px]"
+                          size="sm"
+                        >
+                          <RotateCcw className="size-3" />
+                        </Button>
+                      </div>
+                    </>
+                  )}
 
                   {translationError && !isTranslating && (
                     <div className="flex items-start gap-2 p-2 rounded-lg bg-red-500/5 border border-red-500/20 text-[11px]">

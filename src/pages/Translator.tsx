@@ -1485,597 +1485,103 @@ export default function Translator() {
               </div>
             </div>
 
-            {/* Progress Panel */}
+            {/* Progress Panel — compact single section */}
             {flowPhase !== "idle" && (
-              <div className="rounded-xl border border-border/50 bg-card overflow-hidden">
-                <div className="px-4 py-3 border-b border-border/30 bg-muted/30">
+              <div className="rounded-xl border overflow-hidden neon-border" style={{ background: 'rgba(10,10,22,0.9)' }}>
+                <div className="px-3 py-2 border-b" style={{ borderColor: 'rgba(0,229,255,0.1)' }}>
                   <div className="flex items-center gap-2">
-                    <span className="size-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 neon-glow" style={{ background: 'linear-gradient(135deg, #00e5ff, #a78bfa)', color: '#06060e' }}>
-                      2
-                    </span>
-                    <span className="text-xs font-semibold">
-                      Translation Progress
-                    </span>
-                    <span className="text-[10px] text-muted-foreground ml-auto font-mono">
+                    <span className="size-4 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0" style={{ background: 'linear-gradient(135deg, #00e5ff, #a78bfa)', color: '#06060e' }}>2</span>
+                    <span className="text-[11px] font-semibold">Progress</span>
+                    <span className="text-[9px] text-muted-foreground ml-auto font-mono">
                       {completedLanguages.length}/{activeTranslations.length || targetLanguages.length}
                     </span>
                     {isTranslating && (
-                      <button
-                        onClick={handlePause}
-                        className="shrink-0 inline-flex items-center gap-1 rounded px-2 py-1 text-[9px] font-medium transition-all border"
-                        style={{
-                          background: 'rgba(255,71,87,0.1)',
-                          borderColor: 'rgba(255,71,87,0.3)',
-                          color: '#ff4757',
-                        }}
-                        title="Pause translation queue"
-                      >
-                        <svg className="size-2.5" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+                      <button onClick={handlePause} className="shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-medium transition-all border" style={{ background: 'rgba(255,71,87,0.1)', borderColor: 'rgba(255,71,87,0.3)', color: '#ff4757' }}>
+                        <svg className="size-2" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
                         Pause
                       </button>
                     )}
                   </div>
                 </div>
                 <div className="p-3 space-y-2">
-                  <div className="h-2 rounded-full bg-muted overflow-hidden neon-border">
-                    <div
-                      className="h-full rounded-full transition-all duration-500 neon-progress"
-                      style={{
-                        width: `${(completedLanguages.length / Math.max(activeTranslations.length, 1)) * 100}%`,
-                      }}
-                    />
+                  {/* Neon progress bar */}
+                  <div className="h-2 rounded-full overflow-hidden neon-border" style={{ background: 'rgba(255,255,255,0.03)' }}>
+                    <div className="h-full rounded-full transition-all duration-500 neon-progress" style={{ width: `${(completedLanguages.length / Math.max(activeTranslations.length, 1)) * 100}%` }} />
                   </div>
+                  {/* Current language detail */}
                   {inProgressTranslation && (
-                    <div className="flex items-center gap-2 text-[9px] text-muted-foreground">
-                      <span style={{ color: '#00e5ff' }}>
-                        {targetLanguages.find((l) => l.code === inProgressTranslation.langCode)?.name}
-                      </span>
-                      <span>•</span>
-                      <span className="font-mono">
-                        Chunk {inProgressTranslation.completedChunks}/{inProgressTranslation.totalChunks}
-                      </span>
-                      <span>•</span>
-                      <span className="font-mono">
-                        {Math.round((inProgressTranslation.completedChunks / Math.max(inProgressTranslation.totalChunks, 1)) * 100)}%
-                      </span>
+                    <div className="flex items-center gap-2 text-[9px]">
+                      <span style={{ color: '#00e5ff' }}>{targetLanguages.find((l) => l.code === inProgressTranslation.langCode)?.name}</span>
+                      <span className="text-muted-foreground">•</span>
+                      <span className="font-mono text-muted-foreground">Chunk {inProgressTranslation.completedChunks}/{inProgressTranslation.totalChunks}</span>
+                      <span className="text-muted-foreground">•</span>
+                      <span className="font-mono" style={{ color: '#00e5ff' }}>{Math.round((inProgressTranslation.completedChunks / Math.max(inProgressTranslation.totalChunks, 1)) * 100)}%</span>
                     </div>
                   )}
-
-                  {activeTranslations.some((t) => t.status === "generating_pdf") && (
-                    <div className="flex items-center gap-1.5 text-[9px] text-muted-foreground">
-                      <Loader2 className="size-2.5 animate-spin" style={{ color: '#a78bfa' }} />
-                      <span>PDFs generating in background…</span>
-                    </div>
-                  )}
-
-                  <ScrollArea className="max-h-[320px]">
-                    <div className="space-y-1">
+                  {/* Per-language list */}
+                  <ScrollArea className="max-h-[280px]">
+                    <div className="space-y-0.5">
                       {targetLanguages.map((lang) => {
                         const t = activeTranslations.find((tr) => tr.langCode === lang.code);
-                        const isComplete = t?.status === "complete";
-                        const isActive = t?.status === "in_progress";
-                        const isGeneratingPdf = t?.status === "generating_pdf" || t?.pdfGenerating;
-                        const progress = t ? (t.completedChunks / Math.max(t.totalChunks, 1)) * 100 : 0;
-                        const pct = isComplete ? 100 : Math.round(progress);
-
+                        if (!t) return null;
+                        const isComplete = t.status === "complete";
+                        const isActive = t.status === "in_progress";
+                        const isPdf = t.status === "generating_pdf";
+                        const pct = isComplete ? 100 : Math.round((t.completedChunks / Math.max(t.totalChunks, 1)) * 100);
                         return (
-                          <div
-                            key={lang.code}
-                            className="flex items-center gap-2 py-1 px-2 rounded-md text-[11px] hover:bg-primary/5 cursor-pointer transition-colors"
-                            onClick={() => {
-                              if (isComplete || isActive || isGeneratingPdf) setCurrentPreviewLangCode(lang.code);
-                            }}
-                          >
+                          <div key={lang.code} className="flex items-center gap-1.5 py-0.5 px-1.5 rounded text-[10px] cursor-pointer transition-colors hover:bg-white/[0.02]" onClick={() => setCurrentPreviewLangCode(lang.code)}>
                             {isComplete ? (
-                              <CheckCircle2 className="size-3 shrink-0" style={{ color: '#00e5ff' }} />
+                              <CheckCircle2 className="size-2.5 shrink-0" style={{ color: '#00e5ff' }} />
                             ) : isActive ? (
-                              <Loader2 className="size-3 shrink-0 text-primary animate-spin" />
-                            ) : isGeneratingPdf ? (
-                              <Loader2 className="size-3 shrink-0 animate-spin" style={{ color: '#a78bfa' }} />
+                              <Loader2 className="size-2.5 shrink-0 animate-spin" style={{ color: '#00e5ff' }} />
+                            ) : isPdf ? (
+                              <Loader2 className="size-2.5 shrink-0 animate-spin" style={{ color: '#a78bfa' }} />
                             ) : (
-                              <div className="size-3 rounded-full border border-muted-foreground/30 shrink-0" />
+                              <div className="size-2.5 rounded-full border shrink-0" style={{ borderColor: 'rgba(255,255,255,0.15)' }} />
                             )}
-                            <span className="min-w-0 truncate flex-1">
-                              <span className="font-medium">{lang.name}</span>
-                              <span className="text-muted-foreground ml-1">
-                                {lang.nativeName}
-                              </span>
-                            </span>
-                            {isActive && (
+                            <span className="min-w-0 truncate flex-1 text-muted-foreground">{lang.name}</span>
+                            {isActive ? (
                               <div className="flex items-center gap-1">
-                                <div className="w-12 h-1 rounded-full bg-muted overflow-hidden">
+                                <div className="w-10 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.05)' }}>
                                   <div className="h-full rounded-full neon-progress transition-all duration-300" style={{ width: `${pct}%` }} />
                                 </div>
-                                <span className="text-[8px] font-mono" style={{ color: '#00e5ff' }}>
-                                  {t?.completedChunks}/{t?.totalChunks}
-                                </span>
+                                <span className="text-[8px] font-mono" style={{ color: '#00e5ff' }}>{t.completedChunks}/{t.totalChunks}</span>
                               </div>
-                            )}
-                            {t?.pdfGenerating && (
-                              <Badge variant="secondary" className="text-[8px] animate-pulse" style={{ background: 'rgba(167,139,250,0.15)', color: '#a78bfa' }}>
-                                PDF…
-                              </Badge>
-                            )}
-                            {isComplete && (
-                              <Badge variant="outline" className="text-[8px] shrink-0" style={{ borderColor: 'rgba(0,229,255,0.3)' }}>
-                                Done
-                              </Badge>
-                            )}
-                            {!isComplete && !isActive && (
-                              <span className="text-[9px] text-muted-foreground font-mono">
-                                {pct}%
-                              </span>
-                            )}
-                            {(isComplete || isActive) && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleRetranslate(lang.code);
-                                }}
-                                disabled={isTranslating}
-                                className="shrink-0 inline-flex items-center gap-1 rounded px-1 py-0.5 text-[9px] text-muted-foreground transition-colors hover:bg-cyan-500/10 hover:text-cyan-400 disabled:pointer-events-none disabled:opacity-40"
-                                title={`Retranslate ${lang.name}`}
-                              >
-                                <RotateCcw className="size-2.5" />
-                              </button>
-                            )}
+                            ) : isComplete ? (
+                              <span className="text-[8px] font-mono" style={{ color: '#00e5ff' }}>✓</span>
+                            ) : isPdf ? (
+                              <span className="text-[8px]" style={{ color: '#a78bfa' }}>PDF</span>
+                            ) : null}
                           </div>
                         );
                       })}
                     </div>
                   </ScrollArea>
-
-                  {flowPhase === "translation-done" &&
-                    currentQaReport &&
-                    currentLang &&
-                    !isTranslating && (
-                      <div className="rounded-lg border border-border/40 bg-muted/20 p-2 space-y-1.5">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <CheckCircle2 className="size-3 shrink-0" style={{ color: '#00e5ff' }} />
-                          <span className="text-[10px] font-semibold">
-                            23-Phase QA
-                          </span>
-                          <span
-                            className={`text-[10px] font-mono ml-auto ${
-                              currentQaReport.overall === "pass"
-                                ? "text-cyan-400"
-                                : currentQaReport.overall === "warn"
-                                  ? "text-yellow-400"
-                                  : "text-red-400"
-                            }`}
-                          >
-                            {currentQaReport.score}/100
-                          </span>
-                          {translationMode && (
-                            <Badge variant="outline" className="text-[8px] w-full">
-                              {translationMode === "vly"
-                                ? `Gemini 3.6 Flash · 23 phases${translationModel ? ` · ${translationModel}` : ""}`
-                                : translationMode === "neural"
-                                  ? "Neural MT + phases"
-                                  : "Glossary Mode · word-swap fallback"}
-                            </Badge>
-                          )}
-                        </div>
-                        {translationMode === "vly" &&
-                          translationUsage &&
-                          (translationUsage.totalTokens != null ||
-                            translationUsage.credits != null) && (
-                            <div className="flex items-center gap-1 text-[9px] text-muted-foreground font-mono">
-                              <span>⚡</span>
-                              <span>
-                                {translationUsage.credits != null
-                                  ? `${translationUsage.credits} credits used`
-                                  : `~${(translationUsage.totalTokens ?? 0).toLocaleString()} tokens used`}
-                              </span>
-                            </div>
-                          )}
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() => setShowAllQaPhases((v) => !v)}
-                            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-muted-foreground hover:bg-muted/40 transition-colors"
-                          >
-                            <ListChecks className="size-2.5" />
-                            {showAllQaPhases ? "Hide passes" : "Show all phases"}
-                          </button>
-                          <span className="text-[9px] text-muted-foreground ml-auto">
-                            {currentQaReport.checks.filter((c) => c.status === "pass").length}/
-                            {currentQaReport.checks.length} pass
-                          </span>
-                        </div>
-                        <ScrollArea className="max-h-[130px]">
-                          <div className="space-y-0.5">
-                            {(showAllQaPhases
-                              ? currentQaReport.checks
-                              : currentQaReport.checks.filter((c) => c.status !== "pass")
-                            ).map((c) => (
-                              <div
-                                key={c.label}
-                                className="flex items-start gap-1.5 text-[9px] leading-snug"
-                              >
-                                <span
-                                  className={`shrink-0 font-semibold ${
-                                    c.status === "pass"
-                                      ? "text-cyan-400"
-                                      : c.status === "fail"
-                                        ? "text-red-400"
-                                        : "text-amber-500"
-                                  }`}
-                                >
-                                  {c.status === "pass" ? "✓" : c.status === "fail" ? "✗" : "⚠️"}{" "}
-                                  {c.label}
-                                </span>
-                                <span className="text-muted-foreground">
-                                  {c.detail}
-                                </span>
-                              </div>
-                            ))}
-                            {!showAllQaPhases &&
-                              currentQaReport.checks.every((c) => c.status === "pass") && (
-                                <p className="text-[9px] text-cyan-400">
-                                  All phases pass ✓
-                                </p>
-                              )}
-                          </div>
-                        </ScrollArea>
-                      </div>
-                    )}
-
-                  <div className="space-y-1.5 pt-1">
-                    {flowPhase === "translation-done" &&
-                      currentLang &&
-                      !isTranslating && (
-                        <>
-                          {originalArrayBuffer && pageData.length > 0 ? (
-                            <Button
-                              onClick={handleDownloadPDF}
-                              className="w-full h-9 text-xs"
-                              variant="default"
-                            >
-                              <FileDown className="size-3.5 mr-2" /> Download{" "}
-                              {currentLang.name} PDF
-                            </Button>
-                          ) : (
-                            <div className="text-center text-[10px] text-muted-foreground py-1.5 rounded-lg bg-muted/30">
-                              PDF download needs a PDF source — upload your PDF to
-                              get image-preserved translated PDFs
-                            </div>
-                          )}
-
-                          {isTranslating && (
-                            <div className="text-center text-[10px] text-muted-foreground py-1.5 rounded-lg bg-primary/5 border border-primary/10">
-                              Translating all languages automatically...
-                            </div>
-                          )}
-                        </>
-                      )}
-
-                    {flowPhase === "all-complete" && (
-                      <>
-                        <div className="flex items-center gap-2 p-2 rounded-lg" style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.15)' }}>
-                          <CheckCheck className="size-4 shrink-0" style={{ color: '#00e5ff' }} />
-                          <span className="text-[11px] font-medium neon-text">
-                            All {completedLanguages.length} languages completed!
-                          </span>
-                        </div>
-
-                        <Button
-                          onClick={handleDownloadAllZIP}
-                          disabled={isDownloadingZip}
-                          className="w-full h-10 text-sm"
-                          variant="default"
-                          size="lg"
-                        >
-                          {isDownloadingZip ? (
-                            <>
-                              <Loader2 className="size-4 mr-2 animate-spin" /> Creating ZIP...
-                            </>
-                          ) : (
-                            <>
-                              <Package className="size-4 mr-2" /> Download All as ZIP
-                            </>
-                          )}
-                        </Button>
-
-                        <Button
-                          onClick={clearSource}
-                          className="w-full h-9 text-xs"
-                          variant="outline"
-                        >
-                          <RotateCcw className="size-3.5 mr-2" /> Start Fresh
-                        </Button>
-                      </>
-                    )}
-                  </div>
-
+                  {/* Paused state actions */}
                   {!isTranslating && flowPhase === "translating" && completedCount > 0 && completedCount < (activeTranslations.length || 0) && (
-                    <>
-                      <div className="flex items-center gap-2 p-2 rounded-lg" style={{ background: 'rgba(255,165,0,0.06)', border: '1px solid rgba(255,165,0,0.15)' }}>
-                        <AlertCircle className="size-3.5 shrink-0" style={{ color: '#ffa500' }} />
-                        <span className="text-[10px] font-medium" style={{ color: '#ffa500' }}>
-                          Paused — {completedCount}/{activeTranslations.length} done
-                        </span>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          onClick={() => {
-                            setIsTranslating(true);
-                            // Re-trigger queue — it picks up where it left off
-                            if (projectId) startTranslationAction({ projectId, langCodes: activeTranslations.filter((t) => t.status !== "complete").map((t) => t.langCode) });
-                          }}
-                          className="flex-1 h-8 text-[11px]"
-                          size="sm"
-                        >
-                          <Globe className="size-3 mr-1" /> Resume
-                        </Button>
-                        <Button
-                          onClick={handleDownloadAllZIP}
-                          variant="outline"
-                          className="flex-1 h-8 text-[11px]"
-                          size="sm"
-                          disabled={isDownloadingZip}
-                        >
-                          <Package className="size-3 mr-1" /> Download Done
-                        </Button>
-                        <Button
-                          onClick={clearSource}
-                          variant="outline"
-                          className="h-8 text-[11px]"
-                          size="sm"
-                        >
-                          <RotateCcw className="size-3" />
-                        </Button>
-                      </div>
-                    </>
+                    <div className="flex gap-2 pt-1">
+                      <Button onClick={() => { setIsTranslating(true); if (projectId) startTranslationAction({ projectId, langCodes: activeTranslations.filter((t) => t.status !== "complete").map((t) => t.langCode) }); }} className="flex-1 h-7 text-[10px]" size="sm">
+                        <Globe className="size-2.5 mr-1" /> Resume
+                      </Button>
+                      <Button onClick={handleDownloadAllZIP} variant="outline" className="flex-1 h-7 text-[10px]" size="sm" disabled={isDownloadingZip}>
+                        <Package className="size-2.5 mr-1" /> Download
+                      </Button>
+                      <Button onClick={clearSource} variant="outline" className="h-7 text-[10px]" size="sm">
+                        <RotateCcw className="size-2.5" />
+                      </Button>
+                    </div>
                   )}
-
                   {translationError && !isTranslating && (
-                    <div className="flex items-start gap-2 p-2 rounded-lg bg-red-500/5 border border-red-500/20 text-[11px]">
-                      <XCircle className="size-3.5 text-red-500 shrink-0 mt-0.5" />
+                    <div className="flex items-start gap-1.5 p-1.5 rounded bg-red-500/5 border border-red-500/20 text-[10px]">
+                      <XCircle className="size-2.5 text-red-500 shrink-0 mt-0.5" />
                       <span>{translationError}</span>
                     </div>
                   )}
                 </div>
               </div>
             )}
-          </div>
 
-          {/* Right Panel - Preview */}
-          <div className="min-h-0">
-            <div className="rounded-xl border border-border/50 bg-card overflow-hidden h-full min-h-[500px]">
-              <div className="px-4 py-3 border-b border-border/30 bg-muted/30 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <BookOpen className="size-3.5 text-muted-foreground" />
-                  <span className="text-xs font-semibold">
-                    {flowPhase === "idle" && "Translation Preview"}
-                    {flowPhase === "translating" &&
-                      currentLang &&
-                      `Translating to ${currentLang.name}`}
-                    {flowPhase === "translation-done" &&
-                      currentLang &&
-                      `${currentLang.name} Translation`}
-                    {flowPhase === "generating-pdf" &&
-                      currentLang &&
-                      `Generating ${currentLang.name} PDF`}
-                    {flowPhase === "all-complete" && "All Translations Complete"}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  {currentTranslation && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 px-2 text-[10px] gap-1.5"
-                      onClick={handleCopyTranslation}
-                      title="Copy first 10,000 words of this translation to the clipboard"
-                    >
-                      {copiedPreview ? (
-                        <>
-                          <Check className="size-3" style={{ color: '#00e5ff' }} /> Copied
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="size-3" /> Copy
-                        </>
-                      )}
-                    </Button>
-                  )}
-                  {flowPhase === "translating" && currentLang && (
-                    <Badge variant="secondary" className="text-[9px] animate-pulse">
-                      <Loader2 className="size-2.5 mr-1 animate-spin" />
-                      Gemini 23-Phase AI
-                    </Badge>
-                  )}
-                  {flowPhase === "translation-done" && currentLang && (
-                    <Badge variant="default" className="text-[9px]" style={{ background: 'linear-gradient(135deg, #00e5ff, #a78bfa)', color: '#06060e' }}>
-                      <CheckCircle2 className="size-2.5 mr-1" /> Gemini Done
-                    </Badge>
-                  )}
-                  {flowPhase === "all-complete" && (
-                    <Badge variant="default" className="text-[9px]" style={{ background: 'linear-gradient(135deg, #00e5ff, #a78bfa)', color: '#06060e' }}>
-                      <CheckCheck className="size-2.5 mr-1" /> Complete
-                    </Badge>
-                  )}
-                </div>
-              </div>
-              <div className="p-4">
-                {flowPhase === "idle" && (
-                  <div className="flex items-center justify-center h-[400px]">
-                    <div className="text-center max-w-sm">
-                      <div className="size-14 rounded-2xl bg-muted/50 flex items-center justify-center mx-auto mb-3">
-                        <Languages className="size-7 text-muted-foreground/40" />
-                      </div>
-                      <h3 className="text-sm font-semibold mb-1.5">
-                        Onyx Translate
-                      </h3>
-                      <p className="text-xs text-muted-foreground">
-                        Upload your English PDF, and we'll translate it step-by-step
-                        into all 20 languages — preserving every image, illustration,
-                        and visual element from the original.
-                      </p>
-                      <div className="flex items-center justify-center gap-2 mt-4">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8 text-xs"
-                          onClick={() => fileInputRef.current?.click()}
-                        >
-                          <Upload className="size-3 mr-1.5" /> Upload PDF
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8 text-xs"
-                          onClick={loadSample}
-                        >
-                          Load Sample
-                        </Button>
-                      </div>
-                      <div className="flex items-center gap-1.5 justify-center mt-3 text-[10px] text-muted-foreground">
-                        <CheckCircle2 className="size-2.5" style={{ color: '#00e5ff' }} /> Images
-                        preserved
-                        <span className="mx-1">•</span>
-                        <CheckCircle2 className="size-2.5" style={{ color: '#00e5ff' }} /> 23-phase
-                        localization
-                        <span className="mx-1">•</span>
-                        <CheckCircle2 className="size-2.5" style={{ color: '#00e5ff' }} /> PDF
-                        download per language
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {flowPhase === "translating" && isTranslating && (
-                  <div className="flex items-center justify-center h-[400px]">
-                    <div className="text-center">
-                      <div className="relative mb-4">
-                        <div className="size-16 rounded-full border-4 border-primary/20 border-t-primary animate-spin mx-auto" />
-                        <Globe className="size-5 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
-                      </div>
-                      <h3 className="text-sm font-semibold mb-1">
-                        Autonomous Translation Running
-                      </h3>
-                      <p className="text-[11px] text-muted-foreground mb-2">
-                        {completedCount} of {targetLanguages.length} languages complete
-                      </p>
-                      {inProgressTranslation && (
-                        <div className="space-y-2">
-                          <div className="w-48 h-1.5 rounded-full bg-muted overflow-hidden mx-auto">
-                            <div
-                              className="h-full rounded-full bg-primary transition-all duration-300"
-                              style={{
-                                width: `${(inProgressTranslation.completedChunks / Math.max(inProgressTranslation.totalChunks, 1)) * 100}%`,
-                              }}
-                            />
-                          </div>
-                          <p className="text-[10px] text-muted-foreground">
-                            {targetLanguages.find((l) => l.code === inProgressTranslation.langCode)?.name} — Chunk {inProgressTranslation.completedChunks}/{inProgressTranslation.totalChunks}
-                          </p>
-                        </div>
-                      )}
-                      <div className="flex items-center justify-center gap-2 flex-wrap mt-3">
-                        <Badge variant="secondary" className="text-[9px]">
-                          Gemini 23-Phase AI
-                        </Badge>
-                        <Badge variant="outline" className="text-[9px]">
-                          Server-Side Queue
-                        </Badge>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {flowPhase === "generating-pdf" && currentLang && pdfProgress && (
-                  <div className="flex items-center justify-center h-[400px]">
-                    <div className="text-center">
-                      <Loader2 className="size-8 text-blue-500 animate-spin mx-auto mb-3" />
-                      <h3 className="text-sm font-semibold mb-1">
-                        {pdfProgress.message}
-                      </h3>
-                      <div className="w-40 h-1.5 rounded-full bg-muted overflow-hidden mx-auto mt-2">
-                        <div
-                          className="h-full rounded-full bg-blue-500 transition-all duration-200"
-                          style={{
-                            width: `${(pdfProgress.currentPage / pdfProgress.totalPages) * 100}%`,
-                          }}
-                        />
-                      </div>
-                      <p className="text-[10px] text-muted-foreground mt-1">
-                        Rendering pages with original images + translated text
-                        overlay
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {flowPhase === "translation-done" &&
-                  currentTranslation &&
-                  currentLang &&
-                  !isTranslating && (
-                    <ScrollArea className="h-[calc(100vh-220px)]">
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <Badge variant="default" className="text-[10px]">
-                            {currentLang.name} {currentLang.nativeName}
-                          </Badge>
-                          <Badge variant="secondary" className="text-[9px]">
-                            {currentLang.script} Script
-                          </Badge>
-                          {["ar", "ur", "ks"].includes(currentLang.code) && (
-                            <Badge variant="outline" className="text-[9px]">
-                              RTL
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="whitespace-pre-wrap font-serif text-[13px] leading-[1.8] p-4 rounded-xl neon-border" style={{ background: '#0a0a16' }}>
-                          {currentTranslation}
-                        </div>
-                        <div className="flex gap-2 pt-2">
-                          {(previewTranslation?.pdfUrl || (originalArrayBuffer && pageData.length > 0)) && (
-                            <Button onClick={handleDownloadPDF} size="sm" className="h-8 text-[11px] neon-glow">
-                              <FileDown className="size-3 mr-1" /> Download {currentLang.name} PDF
-                            </Button>
-                          )}
-                          <Button onClick={() => handleRetranslate(currentLang.code)} variant="outline" size="sm" className="h-8 text-[11px]" disabled={isTranslating}>
-                            <RotateCcw className="size-3 mr-1" /> Retranslate
-                          </Button>
-                        </div>
-                      </div>
-                    </ScrollArea>
-                  )}
-
-                {flowPhase === "all-complete" && (
-                  <div className="flex items-center justify-center h-[400px]">
-                    <div className="text-center max-w-sm">
-                      <div className="size-16 rounded-full neon-glow-strong flex items-center justify-center mx-auto mb-4" style={{ background: 'linear-gradient(135deg, rgba(0,229,255,0.15), rgba(167,139,250,0.15))' }}>
-                        <CheckCheck className="size-8" style={{ color: '#00e5ff' }} />
-                      </div>
-                      <h3 className="text-lg font-bold mb-1 neon-text">
-                        All Translations Complete!
-                      </h3>
-                      <p className="text-xs text-muted-foreground mb-2">
-                        {sourceText
-                          .split(/\s+/)
-                          .filter(Boolean)
-                          .length.toLocaleString()}{" "}
-                        words translated into {targetLanguages.length} languages
-                      </p>
-                      <div className="flex items-center justify-center gap-1.5 text-[10px]">
-                        <CheckCircle2 className="size-2.5" style={{ color: '#00e5ff' }} />{" "}
-                        {completedLanguages.length} languages
-                        <span className="mx-1">•</span>
-                        <CheckCircle2 className="size-2.5" style={{ color: '#00e5ff' }} /> Download
-                        individual PDFs
-                        <span className="mx-1">•</span>
-                        <CheckCircle2 className="size-2.5" style={{ color: '#00e5ff' }} /> or all as
-                        ZIP
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+          </div>        </div>
       </div>
     </div>
   );

@@ -3,6 +3,7 @@ import { mutation } from "./_generated/server";
 
 export const createProject = mutation({
   args: {
+    sessionId: v.string(),
     fileName: v.string(),
     pageCount: v.number(),
     wordCount: v.number(),
@@ -153,6 +154,7 @@ export const updateTranslation = mutation({
     pdfStorageId: v.optional(v.string()),
     pdfUrl: v.optional(v.string()),
     pdfGenerating: v.optional(v.boolean()),
+    pdfProgress: v.optional(v.string()),
     startedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
   },

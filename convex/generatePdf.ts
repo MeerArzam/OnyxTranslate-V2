@@ -114,7 +114,7 @@ export const generateTranslatedPdf = action({
     const { PDFDocument, rgb, StandardFonts } = await import("pdf-lib");
 
     // 1. Get project and original PDF
-    const project = await ctx.runQuery(api.queries.getProject, {
+    const project = await ctx.runQuery(api.queries.getProjectRaw, {
       projectId: args.projectId,
     });
     if (!project || !project.pdfStorageId) {
@@ -262,7 +262,7 @@ export const generateTranslatedPdf = action({
 
     // 9. Chain to next language that has translation records, or build ZIP
     const allTranslations: Array<{ langCode: string; status: string }> =
-      await ctx.runQuery(api.queries.getProjectTranslations, { projectId: args.projectId });
+      await ctx.runQuery(api.queries.getTranslationsRaw, { projectId: args.projectId });
     // Find the next language in the queue (has a translation record and is not yet complete)
     const currentIdx = allTranslations.findIndex((t) => t.langCode === args.langCode);
     let nextTranslation = null;

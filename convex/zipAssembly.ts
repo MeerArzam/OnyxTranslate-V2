@@ -17,12 +17,12 @@ import JSZip from "jszip";
 export const buildZip = action({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {
-    const project = await ctx.runQuery(api.queries.getProject, {
+    const project = await ctx.runQuery(api.queries.getProjectRaw, {
       projectId: args.projectId,
     });
     if (!project) throw new Error("Project not found");
 
-    const translations = await ctx.runQuery(api.queries.getProjectTranslations, {
+    const translations = await ctx.runQuery(api.queries.getTranslationsRaw, {
       projectId: args.projectId,
     });
 

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -35,13 +35,10 @@ import {
 } from "lucide-react";
 // Convex hooks imported below with storage replacement
 import {
-  runLocalizedTranslationPipeline,
-
   generateSampleText,
   type TranslationMode,
 } from "@/lib/translator/engine";
 import type { QAReport } from "@/lib/translator/qa";
-import type { NeuralProgressCallback } from "@/lib/translator/neural";
 import {
   runBaselineTests,
   type BaselineSummary,
@@ -103,6 +100,16 @@ interface CompletedLanguage {
 }
 
 export default function Translator() {
+  // ─── C1: Session isolation (per-tab, stored in sessionStorage) ───
+  const [sessionId] = useState(() => {
+    if (typeof window === "undefined") return "ssr-fallback";
+    const existing = sessionStorage.getItem("onyx-session-id");
+    if (existing) return existing;
+    const newId = crypto.randomUUID();
+    sessionStorage.setItem("onyx-session-id", newId);
+    return newId;
+  });
+
   // ─── Convex server-side AI action ───
   const translateChunkAction = useAction(api.translate.translateChunk);
   const storePdfAction = useAction(api.upload.storePdf);
@@ -122,14 +129,14 @@ export default function Translator() {
   const deleteChunksForLangMutation = useMutation(api.mutations.deleteChunksForLang);
 
   // ─── Convex reactive subscriptions ───
-  const latestProject = useQuery(api.queries.getLatestProject);
+  const latestProject = useQuery(api.queries.getLatestProject, { sessionId });
   const convexProject = useQuery(
     api.queries.getProject,
-    projectId ? { projectId } : "skip"
+    projectId ? { projectId, sessionId } : "skip"
   );
   const convexTranslations = useQuery(
     api.queries.getProjectTranslations,
-    projectId ? { projectId } : "skip"
+    projectId ? { projectId, sessionId } : "skip"
   );
 
   // ─── Source state ───
@@ -152,12 +159,29 @@ export default function Translator() {
   // ─── Translation flow (autonomous queue) ───
   const [isTranslating, setIsTranslating] = useState(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
-  const [flowPhase, setFlowPhase] = useState<
-    "idle" | "translating" | "translation-done" | "generating-pdf" | "all-complete"
-  >("idle");
+  // C6: flowPhase derived from Convex DB — no local state needed
   const [copiedPreview, setCopiedPreview] = useState(false);
   const copyTimerRef = useRef<number | null>(null);
   const [currentPreviewLangCode, setCurrentPreviewLangCode] = useState<string | null>(null);
+
+  // C6: Derived flowPhase from Convex DB (no local state)
+  const flowPhase = useMemo(() => {
+    const project = convexProject;
+    if (!project) {
+      // No project yet — check if latestProject has progress
+      if (latestProject && latestProject.status !== "ready") {
+        if (latestProject.status === "all_translated" || latestProject.status === "complete") return "all-complete" as const;
+        if (latestProject.status === "translating") return "translating" as const;
+      }
+      return "idle" as const;
+    }
+    const s = project.status;
+    if (s === "all_translated" || s === "complete") return "all-complete" as const;
+    if (s === "translating" || s === "parsing") return "translating" as const;
+    // cancelled = paused — still show progress panel
+    if (s === "cancelled" && (convexTranslations?.length ?? 0) > 0) return "translating" as const;
+    return "idle" as const;
+  }, [convexProject, latestProject, convexTranslations]);
 
   // ─── Derived state from Convex ───
   const activeTranslations = convexTranslations ?? [];
@@ -257,21 +281,15 @@ export default function Translator() {
     setParsePhase("done");
   }, [latestProject]);
 
-  // ─── Auto-detect translation state from Convex ───
+  // C6: Auto-sync isTranslating with Convex DB state
   useEffect(() => {
     if (!convexProject) return;
     if (convexProject.status === "all_translated" || convexProject.status === "complete") {
-      setFlowPhase("all-complete");
       setIsTranslating(false);
-    } else if (convexProject.status === "translating" && activeTranslations.some((t) => t.status === "in_progress" || t.status === "generating_pdf")) {
-      setFlowPhase("translating");
+    } else if (convexProject.status === "translating") {
       setIsTranslating(true);
-    } else if (activeTranslations.length > 0 && completedCount > 0 && completedCount < activeTranslations.length) {
-      // Some progress exists but not actively translating — could be paused
-      setFlowPhase("translating");
-      setIsTranslating(false);
     }
-  }, [convexProject, activeTranslations, completedCount]);
+  }, [convexProject]);
 
 
 
@@ -415,6 +433,7 @@ export default function Translator() {
 
       // Create project record in Convex DB with the best available data
       const newProjectId = await createProjectMutation({
+        sessionId,
         fileName: file.name,
         pageCount: header.totalPages,
         wordCount: serverWordCount,
@@ -442,7 +461,7 @@ export default function Translator() {
     } finally {
       setIsUploading(false);
     }
-  }, [projectId, deleteProjectMutation, storePdfAction, createProjectMutation, parsePdfAction]);
+  }, [projectId, sessionId, deleteProjectMutation, storePdfAction, createProjectMutation, parsePdfAction]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -540,7 +559,6 @@ export default function Translator() {
   const resetFlow = useCallback(() => {
     setIsTranslating(false);
     setTranslationError(null);
-    setFlowPhase("idle");
     setPdfProgress(null);
     setCurrentPdfBlob(null);
     setCurrentQaReport(null);
@@ -656,13 +674,13 @@ export default function Translator() {
     if (!sourceText.trim()) return;
     try {
       setIsTranslating(true);
-      setFlowPhase("translating");
       setTranslationError(null);
 
       // If no project exists (pasted text, not PDF), create one now
       let activeProjectId = projectId;
       if (!activeProjectId) {
         activeProjectId = await createProjectMutation({
+          sessionId,
           fileName: "Pasted Text",
           pageCount: 1,
           wordCount: sourceText.split(/\s+/).filter(Boolean).length,
@@ -681,7 +699,6 @@ export default function Translator() {
         error instanceof Error ? error.message : "Failed to start translation"
       );
       setIsTranslating(false);
-      setFlowPhase("idle");
     }
   }, [sourceText, projectId, selectedLangCodes, startTranslationAction, createProjectMutation]);
 
@@ -703,7 +720,6 @@ export default function Translator() {
       if (!projectId) return;
       try {
         setIsTranslating(true);
-        setFlowPhase("translating");
         setTranslationError(null);
         // Delete old chunks for this language
         await deleteChunksForLangMutation({ projectId, langCode });
@@ -714,7 +730,6 @@ export default function Translator() {
           error instanceof Error ? error.message : "Retranslate failed"
         );
         setIsTranslating(false);
-        setFlowPhase("idle");
       }
     },
     [projectId, deleteChunksForLangMutation, startTranslationAction]
@@ -764,7 +779,6 @@ export default function Translator() {
     if (!currentTranslation || !originalArrayBuffer || !pageData.length || !originalPageTexts.length)
       return;
 
-    setFlowPhase("generating-pdf");
     setPdfProgress(null);
 
     try {
@@ -791,14 +805,12 @@ export default function Translator() {
       a.click();
       URL.revokeObjectURL(url);
 
-      setFlowPhase("translation-done");
       setPdfProgress(null);
     } catch (error) {
       console.error("PDF generation failed:", error);
       setTranslationError(
         error instanceof Error ? error.message : "PDF generation failed"
       );
-      setFlowPhase("translation-done");
     }
   }, [
     currentTranslation,
@@ -1255,7 +1267,6 @@ export default function Translator() {
                     </div>
                     <Button
                       onClick={() => {
-                        setFlowPhase("translating");
                         setIsTranslating(true);
                       }}
                       className="w-full h-8 text-[11px]"

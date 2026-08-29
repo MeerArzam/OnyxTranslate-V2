@@ -3,6 +3,7 @@ import { v } from "convex/values";
 
 export default defineSchema({
   projects: defineTable({
+    sessionId: v.string(),
     fileName: v.string(),
     pageCount: v.number(),
     wordCount: v.number(),
@@ -14,7 +15,7 @@ export default defineSchema({
     zipStorageId: v.optional(v.string()),
     zipUrl: v.optional(v.string()),
     createdAt: v.number(),
-  }),
+  }).index("by_session", ["sessionId"]),
 
   chunks: defineTable({
     projectId: v.id("projects"),
@@ -39,6 +40,7 @@ export default defineSchema({
     pdfStorageId: v.optional(v.string()),
     pdfUrl: v.optional(v.string()),
     pdfGenerating: v.optional(v.boolean()),
+    pdfProgress: v.optional(v.string()),
     startedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
   }).index("by_project_lang", ["projectId", "langCode"]),

@@ -423,7 +423,7 @@ export const startTranslation = action({
     langCodes: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args): Promise<{ started: boolean; languages: number; totalChunks: number }> => {
-    const project = await ctx.runQuery(api.queries.getProject, {
+    const project = await ctx.runQuery(api.queries.getProjectRaw, {
       projectId: args.projectId,
     });
     if (!project) throw new Error("Project not found");
@@ -484,7 +484,7 @@ export const processLanguage = action({
     chunkIndex: v.number(),
   },
   handler: async (ctx, args): Promise<void> => {
-    const project = await ctx.runQuery(api.queries.getProject, {
+    const project = await ctx.runQuery(api.queries.getProjectRaw, {
       projectId: args.projectId,
     });
     if (!project || project.status === "cancelled") return;
@@ -514,7 +514,7 @@ export const processLanguage = action({
 
       // Find the translation record for this language
       const translations: Array<{ _id: Id<"translations">; langCode: string }> =
-        await ctx.runQuery(api.queries.getProjectTranslations, { projectId: args.projectId });
+        await ctx.runQuery(api.queries.getTranslationsRaw, { projectId: args.projectId });
       const translation = translations.find(
         (t: { langCode: string }) => t.langCode === args.langCode
       );
@@ -564,7 +564,7 @@ export const processLanguage = action({
           .join("\n\n");
 
         const translations: Array<{ _id: Id<"translations">; langCode: string }> =
-          await ctx.runQuery(api.queries.getProjectTranslations, { projectId: args.projectId });
+          await ctx.runQuery(api.queries.getTranslationsRaw, { projectId: args.projectId });
         const translation = translations.find(
           (t: { langCode: string }) => t.langCode === args.langCode
         );

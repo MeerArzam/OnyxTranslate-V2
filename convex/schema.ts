@@ -3,7 +3,7 @@ import { v } from "convex/values";
 
 export default defineSchema({
   projects: defineTable({
-    sessionId: v.string(),
+    sessionId: v.optional(v.string()),
     fileName: v.string(),
     pageCount: v.number(),
     wordCount: v.number(),

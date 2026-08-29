@@ -3,7 +3,7 @@ import { mutation } from "./_generated/server";
 
 export const createProject = mutation({
   args: {
-    sessionId: v.string(),
+    sessionId: v.optional(v.string()),
     fileName: v.string(),
     pageCount: v.number(),
     wordCount: v.number(),

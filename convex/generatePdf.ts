@@ -213,8 +213,8 @@ export const generateTranslatedPdf = action({
           if (line.trim()) {
             try {
               if (isRTL) {
-                // RTL: draw from right edge
-                const visual = [...line].reverse().join("");
+                // RTL: reverse WORD order (not characters) to preserve Arabic/Urdu ligatures
+                const visual = line.split(/\s+/).reverse().join(" ");
                 const lineWidth = font.widthOfTextAtSize(visual, fontSize);
                 copiedPage.drawText(visual, {
                   x: textLeft + maxWidth - lineWidth,

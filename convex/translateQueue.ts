@@ -284,8 +284,10 @@ async function processChunkInternal(
   langCode: string,
   chunkIndex: number,
 ): Promise<ChunkResult> {
-  const project = await ctx.runQuery(api.queries.getProject, { projectId });
+  // C2: Check cancellation before doing any work
+  const project = await ctx.runQuery(api.queries.getProjectRaw, { projectId });
   if (!project) throw new Error("Project not found");
+  if (project.status === "cancelled") return { skipped: true, chunkIndex, completed: 0, total: 0, allDone: false };
 
   const existingChunks: Array<{
     _id: Id<"chunks">;
@@ -372,7 +374,7 @@ async function processChunkInternal(
     _id: Id<"translations">;
     langCode: string;
     startedAt?: number;
-  }> = await ctx.runQuery(api.queries.getProjectTranslations, { projectId });
+  }> = await ctx.runQuery(api.queries.getTranslationsRaw, { projectId });
   const translation = translations.find(
     (t: { langCode: string }) => t.langCode === langCode
   );
@@ -427,6 +429,11 @@ export const startTranslation = action({
       projectId: args.projectId,
     });
     if (!project) throw new Error("Project not found");
+
+    // H10: Prevent duplicate chains — if already translating, skip
+    if (project.status === "translating") {
+      return { started: false, languages: 0, totalChunks: 0 };
+    }
 
     // Use selected languages or fall back to all
     const selectedLangs = (args.langCodes && args.langCodes.length > 0) ? args.langCodes : LANGUAGES;
@@ -498,6 +505,10 @@ export const processLanguage = action({
       args.langCode,
       args.chunkIndex,
     );
+
+    // C2: Re-check cancellation after chunk processing (Gemini call may take 30s+)
+    const recheck = await ctx.runQuery(api.queries.getProjectRaw, { projectId: args.projectId });
+    if (!recheck || recheck.status === "cancelled") return;
 
     if (result.allDone) {
       // Language done — merge chunks, schedule PDF generation

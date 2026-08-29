@@ -110,8 +110,7 @@ export default function Translator() {
     return newId;
   });
 
-  // ─── Convex server-side AI action ───
-  const translateChunkAction = useAction(api.translate.translateChunk);
+  // ─── Convex server-side actions ───
   const storePdfAction = useAction(api.upload.storePdf);
   const parsePdfAction = useAction(api.parsePdf.parseUploadedPdf);
   const startTranslationAction = useAction(api.translateQueue.startTranslation);
@@ -122,10 +121,6 @@ export default function Translator() {
   const [projectId, setProjectId] = useState<Id<"projects"> | null>(null);
   const createProjectMutation = useMutation(api.mutations.createProject);
   const deleteProjectMutation = useMutation(api.mutations.deleteProject);
-  const upsertChunkMutation = useMutation(api.mutations.upsertChunk);
-  const updateChunkMutation = useMutation(api.mutations.updateChunk);
-  const upsertTranslationMutation = useMutation(api.mutations.upsertTranslation);
-  const updateTranslationMutation = useMutation(api.mutations.updateTranslation);
   const deleteChunksForLangMutation = useMutation(api.mutations.deleteChunksForLang);
 
   // ─── Convex reactive subscriptions ───
@@ -700,7 +695,7 @@ export default function Translator() {
       );
       setIsTranslating(false);
     }
-  }, [sourceText, projectId, selectedLangCodes, startTranslationAction, createProjectMutation]);
+  }, [sourceText, projectId, sessionId, selectedLangCodes, startTranslationAction, createProjectMutation]);
 
   // ─── Retranslate: cancel queue, delete language chunks, restart queue ───
 
@@ -1255,8 +1250,8 @@ export default function Translator() {
                   </div>
                 )}
 
-                {/* Auto-resume indicator — progress detected on server */}
-                {latestProject && !isUploading && !pdfFileName && activeTranslations.length > 0 && flowPhase === "idle" && (
+                {/* Auto-resume indicator — show when project exists but flowPhase hasn't caught up yet */}
+                {latestProject && convexProject && !isUploading && !pdfFileName && activeTranslations.length > 0 && flowPhase === "idle" && convexProject.status !== "ready" && (
                   <div className="space-y-2">
                     <div className="flex items-start gap-2 p-2.5 rounded-lg text-[11px]" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.10)' }}>
                       <CheckCircle2 className="size-3.5 shrink-0 mt-0.5" style={{ color: '#00e5ff' }} />

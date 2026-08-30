@@ -156,14 +156,23 @@ export const generateTranslatedPdf = action({
     const black = rgb(0, 0, 0);
     const white = rgb(1, 1, 1);
 
-    // 5. Split translated text proportionally across pages
+    // 5. Read pageData from project for coordinate-aware overlay
+    const pageData: Array<{
+      num: number;
+      textItems: Array<{ str: string; x: number; y: number; width: number; height: number; fontName: string }>;
+      text?: string;
+      pageWidth?: number;
+      pageHeight?: number;
+    }> = project.pageData || [];
+
+    // Split translated text proportionally across pages
     const translatedWords = args.mergedText.split(/\s+/).filter(Boolean);
     const totalWords = translatedWords.length;
     const perPageWords = Math.ceil(totalWords / srcPageCount);
 
     let wordIdx = 0;
 
-    // 6. Process each page: copy original → whiteout → overlay translation
+    // 6. Process each page: copy original → coordinate-aware whiteout → overlay translation
     for (let i = 0; i < srcPageCount; i++) {
       const [copiedPage] = await outDoc.copyPages(srcDoc, [i]);
       outDoc.addPage(copiedPage);
@@ -171,26 +180,44 @@ export const generateTranslatedPdf = action({
       const pageWidth = copiedPage.getWidth();
       const pageHeight = copiedPage.getHeight();
 
-      // Text area: generous margins for book layout
-      const margin = 50;
-      const textLeft = margin;
-      const textRight = pageWidth - margin;
-      const maxWidth = textRight - textLeft;
+      const pageEntry = pageData.find((p) => p.num === i + 1);
+      const textItems = pageEntry?.textItems || [];
 
-      // Font size (standard 10-12pt for most PDFs)
-      const fontSize = 10;
-      const lineHeight = fontSize * 1.4;
-      const textBottom = margin + 10;
-
-      // White-out the English text area
-      copiedPage.drawRectangle({
-        x: textLeft - 5,
-        y: textBottom - 5,
-        width: maxWidth + 10,
-        height: pageHeight - textBottom - margin + 10,
-        color: white,
-        borderWidth: 0,
-      });
+      // CRITICAL FIX 3: White-out using per-text-item coordinates if available
+      // This preserves images, maps, and illustrations that are NOT text areas
+      if (textItems.length > 0) {
+        // White-out each individual text item's bounding box
+        for (const item of textItems) {
+          if (!item.str.trim()) continue;
+          const x = item.x;
+          const y = item.y; // PDF bottom-origin
+          const w = item.width + 2;  // small padding
+          const h = item.height + 2;
+          copiedPage.drawRectangle({
+            x,
+            y,
+            width: Math.max(w, 10),
+            height: Math.max(h, 6),
+            color: white,
+            borderWidth: 0,
+          });
+        }
+      } else {
+        // Fallback: white-out the entire text area (old behavior)
+        const margin = 50;
+        const textLeft = margin;
+        const textRight = pageWidth - margin;
+        const maxWidth = textRight - textLeft;
+        const textBottom = margin + 10;
+        copiedPage.drawRectangle({
+          x: textLeft - 5,
+          y: textBottom - 5,
+          width: maxWidth + 10,
+          height: pageHeight - textBottom - margin + 10,
+          color: white,
+          borderWidth: 0,
+        });
+      }
 
       // Get words for this page
       const endIdx = Math.min(wordIdx + perPageWords, totalWords);
@@ -203,8 +230,66 @@ export const generateTranslatedPdf = action({
         pageText = pageText ? pageText + " " + remaining : remaining;
       }
 
-      // Overlay translated text
-      if (pageText.trim()) {
+      // CRITICAL FIX 3: Overlay translated text at coordinates if pageData available
+      if (textItems.length > 0 && pageText.trim()) {
+        // Calculate average font size from text items
+        const avgFontSize = textItems.length > 0
+          ? textItems.reduce((sum, it) => sum + (it.height || 10), 0) / textItems.length
+          : 10;
+        const fontSize = Math.min(Math.max(avgFontSize, 7), 14);
+        const lineHeight = fontSize * 1.35;
+
+        // Calculate total text area height from text items
+        const allYs = textItems.filter(it => it.str.trim()).map(it => it.y);
+        const topY = allYs.length > 0 ? Math.max(...allYs) : pageHeight - 50;
+        const bottomY = allYs.length > 0 ? Math.min(...allYs) : 50;
+        const totalHeight = topY - bottomY;
+        const maxLines = Math.max(1, Math.floor(totalHeight / lineHeight));
+
+        const wrappedLines = wrapText(font, pageText, pageWidth - 80, fontSize);
+        let lineIdx = 0;
+
+        // Place lines from top of text area downward
+        for (let ln = 0; ln < Math.min(wrappedLines.length, maxLines); ln++) {
+          const line = wrappedLines[ln];
+          if (!line.trim()) continue;
+          const y = topY - (ln * lineHeight);
+          if (y < bottomY) break;
+
+          try {
+            if (isRTL) {
+              const visual = line.split(/\s+/).reverse().join(" ");
+              const lineWidth = font.widthOfTextAtSize(visual, fontSize);
+              copiedPage.drawText(visual, {
+                x: pageWidth - 40 - lineWidth,
+                y,
+                size: fontSize,
+                font,
+                color: black,
+              });
+            } else {
+              copiedPage.drawText(line, {
+                x: 40,
+                y,
+                size: fontSize,
+                font,
+                color: black,
+              });
+            }
+          } catch {
+            // Skip lines with unencodable glyphs
+          }
+          lineIdx++;
+        }
+      } else if (pageText.trim()) {
+        // Fallback: use fixed margins (old behavior when no pageData)
+        const margin = 50;
+        const textLeft = margin;
+        const textRight = pageWidth - margin;
+        const maxWidth = textRight - textLeft;
+        const fontSize = 10;
+        const lineHeight = fontSize * 1.4;
+        const textBottom = margin + 10;
         const wrappedLines = wrapText(font, pageText, maxWidth, fontSize);
         let baseline = pageHeight - margin - fontSize;
 
@@ -213,7 +298,6 @@ export const generateTranslatedPdf = action({
           if (line.trim()) {
             try {
               if (isRTL) {
-                // RTL: reverse WORD order (not characters) to preserve Arabic/Urdu ligatures
                 const visual = line.split(/\s+/).reverse().join(" ");
                 const lineWidth = font.widthOfTextAtSize(visual, fontSize);
                 copiedPage.drawText(visual, {

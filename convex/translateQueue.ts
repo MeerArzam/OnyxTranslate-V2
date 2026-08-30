@@ -15,6 +15,11 @@ import glossaryData from "../src/data/glossary.json";
 import { getLocalizationConfig } from "../src/data/localization";
 import { characterVoices } from "../src/lib/translator/voices";
 
+// ── Pipeline imports: Bible Pass, Cultural Filters, Formatters, QA ──
+import { applyCulturalFilters, detectExplicitContent } from "../src/lib/translator/cultural";
+import { formatDragonTelepathy, isRTL as isRTLLang, getScriptConfig } from "../src/lib/translator/formatters";
+import { runQA, type MemoryLockEntry } from "../src/lib/translator/qa";
+
 // ════════════════════════════════════════════════════════════
 // Constants
 // ════════════════════════════════════════════════════════════
@@ -206,6 +211,69 @@ function chunkText(text: string, maxWords: number): string[] {
   return chunks;
 }
 
+// ════════════════════════════════════════════════════════════
+// Bible Pass — Lock glossary terms with placeholders before AI
+// ════════════════════════════════════════════════════════════
+
+interface BiblePassResult {
+  lockedText: string;
+  placeholders: Map<string, string>;
+}
+
+function applyBiblePassServer(text: string, targetLanguage: string): BiblePassResult {
+  const glossary = glossaryData.magicMilitary as Record<string, Record<string, string>>;
+  const properNouns = glossaryData.properNouns as Record<string, string[]>;
+  const langIndex = [
+    "en", "ar", "ur", "fr", "ja", "es", "hi", "tr", "zh", "ru", "ko", "de",
+    "ks", "ro", "sw", "it", "la", "id", "ne", "bn", "pt",
+  ];
+  const idx = langIndex.indexOf(targetLanguage);
+
+  let result = text;
+  const placeholders = new Map<string, string>();
+  let phIdx = 0;
+
+  // Lock proper nouns
+  for (const [term] of Object.entries(properNouns)) {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp("\\b" + escaped + "\\b", "g");
+    if (regex.test(result)) {
+      const translated = properNouns[term]?.[idx] || properNouns[term]?.[0] || term;
+      const ph = "__PH" + phIdx++ + "__";
+      placeholders.set(ph, translated);
+      result = result.replace(regex, ph);
+    }
+  }
+
+  // Lock fantasy/military terms
+  for (const term of Object.keys(glossary)) {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp("\\b" + escaped + "\\b", "gi");
+    if (regex.test(result)) {
+      const translation = glossary[term]?.[targetLanguage] || glossary[term]?.["en"] || term;
+      if (translation !== term) {
+        const ph = "__PH" + phIdx++ + "__";
+        placeholders.set(ph, translation);
+        result = result.replace(regex, ph);
+      }
+    }
+  }
+
+  return { lockedText: result, placeholders };
+}
+
+function restorePlaceholdersServer(text: string, placeholders: Map<string, string>): string {
+  let result = text;
+  for (const [ph, value] of placeholders) {
+    result = result.split(ph).join(value);
+  }
+  return result;
+}
+
+function escapeRegExp(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function extractLastSentences(text: string): string {
   const sentences = text.split(/(?<=[.!?])\s+/).filter(Boolean);
   return sentences.slice(-2).join(" ");
@@ -293,6 +361,7 @@ async function processChunkInternal(
     _id: Id<"chunks">;
     chunkIndex: number;
     status: string;
+    sourceText: string;
     translatedText?: string;
   }> = await ctx.runQuery(api.queries.getChunksForLang, {
     projectId,
@@ -306,8 +375,26 @@ async function processChunkInternal(
     return { skipped: true, chunkIndex, completed: 0, total: 0, allDone: false };
   }
 
-  const sourceChunks = chunkText(project.fullText, CHUNK_SIZE);
+  // FIX #2: Use stored sourceText from chunk record instead of re-chunking fullText.
+  // This eliminates the double-chunking bug where startTranslation chunks once,
+  // then processChunkInternal re-chunks from fullText (producing different boundaries).
+  let sourceText: string;
+  if (existing?.sourceText) {
+    sourceText = existing.sourceText;
+  } else {
+    // Fallback: compute total chunks count from fullText, but still upsert with this sourceText
+    const sourceChunks = chunkText(project.fullText, CHUNK_SIZE);
+    sourceText = sourceChunks[chunkIndex] || "";
+    if (!sourceText) return { skipped: true, chunkIndex, completed: 0, total: 0, allDone: false };
+  }
 
+  // Total chunks count for progress reporting
+  const totalChunks = Math.max(
+    existingChunks.length,
+    Math.ceil(project.fullText.split(/\s+/).length / CHUNK_SIZE)
+  );
+
+  // ── FIX #1: Slide window context (P21 book-wide consistency) ──
   let previousContext: string | undefined;
   if (chunkIndex > 0) {
     const prevChunk = existingChunks.find(
@@ -329,36 +416,75 @@ async function processChunkInternal(
 
   if (keys.length === 0) throw new Error("No Gemini API keys configured");
 
+  // ── FIX #1: Bible Pass — Lock glossary terms before AI sees them ──
+  const { lockedText, placeholders } = applyBiblePassServer(sourceText, langCode);
+
+  // ── Send to Gemini with locked text ──
   const systemPrompt = buildSystemPrompt(langCode, "standard");
-  let userContent = sourceChunks[chunkIndex];
+  let userContent = lockedText;
   if (previousContext) {
     userContent = `Previous chunk ended with: ${previousContext}\n\nContinue seamlessly.\n\n${userContent}`;
   }
 
-  const result = await callGemini(keys, systemPrompt, userContent);
+  const geminiResult = await callGemini(keys, systemPrompt, userContent);
 
-  // Save translated chunk
+  // ── FIX #1: Post-Processing Pipeline ──
+  // Step 1: Restore glossary placeholders (AI may have changed them)
+  let processedText = restorePlaceholdersServer(geminiResult.text, placeholders);
+
+  // Step 2: Apply cultural filters (P6/P13/P14)
+  processedText = applyCulturalFilters(processedText, langCode, "standard");
+
+  // Step 3: Format dragon telepathy *thoughts* → 「」/【】 (P16)
+  processedText = processedText.replace(/\*([^*]+)\*/g, (_: string, thought: string) =>
+    formatDragonTelepathy(thought, langCode)
+  );
+
+  // Step 4: Add RTL marker for RTL languages (P8)
+  if (isRTLLang(langCode) && !processedText.startsWith("\u200F")) {
+    processedText = `\u200F${processedText}`;
+  }
+
+  // ── FIX #1: Run QA checks (P1-P23 code-level verification) ──
+  let qaScore = 0;
+  let qaOverall = "unknown";
+  try {
+    const qaReport = runQA(sourceText, processedText, langCode, []);
+    qaScore = qaReport.score;
+    qaOverall = qaReport.overall;
+    console.log(`[QA] ${langCode} chunk ${chunkIndex}: ${qaReport.score}/100 — ${qaReport.summary[0]}`);
+  } catch (e) {
+    console.warn(`[QA] Failed for ${langCode} chunk ${chunkIndex}:`, e);
+  }
+
+  // Save translated chunk (with post-processed text and QA results)
+  const usageWithQA = {
+    ...(geminiResult.usage as Record<string, unknown>),
+    qaScore,
+    qaOverall,
+  };
+
   if (existing) {
     await ctx.runMutation(api.mutations.updateChunk, {
       chunkId: existing._id,
-      translatedText: result.text,
+      translatedText: processedText,
       status: "done",
-      model: result.model,
-      usage: result.usage,
+      model: geminiResult.model,
+      usage: usageWithQA,
     });
   } else {
     const chunkId: Id<"chunks"> = await ctx.runMutation(api.mutations.upsertChunk, {
       projectId,
       langCode,
       chunkIndex,
-      sourceText: sourceChunks[chunkIndex],
+      sourceText,
     });
     await ctx.runMutation(api.mutations.updateChunk, {
       chunkId,
-      translatedText: result.text,
+      translatedText: processedText,
       status: "done",
-      model: result.model,
-      usage: result.usage,
+      model: geminiResult.model,
+      usage: usageWithQA,
     });
   }
 
@@ -368,7 +494,6 @@ async function processChunkInternal(
   const completedCount = allChunks.filter(
     (c: { status: string }) => c.status === "done"
   ).length;
-  const totalChunks = sourceChunks.length;
 
   const translations: Array<{
     _id: Id<"translations">;

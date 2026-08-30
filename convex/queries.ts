@@ -129,6 +129,16 @@ export const getTranslationProgress = query({
 });
 
 // C3: Live preview — concatenates completed chunk translations in order
+// Watchdog: find all projects that might be stalled
+export const getAllProjectsForWatchdog = query({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db
+      .query("projects")
+      .collect();
+  },
+});
+
 export const getLivePreviewText = query({
   args: { projectId: v.id("projects"), langCode: v.string() },
   handler: async (ctx, args) => {

@@ -54,7 +54,7 @@ export const buildZip = action({
       "",
       "Language Status:",
       ...translations.map(
-        (t) =>
+        (t: { langCode: string; status: string; completedChunks: number; totalChunks: number }) =>
           `  ${t.langCode.toUpperCase()}: ${t.status} (${t.completedChunks}/${t.totalChunks} chunks)`,
       ),
     ].join("\n");

@@ -297,3 +297,28 @@ input.neon-input:focus {
 .status-pulse {
   animation: statusPulse 1.5s ease-in-out infinite;
 }
+
+/* Royal Shimmer & Pulse (Royal Progress Panel) */
+@keyframes royal-shimmer {
+  0% { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+@keyframes royal-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(0.98); }
+}
+@keyframes royal-glow-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(168, 140, 200, 0.3); }
+  50% { box-shadow: 0 0 20px rgba(168, 140, 200, 0.6), 0 0 40px rgba(229, 192, 123, 0.2); }
+}
+.animate-royal-shimmer {
+  background: linear-gradient(90deg, transparent 25%, rgba(229, 192, 123, 0.15) 50%, transparent 75%);
+  background-size: 200% auto;
+  animation: royal-shimmer 3s linear infinite;
+}
+.animate-royal-pulse {
+  animation: royal-pulse 2.5s ease-in-out infinite;
+}
+.animate-royal-glow {
+  animation: royal-glow-pulse 2s ease-in-out infinite;
+}

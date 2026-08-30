@@ -55,6 +55,19 @@ export default defineSchema({
     createdAt: v.number(),
   }),
 
+  history: defineTable({
+    sessionId: v.string(),
+    projectId: v.id("projects"),
+    fileName: v.string(),
+    pageCount: v.number(),
+    wordCount: v.number(),
+    status: v.string(),
+    languagesCompleted: v.number(),
+    createdAt: v.number(),
+    completedAt: v.optional(v.number()),
+    zipUrl: v.optional(v.string()),
+  }).index("by_session", ["sessionId"]),
+
   jobs: defineTable({
     projectId: v.id("projects"),
     type: v.string(),

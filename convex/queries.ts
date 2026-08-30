@@ -93,6 +93,19 @@ export const getAllJobs = query({
   },
 });
 
+// ─── History ───
+
+export const getHistory = query({
+  args: { sessionId: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("history")
+      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+      .order("desc")
+      .collect();
+  },
+});
+
 // C2: Real-time chunk progress for a specific language
 export const getTranslationProgress = query({
   args: { projectId: v.id("projects"), langCode: v.string() },

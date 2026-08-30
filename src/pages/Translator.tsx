@@ -32,7 +32,11 @@ import {
   FlaskConical,
   ListChecks,
   Camera,
+  Clock,
+  Zap,
 } from "lucide-react";
+import { HistoryPanel } from "@/components/HistoryPanel";
+import { LanguageAccordion } from "@/components/LanguageAccordion";
 // Convex hooks imported below with storage replacement
 import {
   generateSampleText,
@@ -263,6 +267,10 @@ export default function Translator() {
   const [isTranslatingImage, setIsTranslatingImage] = useState(false);
   const [imageSelectedLangs, setImageSelectedLangs] = useState<string[]>([]);
 
+  // ─── History Panel ───
+  const [showHistory, setShowHistory] = useState(false);
+  const saveHistoryMutation = useMutation(api.history.saveToHistory);
+
   // ─── Auto-load project on mount via Convex ───
   useEffect(() => {
     if (!latestProject) return;
@@ -285,6 +293,21 @@ export default function Translator() {
       setIsTranslating(true);
     }
   }, [convexProject]);
+
+  // Update history on completion
+  useEffect(() => {
+    if (!convexProject || !isAllComplete) return;
+    saveHistoryMutation({
+      sessionId,
+      projectId: convexProject._id,
+      fileName: convexProject.fileName,
+      pageCount: convexProject.pageCount,
+      wordCount: convexProject.wordCount,
+      status: "complete",
+      languagesCompleted: completedCount,
+      zipUrl: convexProject.zipUrl,
+    });
+  }, [isAllComplete, convexProject, completedCount, sessionId, saveHistoryMutation]);
 
 
 
@@ -689,6 +712,16 @@ export default function Translator() {
 
       const langs = selectedLangCodes.length > 0 ? selectedLangCodes : targetLanguages.map((l) => l.code);
       await startTranslationAction({ projectId: activeProjectId, langCodes: langs });
+      // Save to history
+      saveHistoryMutation({
+        sessionId,
+        projectId: activeProjectId,
+        fileName: pdfFileName || "Pasted Text",
+        pageCount: pdfPageCount || 1,
+        wordCount: sourceText.split(/\s+/).filter(Boolean).length,
+        status: "in_progress",
+        languagesCompleted: 0,
+      });
     } catch (error) {
       setTranslationError(
         error instanceof Error ? error.message : "Failed to start translation"
@@ -971,19 +1004,62 @@ export default function Translator() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="text-[10px]" style={{ borderColor: 'rgba(0,229,255,0.3)' }}>
-              Images Preserved
+            {/* Status Badge */}
+            <Badge
+              variant="outline"
+              className="text-[10px] px-2 py-0.5"
+              style={{
+                borderColor: flowPhase === 'idle'
+                  ? 'rgba(255,255,255,0.1)' 
+                  : flowPhase === 'translating'
+                  ? 'rgba(167,139,250,0.4)'
+                  : 'rgba(52,211,153,0.4)',
+                color: flowPhase === 'idle'
+                  ? 'rgba(255,255,255,0.4)'
+                  : flowPhase === 'translating'
+                  ? '#a78bfa'
+                  : '#34d399',
+                background: flowPhase === 'idle'
+                  ? 'transparent'
+                  : flowPhase === 'translating'
+                  ? 'rgba(167,139,250,0.08)'
+                  : 'rgba(52,211,153,0.08)',
+              }}
+            >
+              {flowPhase === 'idle' && 'Idle'}
+              {flowPhase === 'translating' && (
+                <span className="flex items-center gap-1">
+                  <Loader2 className="size-2.5 animate-spin" /> Translating ({completedCount}/{activeTranslations.length || targetLanguages.length})
+                </span>
+              )}
+              {flowPhase === 'all-complete' && (
+                <span className="flex items-center gap-1">
+                  <CheckCircle2 className="size-2.5" /> Complete
+                </span>
+              )}
             </Badge>
             <Badge variant="outline" className="text-[10px]" style={{ borderColor: 'rgba(0,229,255,0.3)', color: '#00e5ff' }}>
+              <Zap className="size-2.5 mr-1" /> Gemini
+            </Badge>
+            <Badge variant="outline" className="text-[10px] hidden sm:inline-flex" style={{ borderColor: 'rgba(0,229,255,0.3)', color: '#00e5ff' }}>
               {targetLanguages.length} Languages
             </Badge>
             <div className="flex items-center gap-1 ml-1">
               <Button
                 variant="ghost"
                 size="sm"
+                className="h-7 w-7 p-0"
+                onClick={() => setShowHistory(true)}
+                title="Translation History"
+              >
+                <Clock className="size-3.5" style={{ color: '#a78bfa' }} />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
                 className="h-6 text-[9px] px-1.5 sm:text-[10px]"
                 onClick={handleExportProgress}
-                title="Export saved progress to a file — use this to move work between the preview and the published site"
+                title="Export progress"
               >
                 <FileUp className="size-3 mr-1" /> Export
               </Button>
@@ -992,7 +1068,7 @@ export default function Translator() {
                 size="sm"
                 className="h-6 text-[9px] px-1.5 sm:text-[10px]"
                 onClick={handleImportProgress}
-                title="Import a progress file to resume your work here"
+                title="Import progress"
               >
                 <FileDown className="size-3 mr-1" /> Import
               </Button>
@@ -1511,8 +1587,8 @@ export default function Translator() {
                 </div>
                 <div className="p-3 space-y-2">
                   {/* Neon progress bar */}
-                  <div className="h-2 rounded-full overflow-hidden neon-border" style={{ background: 'rgba(255,255,255,0.03)' }}>
-                    <div className="h-full rounded-full transition-all duration-500 neon-progress" style={{ width: `${(completedLanguages.length / Math.max(activeTranslations.length, 1)) * 100}%` }} />
+                  <div className="h-3 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.03)', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.3)' }}>
+                    <div className="h-full rounded-full transition-all duration-500 royal-progress" style={{ width: `${(completedLanguages.length / Math.max(activeTranslations.length, 1)) * 100}%` }} />
                   </div>
                   {/* Current language detail */}
                   {inProgressTranslation && (
@@ -1549,7 +1625,7 @@ export default function Translator() {
                             {isActive ? (
                               <div className="flex items-center gap-1">
                                 <div className="w-10 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.05)' }}>
-                                  <div className="h-full rounded-full neon-progress transition-all duration-300" style={{ width: `${pct}%` }} />
+                                  <div className="h-full rounded-full royal-progress transition-all duration-300" style={{ width: `${pct}%` }} />
                                 </div>
                                 <span className="text-[8px] font-mono" style={{ color: '#00e5ff' }}>{t.completedChunks}/{t.totalChunks}</span>
                               </div>
@@ -1587,8 +1663,129 @@ export default function Translator() {
               </div>
             )}
 
-          </div>        </div>
+          </div>
+
+          {/* ─── RIGHT PANEL: Preview + Language Accordion ─── */}
+          <div className="space-y-4 min-w-0">
+            {flowPhase !== "idle" && (
+              <div
+                className="rounded-xl overflow-hidden flex flex-col"
+                style={{
+                  background: 'rgba(10,10,22,0.9)',
+                  border: '1px solid rgba(0,229,255,0.12)',
+                  boxShadow: '0 0 20px rgba(0,229,255,0.04), inset 0 1px 0 rgba(0,229,255,0.05)',
+                  minHeight: '500px',
+                }}
+              >
+                {/* Preview Header */}
+                <div
+                  className="px-4 py-3 flex items-center justify-between shrink-0"
+                  style={{ borderBottom: '1px solid rgba(0,229,255,0.08)' }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="size-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0" style={{ background: 'linear-gradient(135deg, #00e5ff, #a78bfa)', color: '#06060e' }}>
+                      3
+                    </span>
+                    <span className="text-xs font-semibold">Preview</span>
+                    {currentLang && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ color: '#00e5ff', background: 'rgba(0,229,255,0.08)' }}>
+                        {currentLang.name} ({currentLanguageIndex + 1}/{activeTranslations.length || targetLanguages.length})
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={handleCopyTranslation}
+                    disabled={!currentTranslation}
+                    className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-all border disabled:opacity-30"
+                    style={{
+                      color: copiedPreview ? '#34d399' : '#a78bfa',
+                      borderColor: copiedPreview ? 'rgba(52,211,153,0.3)' : 'rgba(167,139,250,0.3)',
+                      background: copiedPreview ? 'rgba(52,211,153,0.08)' : 'rgba(167,139,250,0.08)',
+                    }}
+                  >
+                    {copiedPreview ? <Check className="size-3" /> : <Copy className="size-3" />}
+                    {copiedPreview ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+
+                {/* Live preview text */}
+                <div className="flex-1 overflow-auto">
+                  {currentTranslation ? (
+                    <div
+                      className="p-4 text-sm leading-relaxed whitespace-pre-wrap min-h-[200px]"
+                      style={{
+                        direction: (currentLang && ['ar', 'ur', 'ks'].includes(currentLang.code)) ? 'rtl' : 'ltr',
+                        textAlign: (currentLang && ['ar', 'ur', 'ks'].includes(currentLang.code)) ? 'right' : 'left',
+                        lineHeight: '1.8',
+                        color: 'rgba(226,232,240,0.85)',
+                      }}
+                    >
+                      {currentTranslation}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                      <Loader2 className="size-5 animate-spin mb-2" style={{ color: '#a78bfa' }} />
+                      <span className="text-xs">
+                        {inProgressTranslation ? `Translating ${targetLanguages.find((l) => l.code === inProgressTranslation.langCode)?.name}...` : 'Waiting for translation...'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Language Accordion */}
+                {projectId && (
+                  <div
+                    className="shrink-0"
+                    style={{ borderTop: '1px solid rgba(0,229,255,0.08)' }}
+                  >
+                    <LanguageAccordion
+                      projectId={projectId}
+                      languages={targetLanguages}
+                      translations={activeTranslations.map((t) => ({
+                        langCode: t.langCode,
+                        status: t.status,
+                        totalChunks: t.totalChunks,
+                        completedChunks: t.completedChunks,
+                        mergedText: t.mergedText,
+                        pdfUrl: t.pdfUrl,
+                        pdfGenerating: t.pdfGenerating,
+                      }))}
+                      activeLangCode={inProgressTranslation?.langCode ?? null}
+                    />
+                  </div>
+                )}
+
+                {/* Download ZIP when all complete */}
+                {isAllComplete && (
+                  <div className="p-4" style={{ borderTop: '1px solid rgba(52,211,153,0.15)' }}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <CheckCircle2 className="size-4" style={{ color: '#34d399' }} />
+                      <span className="text-xs font-semibold" style={{ color: '#34d399' }}>
+                        {completedCount} translation{completedCount !== 1 ? 's' : ''} complete!
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button onClick={handleDownloadAllZIP} className="flex-1 h-8 text-[11px]" disabled={isDownloadingZip}>
+                        <Package className="size-3 mr-1.5" /> Download All ZIP
+                      </Button>
+                      <Button onClick={clearSource} variant="outline" className="h-8 text-[11px]">
+                        <RotateCcw className="size-3" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+        </div>
       </div>
+      {/* History Panel */}
+      <HistoryPanel
+        open={showHistory}
+        onClose={() => setShowHistory(false)}
+        sessionId={sessionId}
+      />
     </div>
   );
 }

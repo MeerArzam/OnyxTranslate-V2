@@ -8,7 +8,6 @@
  * @module
  */
 
-import type * as crons from "../crons.js";
 import type * as exportImport from "../exportImport.js";
 import type * as generatePdf from "../generatePdf.js";
 import type * as health from "../health.js";
@@ -29,7 +28,6 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  crons: typeof crons;
   exportImport: typeof exportImport;
   generatePdf: typeof generatePdf;
   health: typeof health;

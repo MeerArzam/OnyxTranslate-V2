@@ -321,6 +321,8 @@ export default function Translator() {
       setIsTranslating(false);
     } else if (convexProject.status === "translating") {
       setIsTranslating(true);
+    } else if (convexProject.status === "cancelled") {
+      setIsTranslating(false);
     }
   }, [convexProject]);
 
@@ -1701,7 +1703,8 @@ export default function Translator() {
                         pdfUrl: t.pdfUrl,
                         pdfGenerating: t.pdfGenerating,
                       }))}
-                      activeLangCode={inProgressTranslation?.langCode ?? null}
+                      activeLangCode={currentPreviewLangCode ?? inProgressTranslation?.langCode ?? null}
+                      onLanguageSelect={(code) => setCurrentPreviewLangCode(code)}
                     />
                   </div>
                 )}

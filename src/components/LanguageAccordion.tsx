@@ -26,6 +26,7 @@ interface LanguageAccordionProps {
   languages: Language[];
   translations: TranslationEntry[];
   activeLangCode: string | null;
+  onLanguageSelect?: (langCode: string) => void;
 }
 
 const RTL_LANGS = ["ar", "ur", "ks"];
@@ -35,6 +36,7 @@ export function LanguageAccordion({
   languages,
   translations,
   activeLangCode,
+  onLanguageSelect,
 }: LanguageAccordionProps) {
   const [expandedLang, setExpandedLang] = useState<string | null>(activeLangCode);
 
@@ -45,7 +47,8 @@ export function LanguageAccordion({
 
   const toggle = useCallback((code: string) => {
     setExpandedLang((prev) => (prev === code ? null : code));
-  }, []);
+    onLanguageSelect?.(code);
+  }, [onLanguageSelect]);
 
   return (
     <div className="space-y-1">

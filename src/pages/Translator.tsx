@@ -743,12 +743,13 @@ export default function Translator() {
       }
 
       const langs = selectedLangCodes.length > 0 ? selectedLangCodes : targetLanguages.map((l) => l.code);
-      // UNIFIED: Direct call like image translation — one action per language, scheduler chains to next
+      // UNIFIED: One action call kicks off the chain — each language chains to the next via scheduler
       await translateLanguageAction({
         projectId: activeProjectId,
         langCode: langs[0],
         marketContext,
         nextLangCode: langs.length > 1 ? langs[1] : undefined,
+        remainingLangs: langs.length > 2 ? langs.slice(2) : undefined,
       });
       // Save to history
       saveHistoryMutation({
@@ -1607,7 +1608,7 @@ export default function Translator() {
                   isPaused={!isTranslating && flowPhase === "translating" && completedCount > 0}
                   onResume={() => {
                     setIsTranslating(true);
-                    if (projectId) { const incomplete = activeTranslations.filter((t) => t.status !== "complete").map((t) => t.langCode); if (incomplete.length > 0) { translateLanguageAction({ projectId, langCode: incomplete[0], marketContext, nextLangCode: incomplete.length > 1 ? incomplete[1] : undefined }); } };
+                    if (projectId) { const incomplete = activeTranslations.filter((t) => t.status !== "complete").map((t) => t.langCode); if (incomplete.length > 0) { translateLanguageAction({ projectId, langCode: incomplete[0], marketContext, nextLangCode: incomplete.length > 1 ? incomplete[1] : undefined, remainingLangs: incomplete.length > 2 ? incomplete.slice(2) : undefined }); } };
                   }}
                   onPause={handlePause}
                   onDownload={handleDownloadAllZIP}

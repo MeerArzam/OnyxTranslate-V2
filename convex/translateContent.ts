@@ -321,7 +321,8 @@ export const translateLanguage = action({
     projectId: v.id("projects"),
     langCode: v.string(),
     marketContext: v.optional(v.string()),
-    nextLangCode: v.optional(v.string()),  // if provided, chains to next language
+    nextLangCode: v.optional(v.string()),
+    remainingLangs: v.optional(v.array(v.string())),  // all remaining languages after this one
   },
   handler: async (
     ctx,
@@ -492,14 +493,21 @@ export const translateLanguage = action({
       });
     }
 
-    // Chain to next language via scheduler (same pattern as image: sequential per-language)
+    // Chain to next language via scheduler
     let chained = false;
-    if (args.nextLangCode) {
+    // Determine next language: explicit nextLangCode takes priority, then remainingLangs
+    const nextLang = args.nextLangCode || (args.remainingLangs && args.remainingLangs.length > 0 ? args.remainingLangs[0] : undefined);
+    const restLangs = args.nextLangCode
+      ? (args.remainingLangs || [])  // if nextLangCode was explicit, remaining is whatever was passed
+      : (args.remainingLangs || []).slice(1);  // if using remainingLangs, drop the first one we just used
+    
+    if (nextLang) {
       await ctx.scheduler.runAfter(0, api.translateContent.translateLanguage, {
         projectId: args.projectId,
-        langCode: args.nextLangCode,
+        langCode: nextLang,
         marketContext: args.marketContext,
-        nextLangCode: undefined,  // each action only chains ONE language ahead
+        nextLangCode: restLangs.length > 0 ? restLangs[0] : undefined,
+        remainingLangs: restLangs.length > 1 ? restLangs.slice(1) : undefined,
       });
       chained = true;
     }

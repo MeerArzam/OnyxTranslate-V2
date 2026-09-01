@@ -321,7 +321,7 @@ export default function Translator() {
       setIsTranslating(false);
     } else if (convexProject.status === "translating") {
       setIsTranslating(true);
-    } else if (convexProject.status === "cancelled") {
+    } else if (convexProject.status === "cancelled" || convexProject.status === "ready" || convexProject.status === "error") {
       setIsTranslating(false);
     }
   }, [convexProject]);
@@ -721,7 +721,22 @@ export default function Translator() {
   // ─── Autonomous Translation Queue ───
 
   const startTranslation = useCallback(async () => {
-    if (!sourceText.trim()) return;
+    console.log("[DEBUG] Button clicked");
+    console.log("[DEBUG] sourceText length:", sourceText?.length);
+    console.log("[DEBUG] projectId:", projectId);
+    console.log("[DEBUG] selectedLangCodes:", selectedLangCodes);
+    console.log("[DEBUG] isTranslating:", isTranslating);
+    console.log("[DEBUG] flowPhase:", flowPhase);
+
+    if (!sourceText.trim()) {
+      setTranslationError("No text to translate — upload a PDF or paste text first");
+      return;
+    }
+    if (isTranslating) {
+      setTranslationError("Translation already in progress");
+      return;
+    }
+
     try {
       setIsTranslating(true);
       setTranslationError(null);
@@ -729,6 +744,7 @@ export default function Translator() {
       // If no project exists (pasted text, not PDF), create one now
       let activeProjectId = projectId;
       if (!activeProjectId) {
+        console.log("[DEBUG] Auto-creating project for pasted text");
         activeProjectId = await createProjectMutation({
           sessionId,
           fileName: "Pasted Text",
@@ -740,9 +756,17 @@ export default function Translator() {
           status: "ready",
         });
         setProjectId(activeProjectId);
+        console.log("[DEBUG] Project created:", activeProjectId);
       }
 
       const langs = selectedLangCodes.length > 0 ? selectedLangCodes : targetLanguages.map((l) => l.code);
+      if (langs.length === 0) {
+        setTranslationError("Select at least one language");
+        setIsTranslating(false);
+        return;
+      }
+
+      console.log("[DEBUG] Starting translation for:", langs);
       // UNIFIED: One action call kicks off the chain — each language chains to the next via scheduler
       await translateLanguageAction({
         projectId: activeProjectId,
@@ -751,6 +775,7 @@ export default function Translator() {
         nextLangCode: langs.length > 1 ? langs[1] : undefined,
         remainingLangs: langs.length > 2 ? langs.slice(2) : undefined,
       });
+      console.log("[DEBUG] Translation action dispatched successfully");
       // Save to history
       saveHistoryMutation({
         sessionId,
@@ -762,12 +787,13 @@ export default function Translator() {
         languagesCompleted: 0,
       });
     } catch (error) {
+      console.error("[DEBUG] Translation action failed:", error);
       setTranslationError(
         error instanceof Error ? error.message : "Failed to start translation"
       );
       setIsTranslating(false);
     }
-  }, [sourceText, projectId, sessionId, selectedLangCodes, translateLanguageAction, createProjectMutation, marketContext]);
+  }, [sourceText, projectId, sessionId, selectedLangCodes, translateLanguageAction, createProjectMutation, marketContext, isTranslating, flowPhase]);
 
   // ─── Retranslate: cancel queue, delete language chunks, restart queue ───
 

@@ -120,7 +120,7 @@ export default function Translator() {
   // ─── Convex server-side actions ───
   const storePdfAction = useAction(api.upload.storePdf);
   const parsePdfAction = useAction(api.parsePdf.parseUploadedPdf);
-  const startTranslationAction = useAction(api.translateQueue.startTranslation);
+  const translateLanguageAction = useAction(api.translateContent.translateLanguage);
   const cancelTranslationAction = useAction(api.translateQueue.cancelTranslation);
   const translateImageAction = useAction(api.translateImage.translateImage);
 
@@ -743,7 +743,13 @@ export default function Translator() {
       }
 
       const langs = selectedLangCodes.length > 0 ? selectedLangCodes : targetLanguages.map((l) => l.code);
-      await startTranslationAction({ projectId: activeProjectId, langCodes: langs });
+      // UNIFIED: Direct call like image translation — one action per language, scheduler chains to next
+      await translateLanguageAction({
+        projectId: activeProjectId,
+        langCode: langs[0],
+        marketContext,
+        nextLangCode: langs.length > 1 ? langs[1] : undefined,
+      });
       // Save to history
       saveHistoryMutation({
         sessionId,
@@ -760,7 +766,7 @@ export default function Translator() {
       );
       setIsTranslating(false);
     }
-  }, [sourceText, projectId, sessionId, selectedLangCodes, startTranslationAction, createProjectMutation]);
+  }, [sourceText, projectId, sessionId, selectedLangCodes, translateLanguageAction, createProjectMutation, marketContext]);
 
   // ─── Retranslate: cancel queue, delete language chunks, restart queue ───
 
@@ -784,7 +790,7 @@ export default function Translator() {
         // Delete old chunks for this language
         await deleteChunksForLangMutation({ projectId, langCode });
         // Restart autonomous queue
-        await startTranslationAction({ projectId, langCodes: [langCode] });
+        await translateLanguageAction({ projectId, langCode, marketContext });
       } catch (error) {
         setTranslationError(
           error instanceof Error ? error.message : "Retranslate failed"
@@ -792,7 +798,7 @@ export default function Translator() {
         setIsTranslating(false);
       }
     },
-    [projectId, deleteChunksForLangMutation, startTranslationAction]
+    [projectId, deleteChunksForLangMutation, translateLanguageAction, marketContext]
   );
 
   // ─── Copy current translation to clipboard ───
@@ -1601,7 +1607,7 @@ export default function Translator() {
                   isPaused={!isTranslating && flowPhase === "translating" && completedCount > 0}
                   onResume={() => {
                     setIsTranslating(true);
-                    if (projectId) startTranslationAction({ projectId, langCodes: activeTranslations.filter((t) => t.status !== "complete").map((t) => t.langCode) });
+                    if (projectId) { const incomplete = activeTranslations.filter((t) => t.status !== "complete").map((t) => t.langCode); if (incomplete.length > 0) { translateLanguageAction({ projectId, langCode: incomplete[0], marketContext, nextLangCode: incomplete.length > 1 ? incomplete[1] : undefined }); } };
                   }}
                   onPause={handlePause}
                   onDownload={handleDownloadAllZIP}

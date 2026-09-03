@@ -1043,7 +1043,7 @@ export default function Translator() {
   // ─── Render ───
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen bg-background text-foreground app-bg-pattern">
       <input
         ref={fileInputRef}
         type="file"
@@ -1060,7 +1060,7 @@ export default function Translator() {
               <Languages className="size-4 text-primary-foreground" />
             </div>
             <div>
-              <span className="text-base font-semibold tracking-tight">
+              <span className="text-base font-semibold tracking-tight logo-gradient">
                 Onyx Translate
               </span>
               <span className="text-xs text-muted-foreground ml-2 hidden sm:inline">
@@ -1132,7 +1132,7 @@ export default function Translator() {
           {/* Left Panel */}
           <div className="space-y-4">
             {/* Step 1: Upload */}
-            <div className="rounded-xl border border-border/50 bg-card overflow-hidden">
+            <div className="rounded-xl border border-border/50 bg-card overflow-hidden royal-card">
               <div className="px-4 py-3 border-b border-border/30 bg-muted/30">
                 <div className="flex items-center gap-2">
                   <span className="size-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 neon-glow" style={{ background: 'linear-gradient(135deg, #00e5ff, #a78bfa)', color: '#06060e' }}>
@@ -1602,7 +1602,7 @@ export default function Translator() {
 
                     <Button
                       onClick={startTranslation}
-                      className="w-full h-9"
+                      className="w-full h-9 btn-royal-hover"
                       size="default"
                       disabled={selectedLangCodes.length === 0}
                     >
@@ -1655,7 +1655,7 @@ export default function Translator() {
           <div className="space-y-4 min-w-0">
             {flowPhase !== "idle" && (
               <div
-                className="rounded-xl overflow-hidden flex flex-col"
+                className="rounded-xl overflow-hidden flex flex-col royal-card"
                 style={{
                   background: 'rgba(10,10,22,0.9)',
                   border: '1px solid rgba(0,229,255,0.12)',

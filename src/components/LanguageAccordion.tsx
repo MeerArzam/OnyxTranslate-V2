@@ -115,7 +115,7 @@ export function LanguageAccordion({
             {/* Accordion content */}
             {isExpanded && (
               <div
-                className="mx-3 mb-1 rounded-lg overflow-hidden"
+                className="mx-3 mb-1 rounded-lg overflow-hidden accordion-content"
                 style={{
                   background: "rgba(0,0,0,0.3)",
                   border: "1px solid rgba(0,229,255,0.06)",

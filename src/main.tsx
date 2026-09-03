@@ -9,15 +9,7 @@ const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL!);
 
 function App() {
   // ?intro=1 forces replay by clearing sessionStorage first
-  const [showIntro, setShowIntro] = useState(() => {
-    if (typeof window === "undefined") return false;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("intro") === "1") {
-      sessionStorage.removeItem("onyx-intro-seen");
-      return true;
-    }
-    return !sessionStorage.getItem("onyx-intro-seen");
-  });
+  const [showIntro, setShowIntro] = useState(true);
 
   const [showDebugBtn, setShowDebugBtn] = useState(false);
 
@@ -30,7 +22,6 @@ function App() {
   }, []);
 
   const handleIntroComplete = useCallback(() => {
-    sessionStorage.setItem("onyx-intro-seen", "true");
     setShowIntro(false);
   }, []);
 

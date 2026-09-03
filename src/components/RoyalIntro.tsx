@@ -10,8 +10,7 @@ import { useEffect, useRef, useState } from "react";
  *   4. Breath of Translation (4–5.5s): Fire sweep reveals ONYX TRANSLATE
  *   5. The Finale (5.5–7s): Flash → dissolve → app appears
  *
- * sessionStorage("onyx-intro-seen") gates replay.
- * ?intro=1 forces replay. ?debug=1 shows a "Play Intro" button.
+ * Plays on every page refresh. ?debug=1 shows a "Play Intro" button.
  */
 export default function RoyalIntro({ onComplete }: { onComplete: () => void }) {
   const [mounted, setMounted] = useState(true);

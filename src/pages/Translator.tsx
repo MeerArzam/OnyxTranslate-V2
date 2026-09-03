@@ -577,9 +577,13 @@ export default function Translator() {
           sessionId,
           exportJson: text,
         });
-        if (result.success) {
+        if (result.success && result.projectId) {
+          // Switch to the imported project
           setProjectId(result.projectId);
           setTranslationError(null);
+          setIsTranslating(false);
+          setCurrentPreviewLangCode(null);
+          // Let Convex reactive queries pick up the new project
         }
       } catch (err) {
         setTranslationError(`Import failed: ${err instanceof Error ? err.message : "invalid file"}`);

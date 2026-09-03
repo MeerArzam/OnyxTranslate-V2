@@ -31,12 +31,19 @@ export const checkVlyKey = action({
       "https://integrations.vly.ai",
     ].filter((u, i, arr) => u && arr.indexOf(u) === i);
 
-    const results = [];
     const body = JSON.stringify({
       model: "deepseek-chat",
       messages: [{ role: "user", content: "Reply with the single word: OK" }],
       max_tokens: 4,
     });
+
+    const results: Array<{
+      baseUrl: string;
+      status: number | string;
+      statusText?: string;
+      body?: string;
+      error?: string;
+    }> = [];
 
     for (const base of candidates) {
       const url = `${base}/v1/llm/chat/completions`;
@@ -174,7 +181,13 @@ export const probeGeminiKeys = action({
       "Gemini_API_Key_4",
       "Gemini_API_Key_5",
     ];
-    const results = [];
+    const results: Array<{
+      key: string;
+      keyPrefix?: string;
+      status: number | string;
+      body?: string;
+      error?: string;
+    }> = [];
     
     for (const keyName of keyNames) {
       const key = process.env[keyName];

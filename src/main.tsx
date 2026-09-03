@@ -2,15 +2,13 @@ import { StrictMode, useState, useCallback, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { ConvexProvider, ConvexReactClient } from "convex/react";
 import Translator from "./pages/Translator.tsx";
-import RoyalIntro, { forcePlayIntro } from "./components/RoyalIntro.tsx";
+import DragonIntro from "./components/DragonIntro.tsx";
 import "./index.css";
 
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL!);
 
 function App() {
-  // ?intro=1 forces replay by clearing sessionStorage first
   const [showIntro, setShowIntro] = useState(true);
-
   const [showDebugBtn, setShowDebugBtn] = useState(false);
 
   // ?debug=1 shows a floating "Play Intro" button
@@ -26,13 +24,12 @@ function App() {
   }, []);
 
   const handleReplayIntro = useCallback(() => {
-    forcePlayIntro();
     setShowIntro(true);
   }, []);
 
   return (
     <>
-      {showIntro && <RoyalIntro onComplete={handleIntroComplete} />}
+      {showIntro && <DragonIntro onComplete={handleIntroComplete} />}
       <Translator />
 
       {/* Debug button: visible only with ?debug=1 */}
@@ -53,7 +50,7 @@ function App() {
             cursor: "pointer",
             opacity: 0.7,
           }}
-          title="Replay the Royal Dragon intro"
+          title="Replay the Dragon intro"
         >
           ▶ Play Intro
         </button>

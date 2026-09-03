@@ -12,6 +12,7 @@ import type * as exportImport from "../exportImport.js";
 import type * as generatePdf from "../generatePdf.js";
 import type * as health from "../health.js";
 import type * as history from "../history.js";
+import type * as importProject from "../importProject.js";
 import type * as mutations from "../mutations.js";
 import type * as parsePdf from "../parsePdf.js";
 import type * as queries from "../queries.js";
@@ -33,6 +34,7 @@ declare const fullApi: ApiFromModules<{
   generatePdf: typeof generatePdf;
   health: typeof health;
   history: typeof history;
+  importProject: typeof importProject;
   mutations: typeof mutations;
   parsePdf: typeof parsePdf;
   queries: typeof queries;

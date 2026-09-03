@@ -535,33 +535,58 @@ export default function Translator() {
   // ─── Export / Import Progress ───
   const handleExportProgress = useCallback(async () => {
     if (!convexProject) return;
-    const data = {
+    const exportData = {
+      type: "onyx-translate-project" as const,
+      version: 1,
+      exportedAt: new Date().toISOString(),
       project: {
         fileName: convexProject.fileName,
         pageCount: convexProject.pageCount,
         wordCount: convexProject.wordCount,
+        fullText: convexProject.fullText,
         status: convexProject.status,
       },
       translations: activeTranslations.map((t) => ({
         langCode: t.langCode,
-        status: t.status,
         totalChunks: t.totalChunks,
         completedChunks: t.completedChunks,
+        mergedText: t.mergedText,
+        status: t.status,
       })),
-      exportedAt: new Date().toISOString(),
     };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `onyx-translate-progress-${convexProject.fileName.replace(/\.pdf$/i, "")}.json`;
+    a.download = `onyx-translate-${convexProject.fileName.replace(/\.pdf$/i, "")}-backup.json`;
     a.click();
     URL.revokeObjectURL(url);
   }, [convexProject, activeTranslations]);
+
+  const importProjectAction = useAction(api.importProject.importProject);
   const handleImportProgress = useCallback(async () => {
-    // Import is not needed with Convex — data persists server-side.
-    // If user wants to restore, they just reopen the app.
-  }, []);
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const result = await importProjectAction({
+          sessionId,
+          exportJson: text,
+        });
+        if (result.success) {
+          setProjectId(result.projectId);
+          setTranslationError(null);
+        }
+      } catch (err) {
+        setTranslationError(`Import failed: ${err instanceof Error ? err.message : "invalid file"}`);
+      }
+    };
+    input.click();
+  }, [importProjectAction, sessionId]);
   const clearSource = useCallback(async () => {
     if (projectId) {
       await deleteProjectMutation({ projectId }).catch(() => {});

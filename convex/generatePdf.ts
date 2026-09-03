@@ -349,7 +349,7 @@ export const generateTranslatedPdf = action({
       await ctx.runQuery(api.queries.getTranslationsRaw, { projectId: args.projectId });
     // Find the next language in the queue (has a translation record and is not yet complete)
     const currentIdx = allTranslations.findIndex((t) => t.langCode === args.langCode);
-    let nextTranslation = null;
+    let nextTranslation: { langCode: string; status: string } | null = null;
     for (let i = currentIdx + 1; i < allTranslations.length; i++) {
       if (allTranslations[i].status !== "complete") {
         nextTranslation = allTranslations[i];

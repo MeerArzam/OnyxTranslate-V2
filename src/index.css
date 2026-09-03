@@ -675,3 +675,225 @@ input.neon-input:focus {
   overflow: hidden;
   transition: max-height 0.3s ease, opacity 0.3s ease;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Dragon Intro — Kali-Style Terminal Boot + Geometric Dragon (5s)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.dragon-intro {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  overflow: hidden;
+  animation: dkFadeOut 0.5s ease 4.5s forwards;
+}
+
+/* ─── Terminal boot (0–1.5s) ─── */
+.dragon-terminal {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: 'Courier New', monospace;
+  font-size: clamp(10px, 2.5vw, 14px);
+  color: #00FF41;
+  line-height: 1.8;
+  opacity: 0;
+  animation: dkTerminalIn 0.3s ease forwards, dkTerminalOut 0.5s ease 1.5s forwards;
+  text-shadow: 0 0 8px rgba(0, 255, 65, 0.4);
+}
+.dragon-terminal .line {
+  opacity: 0;
+  animation: dkLineAppear 0.2s ease forwards;
+}
+.dragon-terminal .line:nth-child(1) { animation-delay: 0.1s; }
+.dragon-terminal .line:nth-child(2) { animation-delay: 0.3s; }
+.dragon-terminal .line:nth-child(3) { animation-delay: 0.5s; }
+.dragon-terminal .line:nth-child(4) { animation-delay: 0.7s; }
+.dragon-terminal .line:nth-child(5) { animation-delay: 0.9s; }
+.dragon-terminal .blink {
+  animation: dkBlink 0.6s step-end infinite;
+}
+
+/* ─── Dragon silhouette (1.5–3s) ─── */
+.dragon-silhouette {
+  width: clamp(140px, 32vw, 220px);
+  height: clamp(120px, 28vw, 190px);
+  position: relative;
+  opacity: 0;
+  animation: dkDragonReveal 1s ease 1.8s forwards;
+  filter: drop-shadow(0 0 20px rgba(139, 92, 246, 0.5));
+}
+.dragon-head {
+  position: absolute;
+  width: 55%;
+  height: 35%;
+  top: 12%;
+  left: 22%;
+  background: #1a1a1a;
+  clip-path: polygon(25% 0%, 75% 0%, 100% 45%, 85% 100%, 15% 100%, 0% 45%);
+}
+.dragon-horn-left {
+  position: absolute;
+  width: 14%;
+  height: 32%;
+  top: -8%;
+  left: 30%;
+  background: linear-gradient(180deg, #a78bfa, #1a1a1a);
+  clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+}
+.dragon-horn-right {
+  position: absolute;
+  width: 14%;
+  height: 32%;
+  top: -8%;
+  right: 30%;
+  background: linear-gradient(180deg, #a78bfa, #1a1a1a);
+  clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+}
+.dragon-eye {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  top: 24%;
+  left: 56%;
+  background: #FF0000;
+  border-radius: 50%;
+  box-shadow: 0 0 10px #FF0000, 0 0 20px #FF0000, 0 0 40px rgba(255, 0, 0, 0.5);
+  animation: dkEyePulse 1.2s ease-in-out infinite 2.2s;
+}
+.dragon-jaw {
+  position: absolute;
+  width: 30%;
+  height: 12%;
+  top: 40%;
+  left: 35%;
+  background: #1a1a1a;
+  clip-path: polygon(0% 0%, 100% 0%, 80% 100%, 20% 100%);
+}
+.dragon-wing-left {
+  position: absolute;
+  width: 45%;
+  height: 55%;
+  top: 28%;
+  left: -12%;
+  background: rgba(26, 26, 26, 0.85);
+  clip-path: polygon(100% 15%, 10% 0%, 25% 50%, 5% 95%, 100% 80%);
+  animation: dkWingLeft 0.4s ease-in-out infinite 2.5s alternate;
+}
+.dragon-wing-right {
+  position: absolute;
+  width: 45%;
+  height: 55%;
+  top: 28%;
+  right: -12%;
+  background: rgba(26, 26, 26, 0.85);
+  clip-path: polygon(0% 15%, 90% 0%, 75% 50%, 95% 95%, 0% 80%);
+  animation: dkWingRight 0.4s ease-in-out infinite 2.7s alternate;
+}
+.dragon-body {
+  position: absolute;
+  width: 50%;
+  height: 28%;
+  top: 38%;
+  left: 25%;
+  background: linear-gradient(180deg, #1a1a1a 40%, rgba(139, 92, 246, 0.15) 100%);
+  clip-path: polygon(15% 0%, 85% 0%, 100% 100%, 0% 100%);
+}
+.dragon-tail {
+  position: absolute;
+  width: 35%;
+  height: 15%;
+  top: 60%;
+  left: 10%;
+  background: #1a1a1a;
+  clip-path: polygon(80% 0%, 100% 20%, 50% 100%, 0% 60%, 20% 0%);
+}
+
+/* ─── Title slam (3–4s) ─── */
+.dragon-title {
+  position: absolute;
+  bottom: 28%;
+  text-align: center;
+  opacity: 0;
+  animation: dkTitleSlam 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) 3s forwards;
+}
+.dragon-title .onyx {
+  font-size: clamp(40px, 12vw, 80px);
+  font-weight: 900;
+  letter-spacing: 0.3em;
+  background: linear-gradient(135deg, #EAB308 0%, #FF4500 50%, #EAB308 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(0 0 25px rgba(234, 179, 8, 0.6));
+  animation: dkTitleShimmer 2s linear 3.5s infinite;
+}
+.dragon-title .title-line {
+  width: clamp(60px, 25vw, 140px);
+  height: 1px;
+  margin: 4px auto;
+  background: linear-gradient(90deg, transparent, #a78bfa 30%, #fbbf24 50%, #a78bfa 70%, transparent);
+  animation: dkLineGrow 0.4s ease-out 3.2s both;
+}
+.dragon-title .translate-sub {
+  font-size: clamp(12px, 3vw, 20px);
+  letter-spacing: 0.6em;
+  color: #a78bfa;
+  font-weight: 600;
+  text-shadow: 0 0 12px rgba(167, 139, 250, 0.5);
+  animation: dkSubFade 0.5s ease-out 3.4s both;
+}
+
+/* Glitch effect on title */
+.dragon-title.glitch .onyx {
+  animation: dkTitleShimmer 2s linear 3.5s infinite, dkGlitch 0.15s steps(2) 4s;
+}
+
+/* ─── Keyframes ─── */
+@keyframes dkFadeOut { to { opacity: 0; pointer-events: none; } }
+@keyframes dkTerminalIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dkTerminalOut { to { opacity: 0; } }
+@keyframes dkLineAppear { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes dkBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+@keyframes dkDragonReveal { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: scale(1); } }
+@keyframes dkEyePulse {
+  0%, 100% { box-shadow: 0 0 10px #FF0000, 0 0 20px #FF0000; }
+  50% { box-shadow: 0 0 15px #FF0000, 0 0 30px #FF0000, 0 0 50px rgba(255, 0, 0, 0.6); }
+}
+@keyframes dkWingLeft { from { transform: rotate(-2deg); } to { transform: rotate(2deg); } }
+@keyframes dkWingRight { from { transform: rotate(2deg); } to { transform: rotate(-2deg); } }
+@keyframes dkTitleSlam { from { opacity: 0; transform: translateY(-60px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes dkTitleShimmer { 0% { background-position: 200% center; } 100% { background-position: -200% center; } }
+@keyframes dkLineGrow { from { width: 0; opacity: 0; } to { width: clamp(60px, 25vw, 140px); opacity: 1; } }
+@keyframes dkSubFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes dkGlitch {
+  0% { filter: none; }
+  25% { filter: drop-shadow(3px 0 #FF0000) drop-shadow(-3px 0 #00FFFF); }
+  50% { filter: drop-shadow(-2px 0 #FF0000) drop-shadow(2px 0 #00FFFF); }
+  75% { filter: drop-shadow(1px 0 #FF0000) drop-shadow(-1px 0 #00FFFF); }
+  100% { filter: none; }
+}
+
+/* ─── Reduced motion ─── */
+@media (prefers-reduced-motion: reduce) {
+  .dragon-intro {
+    animation: dkFadeOut 0.1s 0.1s forwards !important;
+  }
+  .dragon-terminal,
+  .dragon-silhouette,
+  .dragon-title,
+  .dragon-title .onyx,
+  .dragon-title .translate-sub,
+  .dragon-title .title-line,
+  .dragon-eye {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+}

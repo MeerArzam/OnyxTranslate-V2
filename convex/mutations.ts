@@ -128,6 +128,9 @@ export const upsertTranslation = mutation({
     projectId: v.id("projects"),
     langCode: v.string(),
     totalChunks: v.number(),
+    status: v.optional(v.string()),
+    completedChunks: v.optional(v.number()),
+    mergedText: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -138,9 +141,12 @@ export const upsertTranslation = mutation({
       .first();
     if (existing) return existing._id;
     return await ctx.db.insert("translations", {
-      ...args,
-      status: "pending",
-      completedChunks: 0,
+      projectId: args.projectId,
+      langCode: args.langCode,
+      totalChunks: args.totalChunks,
+      status: args.status || "pending",
+      completedChunks: args.completedChunks ?? 0,
+      mergedText: args.mergedText,
     });
   },
 });

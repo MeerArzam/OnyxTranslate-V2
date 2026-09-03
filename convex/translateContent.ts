@@ -368,6 +368,28 @@ export const translateLanguage = action({
     // Build system prompt ONCE (expensive — don't rebuild per chunk)
     const systemPrompt = buildSystemPrompt(args.langCode, args.marketContext || "standard");
 
+    // ═══════ P0 FIX: Update project status + create translation record ═══════
+    await ctx.runMutation(api.mutations.updateProject, {
+      projectId: args.projectId,
+      status: "translating",
+    });
+
+    const existingTranslation = await ctx.runQuery(api.queries.getTranslationsRaw, {
+      projectId: args.projectId,
+    }).then((ts) => ts.find((t) => t.langCode === args.langCode));
+
+    if (!existingTranslation) {
+      await ctx.runMutation(api.mutations.upsertTranslation, {
+        projectId: args.projectId,
+        langCode: args.langCode,
+        totalChunks,
+        status: "in_progress",
+        completedChunks: 0,
+        mergedText: "",
+      });
+    }
+    // ═══════ END P0 FIX ═══════
+
     let processedCount = 0;
 
     for (let i = 0; i < totalChunks; i++) {

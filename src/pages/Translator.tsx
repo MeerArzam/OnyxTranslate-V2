@@ -40,6 +40,7 @@ import { HistoryPanel } from "@/components/HistoryPanel";
 import { LanguageAccordion } from "@/components/LanguageAccordion";
 import RoyalProgressPanel from "@/components/RoyalProgressPanel";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 // Convex hooks imported below with storage replacement
 import {
   generateSampleText,
@@ -583,7 +584,15 @@ export default function Translator() {
           setTranslationError(null);
           setIsTranslating(false);
           setCurrentPreviewLangCode(null);
-          // Let Convex reactive queries pick up the new project
+          // Auto-select imported languages so Begin button is ready
+          const importedLangs = (result as any).importedLangCodes || [];
+          if (importedLangs.length > 0) {
+            setSelectedLangCodes(importedLangs);
+            setCurrentPreviewLangCode(importedLangs[0]);
+          }
+          toast.success(
+            `Imported ${(convexProject as any)?.fileName || "project"} — ${importedLangs.length} language(s) ready`,
+          );
         }
       } catch (err) {
         setTranslationError(`Import failed: ${err instanceof Error ? err.message : "invalid file"}`);
@@ -1682,7 +1691,7 @@ export default function Translator() {
 
           {/* ─── RIGHT PANEL: Preview + Language Accordion ─── */}
           <div className="space-y-4 min-w-0">
-            {flowPhase !== "idle" && (
+            {(flowPhase !== "idle" || (convexTranslations && convexTranslations.length > 0)) && (
               <div
                 className="rounded-xl overflow-hidden flex flex-col royal-card"
                 style={{

@@ -13,7 +13,7 @@ export const importProject = action({
   handler: async (
     ctx,
     args
-  ): Promise<{ success: boolean; projectId: Id<"projects"> }> => {
+  ): Promise<{ success: boolean; projectId: Id<"projects">; importedLangCodes: string[] }> => {
     let data: {
       type: string;
       version: number;
@@ -71,6 +71,10 @@ export const importProject = action({
       });
     }
 
-    return { success: true, projectId };
+    return {
+      success: true,
+      projectId,
+      importedLangCodes: data.translations?.map((t) => t.langCode) || [],
+    };
   },
 });

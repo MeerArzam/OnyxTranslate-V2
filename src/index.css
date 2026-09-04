@@ -6,7 +6,132 @@
    ONYX TRANSLATE — Dark Neon Theme
 ═══════════════════════════════════════════════════════════════════════ */
 
-/* ─── Kali Dragon Intro ─── */
+:root {
+  --bg: #06060e;
+  --bg-card: #0c0c18;
+  --bg-card-hover: #10102a;
+  --border: rgba(0, 229, 255, 0.08);
+  --border-bright: rgba(0, 229, 255, 0.18);
+  --neon-cyan: #00e5ff;
+  --neon-purple: #a78bfa;
+  --neon-purple-deep: #7c3aed;
+  --neon-gold: #fbbf24;
+  --text-primary: #e8e8f0;
+  --text-muted: #6b7280;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+}
+
+/* ─── App Background Pattern ─── */
+.app-bg-pattern {
+  background: var(--bg);
+  background-image:
+    radial-gradient(ellipse 60% 40% at 50% 0%, rgba(139, 92, 246, 0.06) 0%, transparent 70%),
+    radial-gradient(circle at 20% 80%, rgba(0, 229, 255, 0.03) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(251, 191, 36, 0.02) 0%, transparent 50%);
+}
+
+/* ─── Neon Glow (logo/badge icon backdrop) ─── */
+.neon-glow {
+  box-shadow:
+    0 0 8px rgba(0, 229, 255, 0.25),
+    0 0 20px rgba(139, 92, 246, 0.15);
+}
+
+/* ─── Logo Gradient Text ─── */
+.logo-gradient {
+  background: linear-gradient(135deg, var(--neon-cyan), var(--neon-purple));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─── Royal Card ─── */
+.royal-card {
+  background: linear-gradient(145deg, rgba(12, 12, 24, 0.95), rgba(8, 8, 16, 0.98));
+  border: 1px solid var(--border);
+  box-shadow:
+    0 0 1px rgba(139, 92, 246, 0.1),
+    0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.royal-card:hover {
+  border-color: var(--border-bright);
+  box-shadow:
+    0 0 2px rgba(139, 92, 246, 0.15),
+    0 6px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* ─── Button Royal Hover ─── */
+.btn-royal-hover {
+  background: linear-gradient(135deg, var(--neon-purple-deep), #6d28d9);
+  color: #fff;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  transition: all 0.2s ease;
+}
+
+.btn-royal-hover:hover {
+  background: linear-gradient(135deg, #7c3aed, #8b5cf6);
+  border-color: rgba(139, 92, 246, 0.5);
+  box-shadow: 0 0 16px rgba(139, 92, 246, 0.3);
+}
+
+/* ─── Royal Shimmer (progress bar) ─── */
+@keyframes royal-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.royal-shimmer {
+  background: linear-gradient(90deg,
+    rgba(139, 92, 246, 0.1) 0%,
+    rgba(139, 92, 246, 0.4) 50%,
+    rgba(139, 92, 246, 0.1) 100%);
+  background-size: 200% 100%;
+  animation: royal-shimmer 2s linear infinite;
+}
+
+/* ─── Animate Royal Glow (status badge pulse) ─── */
+@keyframes royal-glow-pulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(251, 191, 36, 0.2); }
+  50% { box-shadow: 0 0 12px rgba(251, 191, 36, 0.5); }
+}
+
+.animate-royal-glow {
+  animation: royal-glow-pulse 2s ease-in-out infinite;
+}
+
+/* ─── Animate Royal Pulse (active language row) ─── */
+@keyframes royal-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.animate-royal-pulse {
+  animation: royal-pulse 1.5s ease-in-out infinite;
+}
+
+/* ─── Scrollbar Styling ─── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(12, 12, 24, 0.5);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.3);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.5);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Kali Dragon Intro (uses actual logo.svg)
+═══════════════════════════════════════════════════════════════════════ */
 
 /* ─── Overlay ─── */
 .kali-overlay {
@@ -19,7 +144,7 @@
   justify-content: center;
   flex-direction: column;
   overflow: hidden;
-  animation: kaliFadeOut 0.5s ease 3s forwards;
+  animation: kaliFadeOut 0.6s ease 3s forwards;
 }
 
 /* ─── Phase 1: Dark Reveal (0–1s) ─── */
@@ -28,7 +153,7 @@
   width: 300px;
   height: 300px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(139,92,246,0.12) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(139,92,246,0.15) 0%, transparent 70%);
   opacity: 0;
   animation: kaliGlowPulse 1.2s ease-in-out 0.2s forwards;
 }
@@ -45,16 +170,20 @@
   box-shadow: 0 0 4px rgba(212, 160, 23, 0.6);
 }
 
-/* ─── Phase 2: Dragon Appears (0.8–2s) ─── */
-.kali-dragon-wrap {
+/* ─── Phase 2: Logo Appears (0.5–2s) ─── */
+.kali-logo-wrap {
   position: absolute;
-  width: clamp(200px, 45vw, 320px);
+  width: clamp(160px, 35vw, 280px);
   opacity: 0;
-  animation: kaliDragonFadeIn 1.2s ease-out 0.8s forwards;
+  animation: kaliLogoFadeIn 1s ease-out 0.5s forwards;
+  filter: drop-shadow(0 0 20px rgba(139, 92, 246, 0.4))
+          drop-shadow(0 0 40px rgba(0, 229, 255, 0.15));
 }
-.kali-dragon-svg {
+
+.kali-logo-wrap img {
   width: 100%;
   height: auto;
+  display: block;
 }
 
 /* ─── Phase 3: Flash Sweep (1.5–2.5s) ─── */
@@ -115,8 +244,8 @@
   90% { opacity: 0.3; }
   100% { opacity: 0; transform: translateY(-60vh); }
 }
-@keyframes kaliDragonFadeIn {
-  from { opacity: 0; transform: scale(0.95); }
+@keyframes kaliLogoFadeIn {
+  from { opacity: 0; transform: scale(0.9); }
   to { opacity: 1; transform: scale(1); }
 }
 @keyframes kaliFlashSweep {
@@ -139,7 +268,7 @@
   .kali-overlay {
     animation: kaliFadeOut 0.1s 0.1s forwards !important;
   }
-  .kali-glow, .kali-dragon-wrap, .kali-title-block, .kali-flash,
+  .kali-glow, .kali-logo-wrap, .kali-title-block, .kali-flash,
   .kali-ember, .kali-title, .kali-subtitle {
     animation: none !important;
     opacity: 1 !important;

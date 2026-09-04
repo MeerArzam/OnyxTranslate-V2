@@ -27,13 +27,12 @@ function App() {
     setShowIntro(true);
   }, []);
 
-  // Sequential rendering: intro blocks the app until it completes
-  if (showIntro) {
-    return <DragonIntro onComplete={handleIntroComplete} />;
-  }
-
   return (
     <>
+      {/* Intro overlay — plays on top of the app, does not block rendering */}
+      {showIntro && <DragonIntro onComplete={handleIntroComplete} />}
+
+      {/* The app renders underneath the intro overlay */}
       <Translator />
 
       {/* Debug button: visible only with ?debug=1 */}

@@ -1,0 +1,2767 @@
+{
+  "project": {
+    "name": "OnyxTranslate",
+    "framework": "React 19 + Vite 7 + TypeScript + Tailwind CSS 4",
+    "backend": "Convex (serverless)",
+    "aiProvider": "Google Gemini 3.6 Flash (5-key rotation via env vars)",
+    "totalFiles": 98,
+    "totalLines": 18310,
+    "convexFiles": 12,
+    "srcFiles": 27,
+    "uiComponents": 54
+  },
+  "files": [
+    {
+      "path": "main.ts",
+      "lineCount": 23,
+      "purpose": "",
+      "imports": [
+        "import { Hono } from \"hono\";",
+        "import { serveStatic } from \"hono/deno\";"
+      ],
+      "importedBy": [
+        "convex/generatePdf.ts",
+        "convex/translateContent.ts",
+        "convex/translateQueue.ts",
+        "src/components/ui/sidebar.tsx",
+        "src/lib/translator/baseline.ts",
+        "src/lib/translator/engine.ts",
+        "src/lib/translator/neural.ts",
+        "src/lib/translator/pdf-render.ts",
+        "src/lib/translator/pdf-worker.ts",
+        "src/lib/translator/pdfGenerator.ts",
+        "src/lib/translator/qa.ts",
+        "src/lib/translator/voices.ts",
+        "src/pages/Translator.tsx"
+      ],
+      "exports": [],
+      "category": "config"
+    },
+    {
+      "path": "sst-env.d.ts",
+      "lineCount": 9,
+      "purpose": "",
+      "imports": [
+        "import \"sst\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "config"
+    },
+    {
+      "path": "vite.config.ts",
+      "lineCount": 64,
+      "purpose": "",
+      "imports": [
+        "import { vlyPlugin } from \"@vly-ai/integrations\";",
+        "import tailwindcss from \"@tailwindcss/vite\";",
+        "import react from \"@vitejs/plugin-react\";",
+        "import path from \"path\";",
+        "import { defineConfig } from \"vite\";"
+      ],
+      "importedBy": [],
+      "exports": [
+        {
+          "name": "defineConfig",
+          "line": 8
+        }
+      ],
+      "category": "config"
+    },
+    {
+      "path": "vly-toolbar-readonly.tsx",
+      "lineCount": 463,
+      "purpose": "",
+      "imports": [
+        "import React, { useState, useRef, useCallback } from \"react\";",
+        "import { motion, AnimatePresence } from \"framer-motion\";",
+        "import { MousePointer, ExternalLink, AlertTriangle } from \"lucide-react\";",
+        "import { snapdom } from \"@zumer/snapdom\";"
+      ],
+      "importedBy": [],
+      "exports": [
+        {
+          "name": "FiberNode",
+          "line": 10
+        },
+        {
+          "name": "ComponentInfo",
+          "line": 26
+        },
+        {
+          "name": "getReactComponentHierarchy",
+          "line": 31
+        },
+        {
+          "name": "formatReactComponentHierarchy",
+          "line": 103
+        },
+        {
+          "name": "getSelectedElementAnnotation",
+          "line": 120
+        },
+        {
+          "name": "getSelectedElementsPrompt",
+          "line": 130
+        },
+        {
+          "name": "VlyToolbar",
+          "line": 265
+        },
+        {
+          "name": "VlyToolbar;",
+          "line": 462
+        }
+      ],
+      "category": "config"
+    },
+    {
+      "path": "convex/generatePdf.ts",
+      "lineCount": 379,
+      "purpose": "",
+      "imports": [
+        "import { v } from \"convex/values\";",
+        "import { action } from \"./_generated/server\";",
+        "import { api } from \"./_generated/api\";"
+      ],
+      "importedBy": [
+        "convex/translateQueue.ts"
+      ],
+      "exports": [
+        {
+          "name": "generateTranslatedPdf",
+          "line": 106
+        }
+      ],
+      "category": "convex-backend"
+    },
+    {
+      "path": "convex/history.ts",
+      "lineCount": 45,
+      "purpose": "",
+      "imports": [
+        "import { v } from \"convex/values\";",
+        "import { mutation, query } from \"./_generated/server\";"
+      ],
+      "importedBy": [
+        "convex/queries.ts",
+        "convex/schema.ts",
+        "src/components/HistoryPanel.tsx",
+        "src/lib/translator/engine.ts",
+        "src/pages/Translator.tsx"
+      ],
+      "exports": [
+        {
+          "name": "saveToHistory",
+          "line": 4
+        },
+        {
+          "name": "deleteHistory",
+          "line": 37
+        }
+      ],
+      "category": "convex-backend"
+    },
+    {
+      "path": "convex/importProject.ts",
+      "lineCount": 82,
+      "purpose": "",
+      "imports": [
+        "import { v } from \"convex/values\";",
+        "import { action } from \"./_generated/server\";",
+        "import { api } from \"./_generated/api\";",
+        "import type { Id } from \"./_generated/dataModel\";"
+      ],
+      "importedBy": [
+        "src/pages/Translator.tsx"
+      ],
+      "exports": [
+        {
+          "name": "importProject",
+          "line": 8
+        }
+      ],
+      "category": "convex-backend"
+    },
+    {
+      "path": "convex/mutations.ts",
+      "lineCount": 233,
+      "purpose": "",
+      "imports": [
+        "import { v } from \"convex/values\";",
+        "import { mutation } from \"./_generated/server\";"
+      ],
+      "importedBy": [
+        "convex/generatePdf.ts",
+        "convex/importProject.ts",
+        "convex/translateContent.ts",
+        "convex/translateImage.ts",
+        "convex/translateQueue.ts",
+        "convex/zipAssembly.ts",
+        "src/pages/Translator.tsx"
+      ],
+      "exports": [
+        {
+          "name": "createProject",
+          "line": 4
+        },
+        {
+          "name": "updateProject",
+          "line": 24
+        },
+        {
+          "name": "deleteProject",
+          "line": 48
+        },
+        {
+          "name": "upsertChunk",
+          "line": 83
+        },
+        {
+          "name": "updateChunk",
+          "line": 108
+        },
+        {
+          "name": "upsertTranslation",
+          "line": 126
+        },
+        {
+          "name": "updateTranslation",
+          "line": 154
+        },
+        {
+          "name": "deleteChunksForLang",
+          "line": 177
+        },
+        {
+          "name": "createJob",
+          "line": 197
+        },
+        {
+          "name": "saveImageTranslation",
+          "line": 214
+        }
+      ],
+      "category": "convex-backend"
+    },
+    {
+      "path": "convex/parsePdf.ts",
+      "lineCount": 186,
+      "purpose": "",
+      "imports": [
+        "import { v } from \"convex/values\";",
+        "import { action } from \"./_generated/server\";"
+      ],
+      "importedBy": [
+        "src/pages/Translator.tsx"
+      ],
+      "exports": [
+        {
+          "name": "ServerParsedTextItem",
+          "line": 23
+        },
+        {
+          "name": "ServerParsedLine",
+          "line": 32
+        },
+        {
+          "name": "ServerParsedPage",
+          "line": 37
+        },
+        {
+          "name": "parseUploadedPdf",
+          "line": 46
+        }
+      ],
+      "category": "convex-backend"
+    },
+    {
+      "path": "convex/queries.ts",
+      "lineCount": 158,
+      "purpose": "",
+      "imports": [
+        "import { v } from \"convex/values\";",
+        "import { query } from \"./_generated/server\";"
+      ],
+      "importedBy": [
+        "convex/generatePdf.ts",
+        "convex/translateContent.ts",
+        "convex/translateQueue.ts",
+        "convex/zipAssembly.ts",
+        "src/components/HistoryPanel.tsx",
+        "src/pages/Translator.tsx"
+      ],
+      "exports": [
+        {
+          "name": "getProject",
+          "line": 6
+        },
+        {
+          "name": "getLatestProject",
+          "line": 15
+        },
+        {
+          "name": "getProjectTranslations",
+          "line": 27
+        },
+        {
+          "name": "getProjectRaw",
+          "line": 41
+        },
+        {
+          "name": "getTranslationsRaw",
+          "line": 48
+        },
+        {
+          "name": "getChunkProgress",
+          "line": 60
+        },
+        {
+          "name": "getChunksForLang",
+          "line": 74
+        },
+        {
+          "name": "getAllJobs",
+          "line": 86
+        },
+        {
+          "name": "getHistory",
+          "line": 98
+        },
+        {
+          "name": "getTranslationProgress",
+          "line": 110
+        },
+        {
+          "name": "getAllProjectsForWatchdog",
+          "line": 133
+        },
+        {
+          "name": "getLivePreviewText",
+          "line": 142
+        }
+      ],
+      "category": "convex-backend"
+    },
+    {
+      "path": "convex/schema.ts",
+      "lineCount": 84,
+      "purpose": "",
+      "imports": [
+        "import { defineSchema, defineTable } from \"convex/server\";",
+        "import { v } from \"convex/values\";"
+      ],
+      "importedBy": [],
+      "exports": [
+        {
+          "name": "defineSchema",
+          "line": 4
+        }
+      ],
+      "category": "convex-backend"
+    },
+    {
+      "path": "convex/translateContent.ts",
+      "lineCount": 547,
+      "purpose": "",
+      "imports": [
+        "import { action } from \"./_generated/server\";",
+        "import { v } from \"convex/values\";",
+        "import { api } from \"./_generated/api\";",
+        "import type { Id } from \"./_generated/dataModel\";",
+        "import glossaryData from \"../src/data/glossary.json\";",
+        "import { getLocalizationConfig } from \"../src/data/localization\";",
+        "import { characterVoices } from \"../src/lib/translator/voices\";",
+        "import { applyCulturalFilters } from \"../src/lib/translator/cultural\";",
+        "import { formatDragonTelepathy, isRTL as isRTLLang } from \"../src/lib/translator/formatters\";",
+        "import { runQA } from \"../src/lib/translator/qa\";"
+      ],
+      "importedBy": [
+        "src/pages/Translator.tsx"
+      ],
+      "exports": [
+        {
+          "name": "translateLanguage",
+          "line": 319
+        }
+      ],
+      "category": "convex-backend"
+    },
+    {
+      "path": "convex/translateImage.ts",
+      "lineCount": 156,
+      "purpose": "",
+      "imports": [
+        "import { action } from \"./_generated/server\";",
+        "import { v } from \"convex/values\";",
+        "import { api } from \"./_generated/api\";"
+      ],
+      "importedBy": [
+        "src/pages/Translator.tsx"
+      ],
+      "exports": [
+        {
+          "name": "translateImage",
+          "line": 33
+        }
+      ],
+      "category": "convex-backend"
+    },
+    {
+      "path": "convex/translateQueue.ts",
+      "lineCount": 744,
+      "purpose": "",
+      "imports": [
+        "import { action } from \"./_generated/server\";",
+        "import { v } from \"convex/values\";",
+        "import { api } from \"./_generated/api\";",
+        "import type { Id } from \"./_generated/dataModel\";",
+        "import glossaryData from \"../src/data/glossary.json\";",
+        "import { getLocalizationConfig } from \"../src/data/localization\";",
+        "import { characterVoices } from \"../src/lib/translator/voices\";",
+        "import { applyCulturalFilters, detectExplicitContent } from \"../src/lib/translator/cultural\";",
+        "import { formatDragonTelepathy, isRTL as isRTLLang, getScriptConfig } from \"../src/lib/translator/formatters\";",
+        "import { runQA, type MemoryLockEntry } from \"../src/lib/translator/qa\";"
+      ],
+      "importedBy": [
+        "convex/generatePdf.ts",
+        "convex/translateContent.ts",
+        "src/pages/Translator.tsx"
+      ],
+      "exports": [
+        {
+          "name": "startTranslation",
+          "line": 547
+        },
+        {
+          "name": "processLanguage",
+          "line": 612
+        },
+        {
+          "name": "cancelTranslation",
+          "line": 732
+        }
+      ],
+      "category": "convex-backend"
+    },
+    {
+      "path": "convex/upload.ts",
+      "lineCount": 22,
+      "purpose": "",
+      "imports": [
+        "import { v } from \"convex/values\";",
+        "import { action } from \"./_generated/server\";"
+      ],
+      "importedBy": [
+        "src/lib/translator/pdfParser.ts",
+        "src/lib/translator/storage.ts",
+        "src/pages/Translator.tsx"
+      ],
+      "exports": [
+        {
+          "name": "storePdf",
+          "line": 10
+        }
+      ],
+      "category": "convex-backend"
+    },
+    {
+      "path": "convex/zipAssembly.ts",
+      "lineCount": 80,
+      "purpose": "",
+      "imports": [
+        "import { action } from \"./_generated/server\";",
+        "import { v } from \"convex/values\";",
+        "import { api } from \"./_generated/api\";",
+        "import JSZip from \"jszip\";"
+      ],
+      "importedBy": [
+        "convex/generatePdf.ts"
+      ],
+      "exports": [
+        {
+          "name": "buildZip",
+          "line": 17
+        }
+      ],
+      "category": "convex-backend"
+    },
+    {
+      "path": "isolate/assets/index-B327C-fp.css",
+      "lineCount": 2,
+      "purpose": "",
+      "imports": [],
+      "importedBy": [],
+      "exports": [],
+      "category": "config"
+    },
+    {
+      "path": "src/index.css",
+      "lineCount": 277,
+      "purpose": "",
+      "imports": [],
+      "importedBy": [
+        "src/main.tsx"
+      ],
+      "exports": [],
+      "category": "src"
+    },
+    {
+      "path": "src/instrumentation.tsx",
+      "lineCount": 302,
+      "purpose": "",
+      "imports": [
+        "import { Dialog } from \"@radix-ui/react-dialog\";",
+        "import { AlertTriangle, ChevronDown, ExternalLink } from \"lucide-react\";",
+        "import React, { useEffect, useState } from \"react\";",
+        "import { Button } from \"@/components/ui/button\";",
+        "import {",
+        "import {"
+      ],
+      "importedBy": [],
+      "exports": [
+        {
+          "name": "InstrumentationProvider",
+          "line": 240
+        }
+      ],
+      "category": "src"
+    },
+    {
+      "path": "src/main.tsx",
+      "lineCount": 72,
+      "purpose": "",
+      "imports": [
+        "import { StrictMode, useState, useCallback, useEffect } from \"react\";",
+        "import { createRoot } from \"react-dom/client\";",
+        "import { ConvexProvider, ConvexReactClient } from \"convex/react\";",
+        "import Translator from \"./pages/Translator.tsx\";",
+        "import DragonIntro from \"./components/DragonIntro.tsx\";",
+        "import \"./index.css\";"
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "src"
+    },
+    {
+      "path": "src/vite-env.d.ts",
+      "lineCount": 2,
+      "purpose": "",
+      "imports": [],
+      "importedBy": [],
+      "exports": [],
+      "category": "src"
+    },
+    {
+      "path": "src/components/DragonIntro.tsx",
+      "lineCount": 71,
+      "purpose": "",
+      "imports": [
+        "import { useState, useEffect } from \"react\";"
+      ],
+      "importedBy": [],
+      "exports": [
+        {
+          "name": "function DragonIntro",
+          "line": 14
+        }
+      ],
+      "category": "src"
+    },
+    {
+      "path": "src/components/HistoryPanel.tsx",
+      "lineCount": 161,
+      "purpose": "",
+      "imports": [
+        "import { useQuery, useMutation } from \"convex/react\";",
+        "import { api } from \"../../convex/_generated/api\";",
+        "import { ScrollArea } from \"@/components/ui/scroll-area\";",
+        "import { X, Clock, Download, Trash2, CheckCircle2, Loader2 } from \"lucide-react\";"
+      ],
+      "importedBy": [],
+      "exports": [
+        {
+          "name": "HistoryPanel",
+          "line": 12
+        }
+      ],
+      "category": "src"
+    },
+    {
+      "path": "src/components/LanguageAccordion.tsx",
+      "lineCount": 193,
+      "purpose": "",
+      "imports": [
+        "import { useState, useCallback } from \"react\";",
+        "import { useQuery } from \"convex/react\";",
+        "import { api } from \"../../convex/_generated/api\";",
+        "import { ScrollArea } from \"@/components/ui/scroll-area\";",
+        "import { ChevronRight, CheckCircle2, Loader2, FileText } from \"lucide-react\";",
+        "import type { Id } from \"../../convex/_generated/dataModel\";"
+      ],
+      "importedBy": [],
+      "exports": [
+        {
+          "name": "LanguageAccordion",
+          "line": 34
+        }
+      ],
+      "category": "src"
+    },
+    {
+      "path": "src/components/RoyalProgressPanel.tsx",
+      "lineCount": 225,
+      "purpose": "",
+      "imports": [
+        "import { CheckCircle2, Loader2, Circle, FileText, Zap } from \"lucide-react\";",
+        "import { cn } from \"@/lib/utils\";"
+      ],
+      "importedBy": [],
+      "exports": [
+        {
+          "name": "function RoyalProgressPanel",
+          "line": 26
+        }
+      ],
+      "category": "src"
+    },
+    {
+      "path": "src/components/ui/accordion.tsx",
+      "lineCount": 65,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as AccordionPrimitive from \"@radix-ui/react-accordion\"",
+        "import { ChevronDownIcon } from \"lucide-react\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/alert-dialog.tsx",
+      "lineCount": 156,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as AlertDialogPrimitive from \"@radix-ui/react-alert-dialog\"",
+        "import { cn } from \"@/lib/utils\"",
+        "import { buttonVariants } from \"@/components/ui/button\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/alert.tsx",
+      "lineCount": 67,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import { cva, type VariantProps } from \"class-variance-authority\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/aspect-ratio.tsx",
+      "lineCount": 12,
+      "purpose": "",
+      "imports": [
+        "import * as AspectRatioPrimitive from \"@radix-ui/react-aspect-ratio\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/avatar.tsx",
+      "lineCount": 52,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as AvatarPrimitive from \"@radix-ui/react-avatar\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/badge.tsx",
+      "lineCount": 47,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import { Slot } from \"@radix-ui/react-slot\"",
+        "import { cva, type VariantProps } from \"class-variance-authority\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/breadcrumb.tsx",
+      "lineCount": 110,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import { Slot } from \"@radix-ui/react-slot\"",
+        "import { ChevronRight, MoreHorizontal } from \"lucide-react\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/button-group.tsx",
+      "lineCount": 84,
+      "purpose": "",
+      "imports": [
+        "import { Slot } from \"@radix-ui/react-slot\"",
+        "import { cva, type VariantProps } from \"class-variance-authority\"",
+        "import { cn } from \"@/lib/utils\"",
+        "import { Separator } from \"@/components/ui/separator\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/button.tsx",
+      "lineCount": 63,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import { Slot } from \"@radix-ui/react-slot\"",
+        "import { cva, type VariantProps } from \"class-variance-authority\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/calendar.tsx",
+      "lineCount": 221,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import {",
+        "import {",
+        "import { cn } from \"@/lib/utils\"",
+        "import { Button, buttonVariants } from \"@/components/ui/button\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/card.tsx",
+      "lineCount": 93,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/carousel.tsx",
+      "lineCount": 240,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import useEmblaCarousel, {",
+        "import { ArrowLeft, ArrowRight } from \"lucide-react\"",
+        "import { cn } from \"@/lib/utils\"",
+        "import { Button } from \"@/components/ui/button\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/chart.tsx",
+      "lineCount": 358,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as RechartsPrimitive from \"recharts\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [
+        {
+          "name": "ChartConfig",
+          "line": 11
+        }
+      ],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/checkbox.tsx",
+      "lineCount": 33,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as CheckboxPrimitive from \"@radix-ui/react-checkbox\"",
+        "import { CheckIcon } from \"lucide-react\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/collapsible.tsx",
+      "lineCount": 32,
+      "purpose": "",
+      "imports": [
+        "import * as CollapsiblePrimitive from \"@radix-ui/react-collapsible\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/command.tsx",
+      "lineCount": 183,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import { Command as CommandPrimitive } from \"cmdk\"",
+        "import { SearchIcon } from \"lucide-react\"",
+        "import { cn } from \"@/lib/utils\"",
+        "import {"
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/context-menu.tsx",
+      "lineCount": 253,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as ContextMenuPrimitive from \"@radix-ui/react-context-menu\"",
+        "import { CheckIcon, ChevronRightIcon, CircleIcon } from \"lucide-react\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/dialog.tsx",
+      "lineCount": 142,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as DialogPrimitive from \"@radix-ui/react-dialog\"",
+        "import { XIcon } from \"lucide-react\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/drawer.tsx",
+      "lineCount": 136,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import { Drawer as DrawerPrimitive } from \"vaul\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/dropdown-menu.tsx",
+      "lineCount": 256,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as DropdownMenuPrimitive from \"@radix-ui/react-dropdown-menu\"",
+        "import { CheckIcon, ChevronRightIcon, CircleIcon } from \"lucide-react\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/empty.tsx",
+      "lineCount": 105,
+      "purpose": "",
+      "imports": [
+        "import { cva, type VariantProps } from \"class-variance-authority\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/field.tsx",
+      "lineCount": 247,
+      "purpose": "",
+      "imports": [
+        "import { useMemo } from \"react\"",
+        "import { cva, type VariantProps } from \"class-variance-authority\"",
+        "import { cn } from \"@/lib/utils\"",
+        "import { Label } from \"@/components/ui/label\"",
+        "import { Separator } from \"@/components/ui/separator\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/form.tsx",
+      "lineCount": 168,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import type * as LabelPrimitive from \"@radix-ui/react-label\"",
+        "import { Slot } from \"@radix-ui/react-slot\"",
+        "import {",
+        "import { cn } from \"@/lib/utils\"",
+        "import { Label } from \"@/components/ui/label\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/hover-card.tsx",
+      "lineCount": 45,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as HoverCardPrimitive from \"@radix-ui/react-hover-card\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/index.ts",
+      "lineCount": 151,
+      "purpose": "",
+      "imports": [],
+      "importedBy": [
+        "main.ts",
+        "vite.config.ts",
+        "vly-toolbar-readonly.tsx",
+        "convex/schema.ts",
+        "convex/translateContent.ts",
+        "convex/translateQueue.ts",
+        "isolate/assets/index-B327C-fp.css",
+        "src/index.css",
+        "src/main.tsx",
+        "src/components/ui/chart.tsx",
+        "src/components/ui/field.tsx",
+        "src/components/ui/input-otp.tsx",
+        "src/components/ui/slider.tsx",
+        "src/lib/translator/engine.ts",
+        "src/lib/translator/qa.ts",
+        "src/lib/translator/storage.ts",
+        "src/pages/Translator.tsx"
+      ],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/input-group.tsx",
+      "lineCount": 171,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import { cva, type VariantProps } from \"class-variance-authority\"",
+        "import { cn } from \"@/lib/utils\"",
+        "import { Button } from \"@/components/ui/button\"",
+        "import { Input } from \"@/components/ui/input\"",
+        "import { Textarea } from \"@/components/ui/textarea\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/input-otp.tsx",
+      "lineCount": 76,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import { OTPInput, OTPInputContext } from \"input-otp\"",
+        "import { MinusIcon } from \"lucide-react\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/input.tsx",
+      "lineCount": 22,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/item.tsx",
+      "lineCount": 194,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import { Slot } from \"@radix-ui/react-slot\"",
+        "import { cva, type VariantProps } from \"class-variance-authority\"",
+        "import { cn } from \"@/lib/utils\"",
+        "import { Separator } from \"@/components/ui/separator\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/kbd.tsx",
+      "lineCount": 29,
+      "purpose": "",
+      "imports": [
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/label.tsx",
+      "lineCount": 25,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as LabelPrimitive from \"@radix-ui/react-label\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/menubar.tsx",
+      "lineCount": 275,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as MenubarPrimitive from \"@radix-ui/react-menubar\"",
+        "import { CheckIcon, ChevronRightIcon, CircleIcon } from \"lucide-react\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/navigation-menu.tsx",
+      "lineCount": 169,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as NavigationMenuPrimitive from \"@radix-ui/react-navigation-menu\"",
+        "import { cva } from \"class-variance-authority\"",
+        "import { ChevronDownIcon } from \"lucide-react\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/pagination.tsx",
+      "lineCount": 128,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import {",
+        "import { cn } from \"@/lib/utils\"",
+        "import { buttonVariants, type Button } from \"@/components/ui/button\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/popover.tsx",
+      "lineCount": 49,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as PopoverPrimitive from \"@radix-ui/react-popover\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/progress.tsx",
+      "lineCount": 30,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as ProgressPrimitive from \"@radix-ui/react-progress\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/radio-group.tsx",
+      "lineCount": 46,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as RadioGroupPrimitive from \"@radix-ui/react-radio-group\"",
+        "import { CircleIcon } from \"lucide-react\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/resizable.tsx",
+      "lineCount": 55,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import { GripVerticalIcon } from \"lucide-react\"",
+        "import * as ResizablePrimitive from \"react-resizable-panels\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/scroll-area.tsx",
+      "lineCount": 59,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as ScrollAreaPrimitive from \"@radix-ui/react-scroll-area\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/select.tsx",
+      "lineCount": 189,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as SelectPrimitive from \"@radix-ui/react-select\"",
+        "import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from \"lucide-react\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/separator.tsx",
+      "lineCount": 29,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as SeparatorPrimitive from \"@radix-ui/react-separator\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/sheet.tsx",
+      "lineCount": 138,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as SheetPrimitive from \"@radix-ui/react-dialog\"",
+        "import { XIcon } from \"lucide-react\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/sidebar.tsx",
+      "lineCount": 727,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import { Slot } from \"@radix-ui/react-slot\"",
+        "import { cva, type VariantProps } from \"class-variance-authority\"",
+        "import { PanelLeftIcon } from \"lucide-react\"",
+        "import { useIsMobile } from \"@/hooks/use-mobile\"",
+        "import { cn } from \"@/lib/utils\"",
+        "import { Button } from \"@/components/ui/button\"",
+        "import { Input } from \"@/components/ui/input\"",
+        "import { Separator } from \"@/components/ui/separator\"",
+        "import {",
+        "import { Skeleton } from \"@/components/ui/skeleton\"",
+        "import {"
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/skeleton.tsx",
+      "lineCount": 14,
+      "purpose": "",
+      "imports": [
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/slider.tsx",
+      "lineCount": 64,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as SliderPrimitive from \"@radix-ui/react-slider\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/sonner.tsx",
+      "lineCount": 39,
+      "purpose": "",
+      "imports": [
+        "import {",
+        "import { useTheme } from \"next-themes\"",
+        "import { Toaster as Sonner, type ToasterProps } from \"sonner\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/spinner.tsx",
+      "lineCount": 17,
+      "purpose": "",
+      "imports": [
+        "import { Loader2Icon } from \"lucide-react\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/switch.tsx",
+      "lineCount": 32,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as SwitchPrimitive from \"@radix-ui/react-switch\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/table.tsx",
+      "lineCount": 115,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/tabs.tsx",
+      "lineCount": 67,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as TabsPrimitive from \"@radix-ui/react-tabs\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/textarea.tsx",
+      "lineCount": 19,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/toggle-group.tsx",
+      "lineCount": 82,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as ToggleGroupPrimitive from \"@radix-ui/react-toggle-group\"",
+        "import { type VariantProps } from \"class-variance-authority\"",
+        "import { cn } from \"@/lib/utils\"",
+        "import { toggleVariants } from \"@/components/ui/toggle\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/toggle.tsx",
+      "lineCount": 46,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as TogglePrimitive from \"@radix-ui/react-toggle\"",
+        "import { cva, type VariantProps } from \"class-variance-authority\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/components/ui/tooltip.tsx",
+      "lineCount": 62,
+      "purpose": "",
+      "imports": [
+        "import * as React from \"react\"",
+        "import * as TooltipPrimitive from \"@radix-ui/react-tooltip\"",
+        "import { cn } from \"@/lib/utils\""
+      ],
+      "importedBy": [],
+      "exports": [],
+      "category": "shadcn-ui-component"
+    },
+    {
+      "path": "src/hooks/use-mobile.ts",
+      "lineCount": 18,
+      "purpose": "",
+      "imports": [
+        "import { useState, useEffect } from \"react\";"
+      ],
+      "importedBy": [
+        "src/components/ui/sidebar.tsx"
+      ],
+      "exports": [
+        {
+          "name": "useIsMobile",
+          "line": 5
+        }
+      ],
+      "category": "src"
+    },
+    {
+      "path": "src/lib/utils.ts",
+      "lineCount": 7,
+      "purpose": "",
+      "imports": [
+        "import { clsx, type ClassValue } from \"clsx\";",
+        "import { twMerge } from \"tailwind-merge\";"
+      ],
+      "importedBy": [
+        "src/components/RoyalProgressPanel.tsx",
+        "src/components/ui/accordion.tsx",
+        "src/components/ui/alert-dialog.tsx",
+        "src/components/ui/alert.tsx",
+        "src/components/ui/avatar.tsx",
+        "src/components/ui/badge.tsx",
+        "src/components/ui/breadcrumb.tsx",
+        "src/components/ui/button-group.tsx",
+        "src/components/ui/button.tsx",
+        "src/components/ui/calendar.tsx",
+        "src/components/ui/card.tsx",
+        "src/components/ui/carousel.tsx",
+        "src/components/ui/chart.tsx",
+        "src/components/ui/checkbox.tsx",
+        "src/components/ui/command.tsx",
+        "src/components/ui/context-menu.tsx",
+        "src/components/ui/dialog.tsx",
+        "src/components/ui/drawer.tsx",
+        "src/components/ui/dropdown-menu.tsx",
+        "src/components/ui/empty.tsx",
+        "src/components/ui/field.tsx",
+        "src/components/ui/form.tsx",
+        "src/components/ui/hover-card.tsx",
+        "src/components/ui/input-group.tsx",
+        "src/components/ui/input-otp.tsx",
+        "src/components/ui/input.tsx",
+        "src/components/ui/item.tsx",
+        "src/components/ui/kbd.tsx",
+        "src/components/ui/label.tsx",
+        "src/components/ui/menubar.tsx",
+        "src/components/ui/navigation-menu.tsx",
+        "src/components/ui/pagination.tsx",
+        "src/components/ui/popover.tsx",
+        "src/components/ui/progress.tsx",
+        "src/components/ui/radio-group.tsx",
+        "src/components/ui/resizable.tsx",
+        "src/components/ui/scroll-area.tsx",
+        "src/components/ui/select.tsx",
+        "src/components/ui/separator.tsx",
+        "src/components/ui/sheet.tsx",
+        "src/components/ui/sidebar.tsx",
+        "src/components/ui/skeleton.tsx",
+        "src/components/ui/slider.tsx",
+        "src/components/ui/spinner.tsx",
+        "src/components/ui/switch.tsx",
+        "src/components/ui/table.tsx",
+        "src/components/ui/tabs.tsx",
+        "src/components/ui/textarea.tsx",
+        "src/components/ui/toggle-group.tsx",
+        "src/components/ui/toggle.tsx",
+        "src/components/ui/tooltip.tsx",
+        "src/pages/Translator.tsx"
+      ],
+      "exports": [
+        {
+          "name": "cn",
+          "line": 4
+        }
+      ],
+      "category": "src"
+    },
+    {
+      "path": "src/lib/translator/arabic-reshaper.d.ts",
+      "lineCount": 10,
+      "purpose": "",
+      "imports": [],
+      "importedBy": [],
+      "exports": [
+        {
+          "name": "reshaper;",
+          "line": 8
+        }
+      ],
+      "category": "src"
+    },
+    {
+      "path": "src/lib/translator/baseline.ts",
+      "lineCount": 179,
+      "purpose": "",
+      "imports": [
+        "import { getLocalizationConfig } from \"../../data/localization\";",
+        "import { runQA, type QAReport } from \"./qa\";"
+      ],
+      "importedBy": [
+        "convex/generatePdf.ts",
+        "isolate/assets/index-B327C-fp.css",
+        "src/lib/translator/pdf-render.ts",
+        "src/pages/Translator.tsx"
+      ],
+      "exports": [
+        {
+          "name": "BASELINE_SOURCE",
+          "line": 16
+        },
+        {
+          "name": "BASELINE_EXPECTATIONS",
+          "line": 25
+        },
+        {
+          "name": "BaselineResult",
+          "line": 61
+        },
+        {
+          "name": "BaselineSummary",
+          "line": 77
+        },
+        {
+          "name": "runBaselineTests",
+          "line": 104
+        }
+      ],
+      "category": "src"
+    },
+    {
+      "path": "src/lib/translator/cultural.ts",
+      "lineCount": 568,
+      "purpose": "",
+      "imports": [],
+      "importedBy": [
+        "convex/translateContent.ts",
+        "convex/translateQueue.ts",
+        "src/lib/translator/engine.ts",
+        "src/lib/translator/qa.ts",
+        "src/lib/translator/voices.ts",
+        "src/pages/Translator.tsx",
+        "src/data/localization/index.ts"
+      ],
+      "exports": [
+        {
+          "name": "CulturalRule",
+          "line": 1
+        },
+        {
+          "name": "MarketContext",
+          "line": 10
+        },
+        {
+          "name": "marketContexts",
+          "line": 17
+        },
+        {
+          "name": "culturalRules",
+          "line": 364
+        },
+        {
+          "name": "applyCulturalFilters",
+          "line": 525
+        },
+        {
+          "name": "detectExplicitContent",
+          "line": 544
+        },
+        {
+          "name": "getEuphemism",
+          "line": 559
+        }
+      ],
+      "category": "src"
+    },
+    {
+      "path": "src/lib/translator/engine.ts",
+      "lineCount": 1000,
+      "purpose": "",
+      "imports": [
+        "import glossaryData from \"../../data/glossary.json\";",
+        "import { getCharacterVoice, detectCharacterInText } from \"./voices\";",
+        "import {",
+        "import {",
+        "import {",
+        "import { runQA, type QAReport } from \"./qa\";",
+        "import {"
+      ],
+      "importedBy": [
+        "convex/translateContent.ts",
+        "convex/translateImage.ts",
+        "convex/translateQueue.ts",
+        "src/lib/translator/baseline.ts",
+        "src/lib/translator/pdf-render.ts",
+        "src/lib/translator/pdfGenerator.ts",
+        "src/lib/translator/qa.ts",
+        "src/pages/Translator.tsx",
+        "src/data/localization/index.ts"
+      ],
+      "exports": [
+        {
+          "name": "VlyUsage",
+          "line": 22
+        },
+        {
+          "name": "hasNeuralModel",
+          "line": 34
+        },
+        {
+          "name": "TranslationPhase",
+          "line": 38
+        },
+        {
+          "name": "TranslationConfig",
+          "line": 47
+        },
+        {
+          "name": "TranslationMode",
+          "line": 56
+        },
+        {
+          "name": "TranslationResult",
+          "line": 58
+        },
+        {
+          "name": "TranslationReport",
+          "line": 74
+        },
+        {
+          "name": "CSVExportData",
+          "line": 85
+        },
+        {
+          "name": "VoiceDirectorNote",
+          "line": 91
+        },
+        {
+          "name": "TranslationProgressCallback",
+          "line": 98
+        },
+        {
+          "name": "NeuralPipelineProgressCallback",
+          "line": 290
+        },
+        {
+          "name": "AiTranslateFn",
+          "line": 560
+        },
+        {
+          "name": "generateSampleText",
+          "line": 961
+        }
+      ],
+      "category": "src"
+    },
+    {
+      "path": "src/lib/translator/formatters.ts",
+      "lineCount": 349,
+      "purpose": "",
+      "imports": [],
+      "importedBy": [
+        "convex/translateContent.ts",
+        "convex/translateQueue.ts",
+        "src/components/ui/calendar.tsx",
+        "src/lib/translator/engine.ts"
+      ],
+      "exports": [
+        {
+          "name": "ScriptConfig",
+          "line": 1
+        },
+        {
+          "name": "scriptConfigs",
+          "line": 14
+        },
+        {
+          "name": "getScriptConfig",
+          "line": 257
+        },
+        {
+          "name": "isRTL",
+          "line": 274
+        },
+        {
+          "name": "formatDragonTelepathy",
+          "line": 278
+        },
+        {
+          "name": "formatQuote",
+          "line": 289
+        },
+        {
+          "name": "formatEllipse",
+          "line": 294
+        },
+        {
+          "name": "formatDash",
+          "line": 299
+        },
+        {
+          "name": "processRTLText",
+          "line": 304
+        },
+        {
+          "name": "preserveLineBreaks",
+          "line": 331
+        }
+      ],
+      "category": "src"
+    },
+    {
+      "path": "src/lib/translator/neural.ts",
+      "lineCount": 282,
+      "purpose": "",
+      "imports": [
+        "import { VENDOR_URLS, loadVendorModule } from \"./vendor\";"
+      ],
+      "importedBy": [
+        "src/lib/translator/engine.ts"
+      ],
+      "exports": [
+        {
+          "name": "ModelEntry",
+          "line": 45
+        },
+        {
+          "name": "hasNeuralModel",
+          "line": 76
+        },
+        {
+          "name": "NeuralProgressCallback",
+          "line": 86
+        },
+        {
+          "name": "getModelState",
+          "line": 253
+        }
+      ],
+      "category": "src"
+    },
+    {
+      "path": "src/lib/translator/pdf-render.ts",
+      "lineCount": 382,
+      "purpose": "",
+      "imports": [
+        "import \"regenerator-runtime/runtime.js\";",
+        "import reshaper from \"arabic-reshaper\";",
+        "import type { PDFFont } from \"pdf-lib\";"
+      ],
+      "importedBy": [
+        "src/lib/translator/pdf-worker.ts",
+        "src/lib/translator/pdfGenerator.ts"
+      ],
+      "exports": [
+        {
+          "name": "RenderTextItem",
+          "line": 27
+        },
+        {
+          "name": "RenderPageInput",
+          "line": 34
+        },
+        {
+          "name": "RenderProgress",
+          "line": 43
+        }
+      ],
+      "category": "src"
+    },
+    {
+      "path": "src/lib/translator/pdf-worker.ts",
+      "lineCount": 55,
+      "purpose": "",
+      "imports": [
+        "import {"
+      ],
+      "importedBy": [
+        "src/lib/translator/pdf-render.ts",
+        "src/lib/translator/pdfGenerator.ts"
+      ],
+      "exports": [],
+      "category": "src"
+    },
+    {
+      "path": "src/lib/translator/pdfGenerator.ts",
+      "lineCount": 238,
+      "purpose": "",
+      "imports": [
+        "import type { PDFPageData } from \"./pdfParser\";",
+        "import {"
+      ],
+      "importedBy": [
+        "src/lib/translator/pdf-render.ts",
+        "src/lib/translator/pdf-worker.ts",
+        "src/pages/Translator.tsx"
+      ],
+      "exports": [
+        {
+          "name": "PDFGenerationProgress",
+          "line": 17
+        },
+        {
+          "name": "extractPageTexts",
+          "line": 235
+        }
+      ],
+      "category": "src"
+    },
+    {
+      "path": "src/lib/translator/pdfParser.ts",
+      "lineCount": 411,
+      "purpose": "",
+      "imports": [
+        "import { VENDOR_URLS, loadVendorModule } from \"./vendor\";"
+      ],
+      "importedBy": [
+        "src/lib/translator/pdfGenerator.ts",
+        "src/lib/translator/storage.ts",
+        "src/pages/Translator.tsx"
+      ],
+      "exports": [
+        {
+          "name": "PDFTextItem",
+          "line": 19
+        },
+        {
+          "name": "PDFPageData",
+          "line": 28
+        },
+        {
+          "name": "PDFParseResult",
+          "line": 36
+        },
+        {
+          "name": "PDFParseError",
+          "line": 50
+        },
+        {
+          "name": "PDFDocumentProxyLike",
+          "line": 66
+        },
+        {
+          "name": "PDFPageLike",
+          "line": 72
+        },
+        {
+          "name": "PDFJSModule",
+          "line": 78
+        },
+        {
+          "name": "PARSE_BATCH_SIZE",
+          "line": 184
+        },
+        {
+          "name": "PDFHeader",
+          "line": 186
+        },
+        {
+          "name": "splitTextIntoChunks",
+          "line": 354
+        },
+        {
+          "name": "validateTextForTranslation",
+          "line": 382
+        }
+      ],
+      "category": "src"
+    },
+    {
+      "path": "src/lib/translator/qa.ts",
+      "lineCount": 711,
+      "purpose": "",
+      "imports": [
+        "import glossaryData from \"../../data/glossary.json\";",
+        "import { getLocalizationConfig, isScriptLanguage } from \"../../data/localization\";",
+        "import {"
+      ],
+      "importedBy": [
+        "convex/translateContent.ts",
+        "convex/translateQueue.ts",
+        "src/lib/translator/baseline.ts",
+        "src/lib/translator/engine.ts",
+        "src/lib/translator/storage.ts",
+        "src/pages/Translator.tsx",
+        "src/data/localization/index.ts"
+      ],
+      "exports": [
+        {
+          "name": "PhaseStatus",
+          "line": 20
+        },
+        {
+          "name": "PhaseCheck",
+          "line": 22
+        },
+        {
+          "name": "QAReport",
+          "line": 32
+        },
+        {
+          "name": "MemoryLockEntry",
+          "line": 553
+        },
+        {
+          "name": "runQA",
+          "line": 651
+        }
+      ],
+      "category": "src"
+    },
+    {
+      "path": "src/lib/translator/storage.ts",
+      "lineCount": 657,
+      "purpose": "",
+      "imports": [
+        "import type { PDFPageData } from \"./pdfParser\";",
+        "import type { QAReport } from \"./qa\";"
+      ],
+      "importedBy": [
+        "convex/generatePdf.ts",
+        "convex/parsePdf.ts",
+        "convex/upload.ts",
+        "convex/zipAssembly.ts",
+        "src/lib/translator/engine.ts",
+        "src/pages/Translator.tsx"
+      ],
+      "exports": [
+        {
+          "name": "ProjectData",
+          "line": 22
+        },
+        {
+          "name": "TranslationChunk",
+          "line": 43
+        },
+        {
+          "name": "LanguageProgress",
+          "line": 57
+        },
+        {
+          "name": "TranslationRecord",
+          "line": 73
+        },
+        {
+          "name": "TerminologyEntry",
+          "line": 239
+        },
+        {
+          "name": "mergeChunkTexts",
+          "line": 496
+        },
+        {
+          "name": "chunkPageTexts",
+          "line": 508
+        },
+        {
+          "name": "serializeProgress",
+          "line": 643
+        },
+        {
+          "name": "deserializeProgress",
+          "line": 650
+        }
+      ],
+      "category": "src"
+    },
+    {
+      "path": "src/lib/translator/vendor.ts",
+      "lineCount": 53,
+      "purpose": "",
+      "imports": [],
+      "importedBy": [
+        "main.ts",
+        "vite.config.ts",
+        "src/lib/translator/neural.ts",
+        "src/lib/translator/pdfParser.ts"
+      ],
+      "exports": [
+        {
+          "name": "VENDOR_URLS",
+          "line": 13
+        }
+      ],
+      "category": "src"
+    },
+    {
+      "path": "src/lib/translator/voices.ts",
+      "lineCount": 590,
+      "purpose": "",
+      "imports": [],
+      "importedBy": [
+        "convex/translateContent.ts",
+        "convex/translateQueue.ts",
+        "src/lib/translator/cultural.ts",
+        "src/lib/translator/engine.ts"
+      ],
+      "exports": [
+        {
+          "name": "CharacterVoice",
+          "line": 1
+        },
+        {
+          "name": "VoiceOverride",
+          "line": 15
+        },
+        {
+          "name": "characterVoices",
+          "line": 23
+        },
+        {
+          "name": "languageSpecificVoices",
+          "line": 128
+        },
+        {
+          "name": "getCharacterVoice",
+          "line": 568
+        },
+        {
+          "name": "detectCharacterInText",
+          "line": 586
+        }
+      ],
+      "category": "src"
+    },
+    {
+      "path": "src/pages/Translator.tsx",
+      "lineCount": 1810,
+      "purpose": "",
+      "imports": [
+        "import { useState, useCallback, useRef, useEffect, useMemo } from \"react\";",
+        "import { Button } from \"@/components/ui/button\";",
+        "import { Textarea } from \"@/components/ui/textarea\";",
+        "import { Badge } from \"@/components/ui/badge\";",
+        "import { ScrollArea } from \"@/components/ui/scroll-area\";",
+        "import {",
+        "import {",
+        "import { HistoryPanel } from \"@/components/HistoryPanel\";",
+        "import { LanguageAccordion } from \"@/components/LanguageAccordion\";",
+        "import RoyalProgressPanel from \"@/components/RoyalProgressPanel\";",
+        "import { cn } from \"@/lib/utils\";",
+        "import { toast } from \"sonner\";",
+        "import {",
+        "import type { QAReport } from \"@/lib/translator/qa\";",
+        "import {",
+        "import {",
+        "import {",
+        "import {",
+        "import { useQuery, useMutation, useAction } from \"convex/react\";",
+        "import type { Id } from \"../../convex/_generated/dataModel\";",
+        "import { api } from \"../../convex/_generated/api\";"
+      ],
+      "importedBy": [],
+      "exports": [
+        {
+          "name": "function Translator",
+          "line": 110
+        }
+      ],
+      "category": "src"
+    },
+    {
+      "path": "src/types/global.d.ts",
+      "lineCount": 11,
+      "purpose": "",
+      "imports": [],
+      "importedBy": [],
+      "exports": [],
+      "category": "src"
+    },
+    {
+      "path": "src/data/localization/index.ts",
+      "lineCount": 112,
+      "purpose": "",
+      "imports": [
+        "import ur from \"./ur.json\";",
+        "import ar from \"./ar.json\";",
+        "import fr from \"./fr.json\";",
+        "import ja from \"./ja.json\";",
+        "import es from \"./es.json\";",
+        "import hi from \"./hi.json\";",
+        "import tr from \"./tr.json\";",
+        "import zh from \"./zh.json\";",
+        "import ru from \"./ru.json\";",
+        "import ko from \"./ko.json\";",
+        "import de from \"./de.json\";",
+        "import ks from \"./ks.json\";",
+        "import ro from \"./ro.json\";",
+        "import sw from \"./sw.json\";",
+        "import it from \"./it.json\";",
+        "import la from \"./la.json\";",
+        "import id from \"./id.json\";",
+        "import ne from \"./ne.json\";",
+        "import bn from \"./bn.json\";",
+        "import pt from \"./pt.json\";"
+      ],
+      "importedBy": [
+        "main.ts",
+        "vite.config.ts",
+        "vly-toolbar-readonly.tsx",
+        "convex/schema.ts",
+        "convex/translateContent.ts",
+        "convex/translateQueue.ts",
+        "isolate/assets/index-B327C-fp.css",
+        "src/index.css",
+        "src/main.tsx",
+        "src/components/ui/chart.tsx",
+        "src/components/ui/field.tsx",
+        "src/components/ui/input-otp.tsx",
+        "src/components/ui/slider.tsx",
+        "src/lib/translator/engine.ts",
+        "src/lib/translator/qa.ts",
+        "src/lib/translator/storage.ts",
+        "src/pages/Translator.tsx"
+      ],
+      "exports": [
+        {
+          "name": "LocalizationConfig",
+          "line": 30
+        },
+        {
+          "name": "LOCALIZATION_LANGUAGES",
+          "line": 93
+        },
+        {
+          "name": "getLocalizationConfig",
+          "line": 95
+        },
+        {
+          "name": "isScriptLanguage",
+          "line": 103
+        },
+        {
+          "name": "getBlurb",
+          "line": 109
+        }
+      ],
+      "category": "data"
+    }
+  ],
+  "keyFiles": {
+    "convex/schema.ts": {
+      "lineCount": 84,
+      "exports": [
+        {
+          "name": "defineSchema",
+          "line": 4
+        }
+      ]
+    },
+    "convex/mutations.ts": {
+      "lineCount": 233,
+      "exports": [
+        {
+          "name": "createProject",
+          "line": 4
+        },
+        {
+          "name": "updateProject",
+          "line": 24
+        },
+        {
+          "name": "deleteProject",
+          "line": 48
+        },
+        {
+          "name": "upsertChunk",
+          "line": 83
+        },
+        {
+          "name": "updateChunk",
+          "line": 108
+        },
+        {
+          "name": "upsertTranslation",
+          "line": 126
+        },
+        {
+          "name": "updateTranslation",
+          "line": 154
+        },
+        {
+          "name": "deleteChunksForLang",
+          "line": 177
+        },
+        {
+          "name": "createJob",
+          "line": 197
+        },
+        {
+          "name": "saveImageTranslation",
+          "line": 214
+        }
+      ]
+    },
+    "convex/queries.ts": {
+      "lineCount": 158,
+      "exports": [
+        {
+          "name": "getProject",
+          "line": 6
+        },
+        {
+          "name": "getLatestProject",
+          "line": 15
+        },
+        {
+          "name": "getProjectTranslations",
+          "line": 27
+        },
+        {
+          "name": "getProjectRaw",
+          "line": 41
+        },
+        {
+          "name": "getTranslationsRaw",
+          "line": 48
+        },
+        {
+          "name": "getChunkProgress",
+          "line": 60
+        },
+        {
+          "name": "getChunksForLang",
+          "line": 74
+        },
+        {
+          "name": "getAllJobs",
+          "line": 86
+        },
+        {
+          "name": "getHistory",
+          "line": 98
+        },
+        {
+          "name": "getTranslationProgress",
+          "line": 110
+        },
+        {
+          "name": "getAllProjectsForWatchdog",
+          "line": 133
+        },
+        {
+          "name": "getLivePreviewText",
+          "line": 142
+        }
+      ]
+    },
+    "convex/translateContent.ts": {
+      "lineCount": 547,
+      "exports": [
+        {
+          "name": "translateLanguage",
+          "line": 319
+        }
+      ]
+    },
+    "convex/translateQueue.ts": {
+      "lineCount": 744,
+      "exports": [
+        {
+          "name": "startTranslation",
+          "line": 547
+        },
+        {
+          "name": "processLanguage",
+          "line": 612
+        },
+        {
+          "name": "cancelTranslation",
+          "line": 732
+        }
+      ]
+    },
+    "convex/translateImage.ts": {
+      "lineCount": 156,
+      "exports": [
+        {
+          "name": "translateImage",
+          "line": 33
+        }
+      ]
+    },
+    "convex/generatePdf.ts": {
+      "lineCount": 379,
+      "exports": [
+        {
+          "name": "generateTranslatedPdf",
+          "line": 106
+        }
+      ]
+    },
+    "convex/upload.ts": {
+      "lineCount": 22,
+      "exports": [
+        {
+          "name": "storePdf",
+          "line": 10
+        }
+      ]
+    },
+    "convex/parsePdf.ts": {
+      "lineCount": 186,
+      "exports": [
+        {
+          "name": "ServerParsedTextItem",
+          "line": 23
+        },
+        {
+          "name": "ServerParsedLine",
+          "line": 32
+        },
+        {
+          "name": "ServerParsedPage",
+          "line": 37
+        },
+        {
+          "name": "parseUploadedPdf",
+          "line": 46
+        }
+      ]
+    },
+    "convex/zipAssembly.ts": {
+      "lineCount": 80,
+      "exports": [
+        {
+          "name": "buildZip",
+          "line": 17
+        }
+      ]
+    },
+    "convex/importProject.ts": {
+      "lineCount": 82,
+      "exports": [
+        {
+          "name": "importProject",
+          "line": 8
+        }
+      ]
+    },
+    "convex/history.ts": {
+      "lineCount": 45,
+      "exports": [
+        {
+          "name": "saveToHistory",
+          "line": 4
+        },
+        {
+          "name": "deleteHistory",
+          "line": 37
+        }
+      ]
+    },
+    "src/pages/Translator.tsx": {
+      "lineCount": 1810,
+      "exports": [
+        {
+          "name": "function Translator",
+          "line": 110
+        }
+      ]
+    },
+    "src/main.tsx": {
+      "lineCount": 72,
+      "exports": []
+    },
+    "src/index.css": {
+      "lineCount": 277,
+      "exports": []
+    },
+    "src/components/DragonIntro.tsx": {
+      "lineCount": 71,
+      "exports": [
+        {
+          "name": "function DragonIntro",
+          "line": 14
+        }
+      ]
+    },
+    "src/components/RoyalProgressPanel.tsx": {
+      "lineCount": 225,
+      "exports": [
+        {
+          "name": "function RoyalProgressPanel",
+          "line": 26
+        }
+      ]
+    },
+    "src/components/LanguageAccordion.tsx": {
+      "lineCount": 193,
+      "exports": [
+        {
+          "name": "LanguageAccordion",
+          "line": 34
+        }
+      ]
+    },
+    "src/components/HistoryPanel.tsx": {
+      "lineCount": 161,
+      "exports": [
+        {
+          "name": "HistoryPanel",
+          "line": 12
+        }
+      ]
+    },
+    "src/lib/translator/engine.ts": {
+      "lineCount": 1000,
+      "exports": [
+        {
+          "name": "VlyUsage",
+          "line": 22
+        },
+        {
+          "name": "hasNeuralModel",
+          "line": 34
+        },
+        {
+          "name": "TranslationPhase",
+          "line": 38
+        },
+        {
+          "name": "TranslationConfig",
+          "line": 47
+        },
+        {
+          "name": "TranslationMode",
+          "line": 56
+        },
+        {
+          "name": "TranslationResult",
+          "line": 58
+        },
+        {
+          "name": "TranslationReport",
+          "line": 74
+        },
+        {
+          "name": "CSVExportData",
+          "line": 85
+        },
+        {
+          "name": "VoiceDirectorNote",
+          "line": 91
+        },
+        {
+          "name": "TranslationProgressCallback",
+          "line": 98
+        },
+        {
+          "name": "NeuralPipelineProgressCallback",
+          "line": 290
+        },
+        {
+          "name": "AiTranslateFn",
+          "line": 560
+        },
+        {
+          "name": "generateSampleText",
+          "line": 961
+        }
+      ]
+    },
+    "src/lib/translator/qa.ts": {
+      "lineCount": 711,
+      "exports": [
+        {
+          "name": "PhaseStatus",
+          "line": 20
+        },
+        {
+          "name": "PhaseCheck",
+          "line": 22
+        },
+        {
+          "name": "QAReport",
+          "line": 32
+        },
+        {
+          "name": "MemoryLockEntry",
+          "line": 553
+        },
+        {
+          "name": "runQA",
+          "line": 651
+        }
+      ]
+    },
+    "src/lib/translator/storage.ts": {
+      "lineCount": 657,
+      "exports": [
+        {
+          "name": "ProjectData",
+          "line": 22
+        },
+        {
+          "name": "TranslationChunk",
+          "line": 43
+        },
+        {
+          "name": "LanguageProgress",
+          "line": 57
+        },
+        {
+          "name": "TranslationRecord",
+          "line": 73
+        },
+        {
+          "name": "TerminologyEntry",
+          "line": 239
+        },
+        {
+          "name": "mergeChunkTexts",
+          "line": 496
+        },
+        {
+          "name": "chunkPageTexts",
+          "line": 508
+        },
+        {
+          "name": "serializeProgress",
+          "line": 643
+        },
+        {
+          "name": "deserializeProgress",
+          "line": 650
+        }
+      ]
+    },
+    "src/lib/translator/pdfParser.ts": {
+      "lineCount": 411,
+      "exports": [
+        {
+          "name": "PDFTextItem",
+          "line": 19
+        },
+        {
+          "name": "PDFPageData",
+          "line": 28
+        },
+        {
+          "name": "PDFParseResult",
+          "line": 36
+        },
+        {
+          "name": "PDFParseError",
+          "line": 50
+        },
+        {
+          "name": "PDFDocumentProxyLike",
+          "line": 66
+        },
+        {
+          "name": "PDFPageLike",
+          "line": 72
+        },
+        {
+          "name": "PDFJSModule",
+          "line": 78
+        },
+        {
+          "name": "PARSE_BATCH_SIZE",
+          "line": 184
+        },
+        {
+          "name": "PDFHeader",
+          "line": 186
+        },
+        {
+          "name": "splitTextIntoChunks",
+          "line": 354
+        },
+        {
+          "name": "validateTextForTranslation",
+          "line": 382
+        }
+      ]
+    },
+    "src/lib/translator/pdfGenerator.ts": {
+      "lineCount": 238,
+      "exports": [
+        {
+          "name": "PDFGenerationProgress",
+          "line": 17
+        },
+        {
+          "name": "extractPageTexts",
+          "line": 235
+        }
+      ]
+    },
+    "src/lib/translator/pdf-render.ts": {
+      "lineCount": 382,
+      "exports": [
+        {
+          "name": "RenderTextItem",
+          "line": 27
+        },
+        {
+          "name": "RenderPageInput",
+          "line": 34
+        },
+        {
+          "name": "RenderProgress",
+          "line": 43
+        }
+      ]
+    },
+    "src/lib/translator/pdf-worker.ts": {
+      "lineCount": 55,
+      "exports": []
+    },
+    "src/lib/translator/neural.ts": {
+      "lineCount": 282,
+      "exports": [
+        {
+          "name": "ModelEntry",
+          "line": 45
+        },
+        {
+          "name": "hasNeuralModel",
+          "line": 76
+        },
+        {
+          "name": "NeuralProgressCallback",
+          "line": 86
+        },
+        {
+          "name": "getModelState",
+          "line": 253
+        }
+      ]
+    },
+    "src/lib/translator/cultural.ts": {
+      "lineCount": 568,
+      "exports": [
+        {
+          "name": "CulturalRule",
+          "line": 1
+        },
+        {
+          "name": "MarketContext",
+          "line": 10
+        },
+        {
+          "name": "marketContexts",
+          "line": 17
+        },
+        {
+          "name": "culturalRules",
+          "line": 364
+        },
+        {
+          "name": "applyCulturalFilters",
+          "line": 525
+        },
+        {
+          "name": "detectExplicitContent",
+          "line": 544
+        },
+        {
+          "name": "getEuphemism",
+          "line": 559
+        }
+      ]
+    },
+    "src/lib/translator/formatters.ts": {
+      "lineCount": 349,
+      "exports": [
+        {
+          "name": "ScriptConfig",
+          "line": 1
+        },
+        {
+          "name": "scriptConfigs",
+          "line": 14
+        },
+        {
+          "name": "getScriptConfig",
+          "line": 257
+        },
+        {
+          "name": "isRTL",
+          "line": 274
+        },
+        {
+          "name": "formatDragonTelepathy",
+          "line": 278
+        },
+        {
+          "name": "formatQuote",
+          "line": 289
+        },
+        {
+          "name": "formatEllipse",
+          "line": 294
+        },
+        {
+          "name": "formatDash",
+          "line": 299
+        },
+        {
+          "name": "processRTLText",
+          "line": 304
+        },
+        {
+          "name": "preserveLineBreaks",
+          "line": 331
+        }
+      ]
+    },
+    "src/lib/translator/voices.ts": {
+      "lineCount": 590,
+      "exports": [
+        {
+          "name": "CharacterVoice",
+          "line": 1
+        },
+        {
+          "name": "VoiceOverride",
+          "line": 15
+        },
+        {
+          "name": "characterVoices",
+          "line": 23
+        },
+        {
+          "name": "languageSpecificVoices",
+          "line": 128
+        },
+        {
+          "name": "getCharacterVoice",
+          "line": 568
+        },
+        {
+          "name": "detectCharacterInText",
+          "line": 586
+        }
+      ]
+    },
+    "src/lib/translator/vendor.ts": {
+      "lineCount": 53,
+      "exports": [
+        {
+          "name": "VENDOR_URLS",
+          "line": 13
+        }
+      ]
+    },
+    "src/lib/translator/baseline.ts": {
+      "lineCount": 179,
+      "exports": [
+        {
+          "name": "BASELINE_SOURCE",
+          "line": 16
+        },
+        {
+          "name": "BASELINE_EXPECTATIONS",
+          "line": 25
+        },
+        {
+          "name": "BaselineResult",
+          "line": 61
+        },
+        {
+          "name": "BaselineSummary",
+          "line": 77
+        },
+        {
+          "name": "runBaselineTests",
+          "line": 104
+        }
+      ]
+    }
+  }
+}

@@ -8,15 +8,12 @@
  * @module
  */
 
-import type * as exportImport from "../exportImport.js";
 import type * as generatePdf from "../generatePdf.js";
-import type * as health from "../health.js";
 import type * as history from "../history.js";
 import type * as importProject from "../importProject.js";
 import type * as mutations from "../mutations.js";
 import type * as parsePdf from "../parsePdf.js";
 import type * as queries from "../queries.js";
-import type * as translate from "../translate.js";
 import type * as translateContent from "../translateContent.js";
 import type * as translateImage from "../translateImage.js";
 import type * as translateQueue from "../translateQueue.js";
@@ -30,15 +27,12 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  exportImport: typeof exportImport;
   generatePdf: typeof generatePdf;
-  health: typeof health;
   history: typeof history;
   importProject: typeof importProject;
   mutations: typeof mutations;
   parsePdf: typeof parsePdf;
   queries: typeof queries;
-  translate: typeof translate;
   translateContent: typeof translateContent;
   translateImage: typeof translateImage;
   translateQueue: typeof translateQueue;

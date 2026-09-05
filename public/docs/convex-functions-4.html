@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Convex Functions — PDF Parse, PDF Generate, ZIP — OnyxTranslate Docs</title>
+<style>
+body{background:#0a0a0f;color:#e0e0e0;font-family:Georgia,'Times New Roman',serif;max-width:960px;margin:0 auto;padding:24px;line-height:1.6}
+h1{color:#8B5CF6;border-bottom:2px solid rgba(139,92,246,.3);padding-bottom:8px}
+h2{color:#00e5ff;margin-top:28px}
+h3{color:#fbbf24}
+a{color:#00e5ff}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#F59E0B}
+pre{background:rgba(0,0,0,.45);border:1px solid rgba(139,92,246,.25);border-radius:8px;padding:12px;overflow-x:auto}
+pre code{color:#e0e0e0;font-size:11px;line-height:1.5;white-space:pre}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border:1px solid rgba(139,92,246,.25);padding:6px 10px;text-align:left;vertical-align:top}
+th{color:#8B5CF6;background:rgba(139,92,246,.08)}
+td code{color:#00e5ff}
+.meta{color:#8b8ba0;font-size:12px;font-family:ui-monospace,monospace}
+.note{border-left:3px solid #fbbf24;background:rgba(251,191,36,.06);padding:8px 14px;font-size:13px}
+</style>
+</head>
+<body>
+<p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
+<h1>Convex Functions — PDF Parse, PDF Generate, ZIP</h1>
+<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-05 08:24 UTC</p>
+<p>Files on this page: <code>convex/parsePdf.ts</code>, <code>convex/generatePdf.ts</code>, <code>convex/zipAssembly.ts</code></p><h2>convex/parsePdf.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>parseUploadedPdf</code> — action</li></ul></p><pre><code>"use node";
+
+import { v } from "convex/values";
+import { action } from "./_generated/server";
+
+/**
+ * convex/parsePdf.ts — Server-side PDF text extraction.
+ *
+ * The browser's pdf.js parser extracts individual text items without merging
+ * nearby fragments, causing broken words and missing letters. This action
+ * re-parses the PDF server-side with proper Y-coordinate grouping into lines.
+ */
+
+interface RawTextItem {
+  str: string;
+  transform?: number[];
+  width?: number;
+  height?: number;
+  fontName?: string;
+  hasEOL?: boolean;
+}
+
+export interface ServerParsedTextItem {
+  str: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fontName: string;
+}
+
+export interface ServerParsedLine {
+  text: string;
+  y: number;
+}
+
+export interface ServerParsedPage {
+  num: number;
+  text: string;
+  lines: ServerParsedLine[];
+  textItems: ServerParsedTextItem[];
+  pageWidth: number;
+  pageHeight: number;
+}
+
+export const parseUploadedPdf = action({
+  args: {
+    pdfStorageId: v.string(),
+  },
+  handler: async (ctx, args) =&gt; {
+    // 1. Download PDF from Convex File Storage
+    const blob = await ctx.storage.get(args.pdfStorageId);
+    if (!blob) throw new Error("PDF not found in storage");
+    const arrayBuffer = await blob.arrayBuffer();
+    const uint8 = new Uint8Array(arrayBuffer);
+
+    // 2. Dynamically import pdfjs-dist
+    const pdfjsLib = await import("pdfjs-dist");
+
+    // 3. Load the PDF document
+    const loadingTask = pdfjsLib.getDocument({
+      data: uint8,
+      useSystemFonts: true,
+      disableFontFace: true,
+    });
+    const pdf = await loadingTask.promise;
+    const totalPages = pdf.numPages;
+
+    // 4. Parse each page with proper merging
+    const allPages: ServerParsedPage[] = [];
+    const allTexts: string[] = [];
+
+    for (let pageNum = 1; pageNum &lt;= totalPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const viewport = page.getViewport({ scale: 1 });
+      const pageWidth = viewport.width;
+      const pageHeight = viewport.height;
+
+      // Use getTextContent with normalizeWhitespace enabled via the options
+      // object. In pdfjs-dist v6+, the text items are already combined by
+      // default when disableCombineTextItems is NOT set to true.
+      const textContent = await page.getTextContent({
+        normalizeWhitespace: true,
+      } as any);
+
+      const rawItems = (textContent.items as RawTextItem[]).filter(
+        (item) =&gt; "str" in item &amp;&amp; item.str.trim().length &gt; 0
+      );
+
+      // Map to clean format (PDF bottom-origin coordinates, unscaled)
+      const textItems: ServerParsedTextItem[] = rawItems.map((item) =&gt; {
+        const t = item.transform || [1, 0, 0, 1, 0, 0];
+        return {
+          str: item.str,
+          x: t[4],
+          y: t[5],
+          width: item.width || 0,
+          height: item.height || 0,
+          fontName: item.fontName || "",
+        };
+      });
+
+      // Group items into lines by Y-coordinate proximity (2px tolerance)
+      const lines = groupIntoLines(textItems, 2);
+
+      // Build clean page text from grouped lines
+      const pageText = lines.map((l) =&gt; l.text).join("\n").trim();
+
+      allPages.push({
+        num: pageNum,
+        text: pageText,
+        lines,
+        textItems,
+        pageWidth,
+        pageHeight,
+      });
+      allTexts.push(pageText);
+
+      // Yield every 20 pages to stay within action timeout
+      if (pageNum % 20 === 0) {
+        await new Promise((r) =&gt; setTimeout(r, 0));
+      }
+    }
+
+    const fullText = allTexts.filter(Boolean).join("\n\n").trim();
+    const wordCount = fullText.split(/\s+/).filter(Boolean).length;
+
+    return {
+      pageData: allPages,
+      fullText,
+      pageCount: totalPages,
+      wordCount,
+    };
+  },
+});
+
+/**
+ * Group text items into lines by Y-coordinate proximity.
+ *
+ * Items within `tolerance` pixels vertically are on the same line.
+ * Within each line, items are sorted left-to-right by X position.
+ * Words within a line are joined with single spaces.
+ */
+function groupIntoLines(
+  items: ServerParsedTextItem[],
+  tolerance: number
+): ServerParsedLine[] {
+  if (items.length === 0) return [];
+
+  // Sort by Y descending (higher Y = top of page in PDF coords)
+  const sorted = [...items].sort((a, b) =&gt; b.y - a.y);
+
+  const groups: ServerParsedTextItem[][] = [];
+  let currentGroup: ServerParsedTextItem[] = [sorted[0]];
+
+  for (let i = 1; i &lt; sorted.length; i++) {
+    const item = sorted[i];
+    const lastInGroup = currentGroup[currentGroup.length - 1];
+
+    if (Math.abs(item.y - lastInGroup.y) &lt;= tolerance) {
+      currentGroup.push(item);
+    } else {
+      groups.push(currentGroup);
+      currentGroup = [item];
+    }
+  }
+  groups.push(currentGroup);
+
+  // Sort each group left-to-right and build line text
+  return groups.map((group) =&gt; {
+    group.sort((a, b) =&gt; a.x - b.x);
+
+    const text = group
+      .map((it) =&gt; it.str.trim())
+      .filter(Boolean)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const avgY =
+      group.reduce((sum, it) =&gt; sum + it.y, 0) / group.length;
+
+    return { text, y: avgY };
+  });
+}
+</code></pre><h2>convex/generatePdf.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>generateTranslatedPdf</code> — action</li></ul></p><pre><code>"use node";
+
+import { v } from "convex/values";
+import { action } from "./_generated/server";
+import { api } from "./_generated/api";
+
+/**
+ * convex/generatePdf.ts — Server-side translated PDF generation (Segment B).
+ *
+ * Reads the original PDF from Convex Storage, copies each page (preserving
+ * images/maps), whites out English text, overlays translated text using
+ * Noto Sans fonts for non-Latin scripts, stores the result in Convex Storage,
+ * and chains to the NEXT language's translation or ZIP assembly.
+ */
+
+// ─── Font URLs for non-Latin scripts ────────────────────────────────────
+
+const FONT_URLS: Record&lt;string, string&gt; = {
+  ur: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoNastaliqUrdu-Regular.ttf",
+  ar: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansArabic-Regular.ttf",
+  ks: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansArabic-Regular.ttf",
+  ja: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansJP-Regular.ttf",
+  zh: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansSC-Regular.ttf",
+  ko: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansKR-Regular.ttf",
+  hi: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansDevanagari-Regular.ttf",
+  ne: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansDevanagari-Regular.ttf",
+  bn: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansBengali-Regular.ttf",
+  // Latin-script languages use Helvetica (built-in)
+};
+
+const RTL_CODES = new Set(["ar", "ur", "ks"]);
+
+const LANGUAGES = [
+  "ur", "ar", "fr", "ja", "es", "hi", "tr", "zh", "ru", "ko",
+  "de", "ks", "ro", "sw", "it", "la", "id", "ne", "bn", "pt",
+];
+
+// ─── Font cache (across calls within same action worker) ────────────────
+
+const fontCache = new Map&lt;string, ArrayBuffer&gt;();
+
+async function getFontBytes(url: string): Promise&lt;ArrayBuffer&gt; {
+  const cached = fontCache.get(url);
+  if (cached) return cached;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`Font download failed (HTTP ${resp.status}): ${url}`);
+  const bytes = await resp.arrayBuffer();
+  fontCache.set(url, bytes);
+  return bytes;
+}
+
+// ─── Text wrapping ──────────────────────────────────────────────────────
+
+function wrapText(
+  font: { widthOfTextAtSize: (text: string, size: number) =&gt; number },
+  text: string,
+  maxWidth: number,
+  size: number,
+): string[] {
+  const paragraphs = text.split("\n");
+  const lines: string[] = [];
+
+  for (const paragraph of paragraphs) {
+    if (!paragraph.trim()) {
+      lines.push("");
+      continue;
+    }
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    let current = "";
+
+    for (const word of words) {
+      if (font.widthOfTextAtSize(word, size) &gt; maxWidth) {
+        if (current) {
+          lines.push(current);
+          current = "";
+        }
+        // Break very long words character by character
+        let chunk = "";
+        for (const ch of word) {
+          if (chunk &amp;&amp; font.widthOfTextAtSize(chunk + ch, size) &gt; maxWidth) {
+            lines.push(chunk);
+            chunk = ch;
+          } else {
+            chunk += ch;
+          }
+        }
+        current = chunk;
+        continue;
+      }
+      const test = current ? `${current} ${word}` : word;
+      if (font.widthOfTextAtSize(test, size) &lt;= maxWidth) {
+        current = test;
+      } else {
+        if (current) lines.push(current);
+        current = word;
+      }
+    }
+    if (current) lines.push(current);
+  }
+
+  return lines.length &gt; 0 ? lines : [""];
+}
+
+// ─── Main action ────────────────────────────────────────────────────────
+
+export const generateTranslatedPdf = action({
+  args: {
+    projectId: v.id("projects"),
+    langCode: v.string(),
+    translationId: v.id("translations"),
+    mergedText: v.string(),
+  },
+  handler: async (ctx, args) =&gt; {
+    const { PDFDocument, rgb, StandardFonts } = await import("pdf-lib");
+
+    // 1. Get project and original PDF
+    const project = await ctx.runQuery(api.queries.getProjectRaw, {
+      projectId: args.projectId,
+    });
+    if (!project || !project.pdfStorageId) {
+      throw new Error("Project PDF not found in storage");
+    }
+
+    const pdfBlob = await ctx.storage.get(project.pdfStorageId);
+    if (!pdfBlob) throw new Error("Original PDF blob not found");
+    const pdfArrayBuffer = await pdfBlob.arrayBuffer();
+    const pdfBytes = new Uint8Array(pdfArrayBuffer);
+
+    // 2. Load original PDF
+    const srcDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+    const srcPageCount = srcDoc.getPageCount();
+    if (srcPageCount === 0) throw new Error("Source PDF has no pages");
+
+    // 3. Create output document
+    const outDoc = await PDFDocument.create();
+
+    // Register fontkit for custom font embedding
+    const fontkitModule = await import("@pdf-lib/fontkit");
+    const fontkit = (fontkitModule as { default?: unknown }).default ?? fontkitModule;
+    outDoc.registerFontkit(fontkit as never);
+
+    // 4. Embed font for this language
+    const isRTL = RTL_CODES.has(args.langCode);
+    const fontUrl = FONT_URLS[args.langCode];
+    let font;
+    try {
+      if (fontUrl) {
+        font = await outDoc.embedFont(await getFontBytes(fontUrl));
+      } else {
+        font = await outDoc.embedFont(StandardFonts.Helvetica);
+      }
+    } catch {
+      font = await outDoc.embedFont(StandardFonts.Helvetica);
+    }
+
+    const black = rgb(0, 0, 0);
+    const white = rgb(1, 1, 1);
+
+    // 5. Read pageData from project for coordinate-aware overlay
+    const pageData: Array&lt;{
+      num: number;
+      textItems: Array&lt;{ str: string; x: number; y: number; width: number; height: number; fontName: string }&gt;;
+      text?: string;
+      pageWidth?: number;
+      pageHeight?: number;
+    }&gt; = project.pageData || [];
+
+    // Split translated text proportionally across pages
+    const translatedWords = args.mergedText.split(/\s+/).filter(Boolean);
+    const totalWords = translatedWords.length;
+    const perPageWords = Math.ceil(totalWords / srcPageCount);
+
+    let wordIdx = 0;
+
+    // 6. Process each page: copy original → coordinate-aware whiteout → overlay translation
+    for (let i = 0; i &lt; srcPageCount; i++) {
+      const [copiedPage] = await outDoc.copyPages(srcDoc, [i]);
+      outDoc.addPage(copiedPage);
+
+      const pageWidth = copiedPage.getWidth();
+      const pageHeight = copiedPage.getHeight();
+
+      const pageEntry = pageData.find((p) =&gt; p.num === i + 1);
+      const textItems = pageEntry?.textItems || [];
+
+      // CRITICAL FIX 3: White-out using per-text-item coordinates if available
+      // This preserves images, maps, and illustrations that are NOT text areas
+      if (textItems.length &gt; 0) {
+        // White-out each individual text item's bounding box
+        for (const item of textItems) {
+          if (!item.str.trim()) continue;
+          const x = item.x;
+          const y = item.y; // PDF bottom-origin
+          const w = item.width + 2;  // small padding
+          const h = item.height + 2;
+          copiedPage.drawRectangle({
+            x,
+            y,
+            width: Math.max(w, 10),
+            height: Math.max(h, 6),
+            color: white,
+            borderWidth: 0,
+          });
+        }
+      } else {
+        // Fallback: white-out the entire text area (old behavior)
+        const margin = 50;
+        const textLeft = margin;
+        const textRight = pageWidth - margin;
+        const maxWidth = textRight - textLeft;
+        const textBottom = margin + 10;
+        copiedPage.drawRectangle({
+          x: textLeft - 5,
+          y: textBottom - 5,
+          width: maxWidth + 10,
+          height: pageHeight - textBottom - margin + 10,
+          color: white,
+          borderWidth: 0,
+        });
+      }
+
+      // Get words for this page
+      const endIdx = Math.min(wordIdx + perPageWords, totalWords);
+      let pageText = translatedWords.slice(wordIdx, endIdx).join(" ");
+      wordIdx = endIdx;
+
+      // Append remaining to last page
+      if (i === srcPageCount - 1 &amp;&amp; wordIdx &lt; totalWords) {
+        const remaining = translatedWords.slice(wordIdx).join(" ");
+        pageText = pageText ? pageText + " " + remaining : remaining;
+      }
+
+      // CRITICAL FIX 3: Overlay translated text at coordinates if pageData available
+      if (textItems.length &gt; 0 &amp;&amp; pageText.trim()) {
+        // Calculate average font size from text items
+        const avgFontSize = textItems.length &gt; 0
+          ? textItems.reduce((sum, it) =&gt; sum + (it.height || 10), 0) / textItems.length
+          : 10;
+        const fontSize = Math.min(Math.max(avgFontSize, 7), 14);
+        const lineHeight = fontSize * 1.35;
+
+        // Calculate total text area height from text items
+        const allYs = textItems.filter(it =&gt; it.str.trim()).map(it =&gt; it.y);
+        const topY = allYs.length &gt; 0 ? Math.max(...allYs) : pageHeight - 50;
+        const bottomY = allYs.length &gt; 0 ? Math.min(...allYs) : 50;
+        const totalHeight = topY - bottomY;
+        const maxLines = Math.max(1, Math.floor(totalHeight / lineHeight));
+
+        const wrappedLines = wrapText(font, pageText, pageWidth - 80, fontSize);
+        let lineIdx = 0;
+
+        // Place lines from top of text area downward
+        for (let ln = 0; ln &lt; Math.min(wrappedLines.length, maxLines); ln++) {
+          const line = wrappedLines[ln];
+          if (!line.trim()) continue;
+          const y = topY - (ln * lineHeight);
+          if (y &lt; bottomY) break;
+
+          try {
+            if (isRTL) {
+              const visual = line.split(/\s+/).reverse().join(" ");
+              const lineWidth = font.widthOfTextAtSize(visual, fontSize);
+              copiedPage.drawText(visual, {
+                x: pageWidth - 40 - lineWidth,
+                y,
+                size: fontSize,
+                font,
+                color: black,
+              });
+            } else {
+              copiedPage.drawText(line, {
+                x: 40,
+                y,
+                size: fontSize,
+                font,
+                color: black,
+              });
+            }
+          } catch {
+            // Skip lines with unencodable glyphs
+          }
+          lineIdx++;
+        }
+      } else if (pageText.trim()) {
+        // Fallback: use fixed margins (old behavior when no pageData)
+        const margin = 50;
+        const textLeft = margin;
+        const textRight = pageWidth - margin;
+        const maxWidth = textRight - textLeft;
+        const fontSize = 10;
+        const lineHeight = fontSize * 1.4;
+        const textBottom = margin + 10;
+        const wrappedLines = wrapText(font, pageText, maxWidth, fontSize);
+        let baseline = pageHeight - margin - fontSize;
+
+        for (const line of wrappedLines) {
+          if (baseline - fontSize &lt; textBottom) break;
+          if (line.trim()) {
+            try {
+              if (isRTL) {
+                const visual = line.split(/\s+/).reverse().join(" ");
+                const lineWidth = font.widthOfTextAtSize(visual, fontSize);
+                copiedPage.drawText(visual, {
+                  x: textLeft + maxWidth - lineWidth,
+                  y: baseline,
+                  size: fontSize,
+                  font,
+                  color: black,
+                });
+              } else {
+                copiedPage.drawText(line, {
+                  x: textLeft,
+                  y: baseline,
+                  size: fontSize,
+                  font,
+                  color: black,
+                });
+              }
+            } catch {
+              // Skip lines with unencodable glyphs
+            }
+          }
+          baseline -= lineHeight;
+        }
+      }
+    }
+
+    // 7. Save and store in Convex Storage
+    const resultBytes = await outDoc.save();
+    const resultBlob = new Blob(
+      [new Uint8Array(resultBytes).buffer as ArrayBuffer],
+      { type: "application/pdf" },
+    );
+    const storageId = await ctx.storage.store(resultBlob);
+    const url = (await ctx.storage.getUrl(storageId)) ?? undefined;
+
+    // 8. Update translation record
+    await ctx.runMutation(api.mutations.updateTranslation, {
+      translationId: args.translationId,
+      pdfStorageId: storageId,
+      pdfUrl: url,
+      status: "complete",
+      pdfGenerating: false,
+      completedAt: Date.now(),
+    });
+
+    // 9. Chain to next language that has translation records, or build ZIP
+    const allTranslations: Array&lt;{ langCode: string; status: string }&gt; =
+      await ctx.runQuery(api.queries.getTranslationsRaw, { projectId: args.projectId });
+    // Find the next language in the queue (has a translation record and is not yet complete)
+    const currentIdx = allTranslations.findIndex((t) =&gt; t.langCode === args.langCode);
+    let nextTranslation: { langCode: string; status: string } | null = null;
+    for (let i = currentIdx + 1; i &lt; allTranslations.length; i++) {
+      if (allTranslations[i].status !== "complete") {
+        nextTranslation = allTranslations[i];
+        break;
+      }
+    }
+    if (nextTranslation) {
+      await ctx.scheduler.runAfter(0, api.translateQueue.processLanguage, {
+        projectId: args.projectId,
+        langCode: nextTranslation.langCode,
+        chunkIndex: 0,
+      });
+    } else {
+      // All languages done — build ZIP
+      await ctx.runMutation(api.mutations.updateProject, {
+        projectId: args.projectId,
+        status: "all_translated",
+      });
+      await ctx.scheduler.runAfter(0, api.zipAssembly.buildZip, {
+        projectId: args.projectId,
+      });
+    }
+
+    return { storageId, url };
+  },
+});
+</code></pre><h2>convex/zipAssembly.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>buildZip</code> — action</li></ul></p><pre><code>"use node";
+
+import { action } from "./_generated/server";
+import { v } from "convex/values";
+import { api } from "./_generated/api";
+import JSZip from "jszip";
+
+/**
+ * convex/zipAssembly.ts — Builds a ZIP of all translated PDFs.
+ *
+ * Runs after the LAST language's PDF is generated. Reads all translation
+ * records with a pdfStorageId, downloads each PDF from Convex Storage,
+ * bundles them into a ZIP with a summary report, stores the ZIP in
+ * Convex Storage, and updates the project record.
+ */
+
+export const buildZip = action({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) =&gt; {
+    const project = await ctx.runQuery(api.queries.getProjectRaw, {
+      projectId: args.projectId,
+    });
+    if (!project) throw new Error("Project not found");
+
+    const translations = await ctx.runQuery(api.queries.getTranslationsRaw, {
+      projectId: args.projectId,
+    });
+
+    const zip = new JSZip();
+
+    // Add each translated PDF
+    let pdfCount = 0;
+    for (const t of translations) {
+      if (t.status === "complete" &amp;&amp; t.pdfStorageId) {
+        const blob = await ctx.storage.get(t.pdfStorageId);
+        if (blob) {
+          const bytes = new Uint8Array(await blob.arrayBuffer());
+          zip.file(`${t.langCode}_translated.pdf`, bytes);
+          pdfCount++;
+        }
+      }
+    }
+
+    // Add summary report
+    const report = [
+      "Onyx Translate — Batch Report",
+      "=".repeat(40),
+      `Generated: ${new Date().toISOString()}`,
+      `Source: ${project.fileName}`,
+      `Pages: ${project.pageCount}`,
+      `Words: ${project.wordCount.toLocaleString()}`,
+      `Languages: ${translations.length}`,
+      `PDFs included: ${pdfCount}`,
+      "",
+      "Language Status:",
+      ...translations.map(
+        (t: { langCode: string; status: string; completedChunks: number; totalChunks: number }) =&gt;
+          `  ${t.langCode.toUpperCase()}: ${t.status} (${t.completedChunks}/${t.totalChunks} chunks)`,
+      ),
+    ].join("\n");
+    zip.file("translation_report.txt", report);
+
+    // Generate ZIP and store in Convex Storage
+    const zipBytes = await zip.generateAsync({ type: "uint8array" });
+    const zipBlob = new Blob([zipBytes.buffer as ArrayBuffer], { type: "application/zip" });
+    const storageId = await ctx.storage.store(zipBlob);
+    const url = (await ctx.storage.getUrl(storageId)) ?? undefined;
+
+    // Update project with ZIP info
+    await ctx.runMutation(api.mutations.updateProject, {
+      projectId: args.projectId,
+      zipStorageId: storageId,
+      zipUrl: url,
+      status: "complete",
+    });
+
+    return { ok: true, url, pdfCount };
+  },
+});
+</code></pre>
+<hr>
+<p class="meta">OnyxTranslate static documentation mirror — plain HTML, no JavaScript. Interactive version: <a href="/#/overview">/#/overview</a></p>
+</body>
+</html>

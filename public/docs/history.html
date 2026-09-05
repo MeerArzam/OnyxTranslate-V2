@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Change Log — OnyxTranslate Docs</title>
+<style>
+body{background:#0a0a0f;color:#e0e0e0;font-family:Georgia,'Times New Roman',serif;max-width:960px;margin:0 auto;padding:24px;line-height:1.6}
+h1{color:#8B5CF6;border-bottom:2px solid rgba(139,92,246,.3);padding-bottom:8px}
+h2{color:#00e5ff;margin-top:28px}
+h3{color:#fbbf24}
+a{color:#00e5ff}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#F59E0B}
+pre{background:rgba(0,0,0,.45);border:1px solid rgba(139,92,246,.25);border-radius:8px;padding:12px;overflow-x:auto}
+pre code{color:#e0e0e0;font-size:11px;line-height:1.5;white-space:pre}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border:1px solid rgba(139,92,246,.25);padding:6px 10px;text-align:left;vertical-align:top}
+th{color:#8B5CF6;background:rgba(139,92,246,.08)}
+td code{color:#00e5ff}
+.meta{color:#8b8ba0;font-size:12px;font-family:ui-monospace,monospace}
+.note{border-left:3px solid #fbbf24;background:rgba(251,191,36,.06);padding:8px 14px;font-size:13px}
+</style>
+</head>
+<body>
+<p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
+<h1>Change Log</h1>
+<p class="meta">Reconstructed from verifiable code evidence &middot; generated 2026-09-05 08:24 UTC</p>
+
+<p class="note">Provenance: the original audit/report .md files (AUDIT_REPORT,
+EXHAUSTIVE_AUDIT_REPORT, VERIFICATION_REPORT, MIGRATION_REGRESSION_REPORT, …) were removed
+during the dead-code cleanup pass. This change log is reconstructed from code evidence that
+is still verifiable in the repository (legacy modules kept on disk, Convex schema history,
+commit-level architecture changes) and from the development session records.</p>
+
+<h2>Phase 0 — Client-side era (IndexedDB)</h2>
+<ul>
+<li>Original architecture: everything ran in the browser — pdf.js parsing, local "glossary"
+word-swap translation, IndexedDB persistence. Evidence still on disk:
+<code>src/lib/translator/storage.ts</code> (656 lines of IndexedDB code: saveProject,
+saveTranslationChunk, terminology locks, QA-report and PDF blobs), now largely dead after the
+migration.</li>
+<li>Translation quality problem: the "AI" path ran client-side, the gateway token was compiled
+to <code>{}</code> in the browser bundle, requests failed with HTTP 401, and the app silently
+fell back to word-swap — users saw English with a few swapped words instead of real Urdu.</li>
+</ul>
+
+<h2>Phase 1 — Move AI server-side (Convex actions)</h2>
+<ul>
+<li>Created the root <code>convex/</code> deployment: schema, mutations, queries, and a
+server translation action where the integration key exists only in <code>process.env</code>.</li>
+<li>Client wired through <code>useAction</code>; browser SDK imports removed from
+<code>src/</code> entirely.</li>
+</ul>
+
+<h2>Phase 2 — AI transport migrations</h2>
+<ul>
+<li>Legacy VLY gateway retired (permanent HTTP 401 "Invalid token", confirmed after key
+rotation).</li>
+<li>Switched to OpenAI-compatible providers, finally settling on
+<strong>Google Gemini</strong> with a <strong>5-key rotation</strong>
+(<code>Gemini_API_Key_1..5</code>, ~250 req/day each &rarr; ~1,250/day) to stay on the free
+tier. Model moved to <code>gemini-3.6-flash</code> (default via <code>GEMINI_MODEL</code>).</li>
+</ul>
+
+<h2>Phase 3 — Server-side pipeline hardening</h2>
+<ul>
+<li>23-phase literary localization system prompt (P1 glossary fidelity … P23 final QA) with
+per-language config from <code>src/data/localization/*.json</code>.</li>
+<li>Bible Pass placeholder locking, sliding-window context across chunks (P21), cultural
+filters, dragon-telepathy formatting, RTL markers, code-level QA engine
+(<code>src/lib/translator/qa.ts</code>, 710 lines).</li>
+<li>Fixed double-chunking (chunks re-derived from stored <code>chunk.sourceText</code>),
+duplicate-chain guard (<code>project.status === "translating"</code> skip), and the two P0
+missing-mutation bugs found by the migration audit.</li>
+</ul>
+
+<h2>Phase 4 — Autonomous queue + PDF/ZIP on the server</h2>
+<ul>
+<li><code>convex/translateQueue.ts</code>: scheduler-chained <code>processLanguage</code>/
+<code>processChunkInternal</code> — the browser can close; the server continues.</li>
+<li><code>convex/generatePdf.ts</code>: vector PDF generation with pdf-lib (copy pages,
+coordinate-aware whiteout, Noto font embedding for ur/ar/ks/ja/zh/ko/hi/ne/bn, RTL draw),
+chaining into <code>convex/zipAssembly.ts</code> for the batch ZIP + report.</li>
+<li>Pause via <code>cancelTranslation</code>; per-language Retranslate
+(<code>deleteChunksForLang</code> + restart).</li>
+</ul>
+
+<h2>Phase 5 — Unified multi-input experience</h2>
+<ul>
+<li>Image &amp; camera translation via Gemini multimodal OCR
+(<code>convex/translateImage.ts</code>, downsampling to ≤1024 px for low-RAM devices).</li>
+<li>One unified flow for PDF / pasted text / images: shared language picker
+(multi-select, select-all), one Begin button, one progress section
+(<code>RoyalProgressPanel</code>: which language N/20, which chunk X/Y).</li>
+<li>Live preview while PDF generates in the background; copy first 10,000 words button.</li>
+<li>Session isolation per browser tab (sessionId), history panel, JSON export/import fixed
+(returning <code>projectId</code>/<code>importedLangCodes</code>, auto-selecting languages,
+preview visible when translations exist).</li>
+</ul>
+
+<h2>Phase 6 — UI</h2>
+<ul>
+<li>Dark neon royal theme (cyan <code>#00e5ff</code> / purple <code>#a78bfa</code> / gold
+<code>#fbbf24</code> on <code>#06060e</code>); Android 5.1-safe (no backdrop-filter, CSS-only
+animations).</li>
+<li>Kali-dragon intro overlay using the real <code>logo.svg</code> asset with neon glow;
+plays every refresh, <code>?debug=1</code> replay button, reduced-motion respected.</li>
+</ul>
+
+<h2>Phase 7 — Documentation</h2>
+<ul>
+<li><code>/#/overview</code> lazy-loaded React dashboard backed by
+<code>src/docs/PROJECT_DOCUMENTATION.json</code> (124 files / 20k+ lines documented).</li>
+<li>This static JS-free mirror under <code>public/docs/</code> for raw HTTP fetchers / AI
+agents, regenerated by <code>scripts/generate-docs.py</code>.</li>
+</ul>
+
+<hr>
+<p class="meta">OnyxTranslate static documentation mirror — plain HTML, no JavaScript. Interactive version: <a href="/#/overview">/#/overview</a></p>
+</body>
+</html>

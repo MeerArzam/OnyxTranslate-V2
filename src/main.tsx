@@ -3,11 +3,31 @@ import { createRoot } from "react-dom/client";
 import { ConvexProvider, ConvexReactClient } from "convex/react";
 import Translator from "./pages/Translator.tsx";
 import DragonIntro from "./components/DragonIntro.tsx";
+import { lazy, Suspense } from "react";
+
+// Overview dashboard is lazy-loaded — never bloats the main bundle
+const Overview = lazy(() => import("./pages/Overview.tsx"));
+
 import "./index.css";
 
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL!);
 
+/** Hash-based routing: #/overview → docs dashboard, everything else → Translator */
+function useHashRoute(): string {
+  const get = () => window.location.hash || "#/";
+  const [hash, setHash] = useState(get);
+  useEffect(() => {
+    const onChange = () => setHash(get());
+    window.addEventListener("hashchange", onChange);
+    return () => window.removeEventListener("hashchange", onChange);
+  }, []);
+  return hash;
+}
+
 function App() {
+  const hash = useHashRoute();
+  const isOverview = hash.startsWith("#/overview");
+
   const [showIntro, setShowIntro] = useState(true);
   const [showDebugBtn, setShowDebugBtn] = useState(false);
 
@@ -30,13 +50,36 @@ function App() {
   return (
     <>
       {/* Intro overlay — plays on top of the app, does not block rendering */}
-      {showIntro && <DragonIntro onComplete={handleIntroComplete} />}
+      {showIntro && !isOverview && <DragonIntro onComplete={handleIntroComplete} />}
 
-      {/* The app renders underneath the intro overlay */}
-      <Translator />
+      {/* Hash routing: #/overview → docs dashboard, #/ → translator */}
+      {isOverview ? (
+        <Suspense
+          fallback={
+            <div
+              style={{
+                minHeight: "100vh",
+                background: "#0a0a0f",
+                color: "#8B5CF6",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontFamily: "ui-monospace, monospace",
+                fontSize: 13,
+              }}
+            >
+              Loading documentation…
+            </div>
+          }
+        >
+          <Overview />
+        </Suspense>
+      ) : (
+        <Translator />
+      )}
 
       {/* Debug button: visible only with ?debug=1 */}
-      {showDebugBtn && (
+      {showDebugBtn && !isOverview && (
         <button
           onClick={handleReplayIntro}
           style={{

@@ -1152,6 +1152,14 @@ export default function Translator() {
               >
                 <FileDown className="size-3 mr-1" /> Import
               </Button>
+              <a
+                href="#/overview"
+                className="h-6 text-[9px] px-1.5 sm:text-[10px] inline-flex items-center justify-center gap-1 rounded-md hover:bg-accent hover:text-accent-foreground"
+                style={{ color: "#00e5ff" }}
+                title="Live codebase documentation dashboard"
+              >
+                📋 Overview
+              </a>
             </div>
           </div>
         </div>

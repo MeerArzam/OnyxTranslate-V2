@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Translation Pipeline — OnyxTranslate Docs</title>
+<style>
+body{background:#0a0a0f;color:#e0e0e0;font-family:Georgia,'Times New Roman',serif;max-width:960px;margin:0 auto;padding:24px;line-height:1.6}
+h1{color:#8B5CF6;border-bottom:2px solid rgba(139,92,246,.3);padding-bottom:8px}
+h2{color:#00e5ff;margin-top:28px}
+h3{color:#fbbf24}
+a{color:#00e5ff}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#F59E0B}
+pre{background:rgba(0,0,0,.45);border:1px solid rgba(139,92,246,.25);border-radius:8px;padding:12px;overflow-x:auto}
+pre code{color:#e0e0e0;font-size:11px;line-height:1.5;white-space:pre}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border:1px solid rgba(139,92,246,.25);padding:6px 10px;text-align:left;vertical-align:top}
+th{color:#8B5CF6;background:rgba(139,92,246,.08)}
+td code{color:#00e5ff}
+.meta{color:#8b8ba0;font-size:12px;font-family:ui-monospace,monospace}
+.note{border-left:3px solid #fbbf24;background:rgba(251,191,36,.06);padding:8px 14px;font-size:13px}
+</style>
+</head>
+<body>
+<p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
+<h1>Translation Pipeline</h1>
+<p class="meta">Gemini 3.6 Flash — 23 phases, Bible pass, rotation, QA &middot; generated 2026-09-05 08:24 UTC</p>
+
+<h2>1. The 23 Localization Phases (verbatim PHASE_RULES)</h2>
+<p>These rules are embedded verbatim into every Gemini system prompt
+(<code>convex/translateContent.ts</code> and its copy in
+<code>convex/translateQueue.ts</code>):</p>
+<pre><code>const PHASE_RULES: [string, string, string][] = [
+  ["P1", "GLOSSARY &amp; TERM FIDELITY", "Use EXACTLY the per-language terms from the locked glossary below (magic/military terms + proper nouns). Never invent synonyms."],</code></pre>
+
+<h2>2. Deep Reasoning Protocol</h2>
+<pre><code>const REASONING_PROTOCOL = [
+  "1. PLAN \u2014 identify dialogue vs. narration vs. telepathy; spot glossary and name hits; flag culturally sensitive lines.",
+  "2. DRAFT \u2014 translate with the language's natural grammar and register.",
+  "3. SELF-CRITIQUE \u2014 check P1-P23 violations, unnatural phrasing, Latin leftovers.",
+  "4. REFINE \u2014 rewrite once, silently fixing everything found.",
+  "The user only ever sees the final refined text \u2014 never show the reasoning.",
+];
+
+const VOICE_MATRIX: [string, string, string][] = [
+  ["Violet Sorrengail", characterVoices.violet.internalThought, characterVoices.violet.dialogueStyle],
+  ["Xaden Riorson", "Clipped, arrogant, icily possessive. Short declarative sentences. No polite/formal honorifics with Violet. Deep possessive pronouns.", ""],
+  ["Ridoc Gamlyn", "Modern, sarcastic, comedic relief. Sacrifice literal English jokes for culturally equivalent humor.", ""],
+  ["Dain Aetos", "Controlled, political, strategic. Formal and precise, uses titles and protocol.", ""],
+  ["Tairn", "Gruff, formal, ancient. Speaks through the bond in short commands.", ""],
+  ["Andarna", "Young, teasing, affectionate. Lighter register than Tairn.", ""],
+];
+
+// ════════════════════════════════════════════════════════════
+// Helper functions (same as translateQueue.ts)</code></pre>
+
+<h2>3. Character Voice Matrix</h2>
+<pre><code>const VOICE_MATRIX: [string, string, string][] = [
+  ["Violet Sorrengail", characterVoices.violet.internalThought, characterVoices.violet.dialogueStyle],
+  ["Xaden Riorson", "Clipped, arrogant, icily possessive. Short declarative sentences. No polite/formal honorifics with Violet. Deep possessive pronouns.", ""],
+  ["Ridoc Gamlyn", "Modern, sarcastic, comedic relief. Sacrifice literal English jokes for culturally equivalent humor.", ""],
+  ["Dain Aetos", "Controlled, political, strategic. Formal and precise, uses titles and protocol.", ""],
+  ["Tairn", "Gruff, formal, ancient. Speaks through the bond in short commands.", ""],
+  ["Andarna", "Young, teasing, affectionate. Lighter register than Tairn.", ""],
+];
+
+// ════════════════════════════════════════════════════════════
+// Helper functions (same as translateQueue.ts)</code></pre>
+
+<h2>4. Locked Glossary Terms</h2>
+<pre><code>const LOCKED_TERM_LIST = [
+  "Signet", "Venin", "Sages", "Mavens", "Wards", "Empyrean", "Conduits",
+  "Alloy", "Irid", "Dragon Rider", "Battle Wards", "Mending", "Squadron",
+  "Basgiath", "Rune", "Scribe", "Rider",
+];
+
+const PHASE_RULES: [string, string, string][] = [
+  ["P1", "GLOSSARY &amp; TERM FIDELITY", "Use EXACTLY the per-language terms from the locked glossary below (magic/military terms + proper nouns). Never invent synonyms."],</code></pre>
+
+<h2>5. buildSystemPrompt — full real source</h2>
+<p>Assembles: target language line, market context, the 23 phases, reasoning protocol,
+per-language config (dialogue marks, formality, profanity map, rank map, magic system, fan
+names, style sheet from <code>src/data/localization/*.json</code>), locked glossary column,
+name map, voice matrix, and output rules.</p>
+<pre><code>function buildSystemPrompt(langCode: string, marketContext = "standard"): string {
+  const cfg = getLocalizationConfig(langCode);
+  const langLine = cfg
+    ? `${cfg.name} (${cfg.nativeName}) \u2014 ${cfg.script} script${cfg.rtl ? ", RTL" : ""}`
+    : langCode;
+  const dialogueMarks = cfg
+    ? `Open: ${cfg.dialogue.open} | Close: ${cfg.dialogue.close} | ${cfg.dialogue.note}`
+    : "Use the language's standard quotation marks";
+  const profanityMap = cfg
+    ? Object.entries(cfg.profanity).map(([en, local]) =&gt; `  - ${en} \u2192 ${local}`).join("\n")
+    : "  - (none configured)";
+  const rankMap = cfg
+    ? Object.entries(cfg.ranks).map(([en, local]) =&gt; `  - ${en} \u2192 ${local}`).join("\n")
+    : "  - (none configured)";
+  const fanNames = cfg &amp;&amp; Object.keys(cfg.fanNames).length
+    ? Object.entries(cfg.fanNames).map(([en, fan]) =&gt; `  - ${en} \u2192 ${fan}`).join("\n")
+    : "  - (none for this language)";
+  const styleSheet = cfg
+    ? `Register: ${cfg.styleSheet.register}\n  Sentence length: ${cfg.styleSheet.sentenceLength}\n  Gender handling: ${cfg.styleSheet.gender}\n  Archaic vs modern: ${cfg.styleSheet.archaic}\n  Numerals: ${cfg.styleSheet.numerals}`
+    : "(none)";
+  const magicSystem = cfg ? cfg.magicSystem : "(none)";
+  const phaseRules = PHASE_RULES.map(([id, name, rule]) =&gt; `### ${id}. ${name}\n${rule}`).join("\n\n");
+  const reasoning = REASONING_PROTOCOL.join("\n");
+  const voices = VOICE_MATRIX.map(
+    ([name, style, example], i) =&gt; `${i + 1}. ${name}: ${style}${example ? `\n   Example: ${example}` : ""}`
+  ).join("\n");
+
+  return [
+    "You are the Empyrean Translator \u2014 a world-class literary localization engine for the epic high-fantasy novel ONYX STORM (English source).",
+    "You translate the source text into a professionally localized edition that reads as NATIVE fiction in the target market \u2014 never as word-swapped English. You follow every phase below, in order, before producing your output.",
+    "",
+    `TARGET LANGUAGE: ${langLine}`,
+    `MARKET CONTEXT: ${buildMarketContext(marketContext)}`,
+    "",
+    "# THE 23 PHASES",
+    phaseRules,
+    "",
+    "# DEEP REASONING PROTOCOL (think before you write)",
+    reasoning,
+    "",
+    "# PART C \u2014 PER-LANGUAGE CONFIG",
+    `DIALOGUE MARKS:\n${dialogueMarks}`,
+    `FORMALITY SYSTEM: ${cfg ? `${cfg.formality.system} \u2014 informal: ${cfg.formality.informal}, formal: ${cfg.formality.formal}. ${cfg.formality.note}` : "(none)"}`,
+    "",
+    "PROFANITY MAP (use these or milder equivalents):",
+    profanityMap,
+    "",
+    "RANK MAP:",
+    rankMap,
+    "",
+    "MAGIC SYSTEM NOTE:",
+    magicSystem,
+    "",
+    "FAN NAMES (zh/ko/ru only):",
+    fanNames,
+    "",
+    "STYLE SHEET:",
+    styleSheet,
+    "",
+    "# LOCKED GLOSSARY (use EXACTLY these, book-wide)",
+    buildGlossaryColumn(langCode),
+    "",
+    "# NAME MAP (same name = same spelling, always)",
+    buildNameMap(langCode),
+    "",
+    "# CHARACTER VOICE MATRIX",
+    voices,
+    "",
+    "# OUTPUT RULES",
+    "1. Return ONLY the translated text \u2014 no explanations, no notes, no metadata, no markdown fences, and no quotation marks around the reply.",
+    "2. Preserve paragraph breaks, speaker turns and dialogue lines 1:1 with the source.",
+    "3. Use the language's dialogue punctuation (P10) and telepathy markers (P16).",
+    "4. For script languages (non-Latin scripts): ZERO Latin-script words may remain, except the allowed names listed in the Name Map.",
+    "5. Translate chapter titles and headings with the same fidelity as body text.",
+    "6. The result must read like it was written in the target language by a native literary translator.",
+  ].join("\n");
+}</code></pre>
+
+<h2>6. Bible Pass — glossary lock before the AI sees the text</h2>
+<p>Proper nouns and magic/military terms are replaced with <code>__PH0__</code> placeholders so
+Gemini cannot mangle them, then restored after translation:</p>
+<pre><code>function applyBiblePassServer(text: string, targetLanguage: string): BiblePassResult {
+  const glossary = glossaryData.magicMilitary as Record&lt;string, Record&lt;string, string&gt;&gt;;
+  const properNouns = glossaryData.properNouns as Record&lt;string, string[]&gt;;
+  const langIndex = [
+    "en", "ar", "ur", "fr", "ja", "es", "hi", "tr", "zh", "ru", "ko", "de",
+    "ks", "ro", "sw", "it", "la", "id", "ne", "bn", "pt",
+  ];
+  const idx = langIndex.indexOf(targetLanguage);
+
+  let result = text;
+  const placeholders = new Map&lt;string, string&gt;();
+  let phIdx = 0;
+
+  for (const [term] of Object.entries(properNouns)) {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&amp;");
+    const regex = new RegExp("\\b" + escaped + "\\b", "g");
+    if (regex.test(result)) {
+      const translated = properNouns[term]?.[idx] || properNouns[term]?.[0] || term;
+      const ph = "__PH" + phIdx++ + "__";
+      placeholders.set(ph, translated);
+      result = result.replace(regex, ph);
+    }
+  }
+
+  for (const term of Object.keys(glossary)) {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&amp;");
+    const regex = new RegExp("\\b" + escaped + "\\b", "gi");
+    if (regex.test(result)) {
+      const translation = glossary[term]?.[targetLanguage] || glossary[term]?.["en"] || term;
+      if (translation !== term) {
+        const ph = "__PH" + phIdx++ + "__";
+        placeholders.set(ph, translation);
+        result = result.replace(regex, ph);
+      }
+    }
+  }
+
+  return { lockedText: result, placeholders };
+}</code></pre>
+<pre><code>function restorePlaceholdersServer(text: string, placeholders: Map&lt;string, string&gt;): string {
+  let result = text;
+  for (const [ph, value] of placeholders) {
+    result = result.split(ph).join(value);
+  }
+  return result;
+}</code></pre>
+
+<h2>7. Chunking + Sliding-Window Context (P21)</h2>
+<pre><code>function chunkText(text: string, maxWords: number): string[] {
+  const words = text.split(/\s+/);
+  const chunks: string[] = [];
+  for (let i = 0; i &lt; words.length; i += maxWords) {
+    chunks.push(words.slice(i, i + maxWords).join(" "));
+  }
+  return chunks;
+}</code></pre>
+<pre><code>function extractLastSentences(text: string): string {
+  const sentences = text.split(/(?&lt;=[.!?])\s+/).filter(Boolean);
+  return sentences.slice(-2).join(" ");
+}</code></pre>
+<p>Applied per chunk inside <code>translateLanguage</code>:</p>
+<pre><code>let previousContext: string | undefined;
+if (i &gt; 0) {
+  const prevChunk = existingChunks.find((c) =&gt; c.chunkIndex === i - 1 &amp;&amp; c.status === "done");
+  if (prevChunk?.translatedText) {
+    previousContext = extractLastSentences(prevChunk.translatedText);
+  }
+}
+...
+let userContent = lockedText;
+if (previousContext) {
+  userContent = `Previous chunk ended with: ${previousContext}\n\nContinue seamlessly.\n\n${userContent}`;
+}</code></pre>
+
+<h2>8. Gemini Call — 5-key rotation with retry/backoff</h2>
+<p>Keys <code>Gemini_API_Key_1..5</code> are read from the Convex server environment
+(<code>process.env</code>) — never bundled to the client. For each key, up to 3 attempts:
+429 backs off 10 s × attempt, 5xx backs off 5 s × attempt, other statuses move to the next key.</p>
+<pre><code>async function callGemini(
+  keys: string[],
+  systemPrompt: string,
+  userMessage: string,
+): Promise&lt;{ text: string; model: string; usage: unknown }&gt; {
+  for (const key of keys) {
+    for (let attempt = 0; attempt &lt; 3; attempt++) {
+      try {
+        const res = await fetch(GEMINI_ENDPOINT, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${key}`,
+          },
+          body: JSON.stringify({
+            model: GEMINI_MODEL,
+            messages: [
+              { role: "system" as const, content: systemPrompt },
+              { role: "user" as const, content: userMessage },
+            ],
+            temperature: 0.3,
+            max_tokens: 4000,
+          }),
+        });
+
+        if (res.ok) {
+          const data: { choices?: { message?: { content?: string } }[]; model?: string; usage?: unknown } = await res.json();
+          const text = data.choices?.[0]?.message?.content;
+          if (!text) break;
+          const cleaned = text.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim();
+          return { text: cleaned, model: data.model || GEMINI_MODEL, usage: data.usage };
+        }
+        if (res.status === 429) {
+          await new Promise((r) =&gt; setTimeout(r, (attempt + 1) * 10000));
+          continue;
+        }
+        if (res.status &gt;= 500) {
+          await new Promise((r) =&gt; setTimeout(r, (attempt + 1) * 5000));
+          continue;
+        }
+        break;
+      } catch {
+        await new Promise((r) =&gt; setTimeout(r, (attempt + 1) * 5000));
+      }
+    }
+  }
+  throw new Error("All Gemini keys exhausted for this chunk");
+}</code></pre>
+<p class="meta">Model: <code>process.env.GEMINI_MODEL || "gemini-3.6-flash"</code> &middot;
+endpoint: <code>https://generativelanguage.googleapis.com/v1beta/openai/chat/completions</code>
+&middot; temperature 0.3 &middot; max_tokens 4000 per chunk.</p>
+
+<h2>9. Post-Processing Pipeline (per chunk, after Gemini returns)</h2>
+<pre><code>let processedText = restorePlaceholdersServer(geminiResult.text, placeholders);
+processedText = applyCulturalFilters(processedText, args.langCode, args.marketContext || "standard");
+processedText = processedText.replace(/\*([^*]+)\*/g, (_, thought) =&gt;
+  formatDragonTelepathy(thought, args.langCode)
+);
+if (isRTLLang(args.langCode) &amp;&amp; !processedText.startsWith("\u200F")) {
+  processedText = `\u200F${processedText}`;
+}</code></pre>
+<p><code>applyCulturalFilters</code> (<code>src/lib/translator/cultural.ts</code>) applies
+market contexts (<code>standard</code> / <code>high-censorship</code> / <code>romance-focused</code>),
+profanity euphemisms and cultural rules.
+<code>formatDragonTelepathy</code> (<code>src/lib/translator/formatters.ts</code>) converts
+<code>*thought*</code> into the language's telepathy markers (「」/【】 for ja/ko/zh, «» elsewhere).</p>
+
+<h2>10. QA Engine (src/lib/translator/qa.ts)</h2>
+<p><code>runQA(sourceText, translatedText, langCode, memoryLock)</code> runs code-level checks
+mapped to the phases: leftover-English scan (P8), glossary hit-rate (P1/P9), quote balance
+(P4/P10), name consistency (P2), ranks (P15), telepathy markers (P16), length heuristic (P17),
+line-length/text-fit (P22), chapter metadata (P19). Real interface and signature:</p>
+<pre><code>// QAReport not found</code></pre>
+<pre><code>export function runQA(
+  sourceText: string,
+  translatedText: string,
+  langCode: string,
+  memory: MemoryLockEntry[] = []
+): QAReport {
+  const ctx: CheckContext = {
+    source: sourceText,
+    output: translatedText,
+    langCode,
+  };
+
+  const checks: PhaseCheck[] = [
+    checkGlossaryHitRate(ctx),
+    checkNameConsistency(ctx),
+    checkLiteralBridge(ctx),
+    checkDialoguePreserved(ctx),
+    ...QUALITY_GATES.map((g) =&gt; ({
+      id: g.id,
+      label: g.label,
+      name: g.name,
+      status: "pass" as PhaseStatus,
+      detail: g.detail,
+    })),
+    checkCulturalSecondPass(ctx),
+    checkRTLAndScript(ctx),
+    checkMagicTerms(ctx),
+    checkQuoteBalance(ctx),
+    checkIntimacyFilter(ctx),
+    checkProfanity(ctx),
+    checkRanks(ctx),
+    checkDragonTelepathy(ctx),
+    checkLengthHeuristic(ctx),
+    ...processPhases(ctx, memory),
+    checkChapterMetadata(ctx),
+  ];
+
+  // ── Final QA aggregates every other check ──
+  checks.push(checkFinalQA(ctx, checks));
+  // Keep checks ordered by phase id
+  checks.sort((a, b) =&gt; a.id - b.id);
+
+  const fails = checks.filter((c) =&gt; c.status === "fail").length;
+  const warns = checks.filter((c) =&gt; c.status === "warn").length;
+  const total = checks.length;
+  const score = Math.max(0, Math.min(100, Math.round(100 - (fails * 25) / total - (warns * 8) / total)));
+
+  const overall: PhaseStatus = fails &gt; 0 ? "fail" : warns &gt; 0 ? "warn" : "pass";
+
+  const summary = [
+    `${score}/100 — ${checks.filter((c) =&gt; c.status === "pass").length} pass, ${warns} warn, ${fails} fail`,
+    ...checks
+      .filter((c) =&gt; c.status !== "pass")
+      .map((c) =&gt; `${c.label} ${c.status === "fail" ? "✗" : "⚠"} ${c.detail}`),
+  ];
+
+  return { langCode, score, overall, checks, summary };
+}</code></pre>
+<p>The score is stored on the chunk's <code>usage</code> field
+(<code>usage.qaScore</code>, <code>usage.qaOverall</code>) and shown in the UI QA panel.</p>
+
+<h2>11. Language Chaining</h2>
+<pre><code>const nextLang = args.nextLangCode ||
+  (args.remainingLangs &amp;&amp; args.remainingLangs.length &gt; 0 ? args.remainingLangs[0] : undefined);
+const restLangs = args.nextLangCode
+  ? (args.remainingLangs || [])
+  : (args.remainingLangs || []).slice(1);
+if (nextLang) {
+  await ctx.scheduler.runAfter(0, api.translateContent.translateLanguage, {
+    projectId: args.projectId,
+    langCode: nextLang,
+    marketContext: args.marketContext,
+    nextLangCode: restLangs.length &gt; 0 ? restLangs[0] : undefined,
+    remainingLangs: restLangs.length &gt; 1 ? restLangs.slice(1) : undefined,
+  });
+}</code></pre>
+
+<hr>
+<p class="meta">OnyxTranslate static documentation mirror — plain HTML, no JavaScript. Interactive version: <a href="/#/overview">/#/overview</a></p>
+</body>
+</html>

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OnyxTranslate Documentation — OnyxTranslate Docs</title>
+<style>
+body{background:#0a0a0f;color:#e0e0e0;font-family:Georgia,'Times New Roman',serif;max-width:960px;margin:0 auto;padding:24px;line-height:1.6}
+h1{color:#8B5CF6;border-bottom:2px solid rgba(139,92,246,.3);padding-bottom:8px}
+h2{color:#00e5ff;margin-top:28px}
+h3{color:#fbbf24}
+a{color:#00e5ff}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#F59E0B}
+pre{background:rgba(0,0,0,.45);border:1px solid rgba(139,92,246,.25);border-radius:8px;padding:12px;overflow-x:auto}
+pre code{color:#e0e0e0;font-size:11px;line-height:1.5;white-space:pre}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border:1px solid rgba(139,92,246,.25);padding:6px 10px;text-align:left;vertical-align:top}
+th{color:#8B5CF6;background:rgba(139,92,246,.08)}
+td code{color:#00e5ff}
+.meta{color:#8b8ba0;font-size:12px;font-family:ui-monospace,monospace}
+.note{border-left:3px solid #fbbf24;background:rgba(251,191,36,.06);padding:8px 14px;font-size:13px}
+</style>
+</head>
+<body>
+<p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
+<h1>OnyxTranslate Documentation</h1>
+<p class="meta">Static JS-free mirror &middot; generated 2026-09-05 08:24 UTC</p>
+
+<h2>OnyxTranslate — Project Summary</h2>
+<p><strong>OnyxTranslate</strong> is a server-side book/PDF localization tool. Users upload an English
+novel (PDF), paste text, or snap/upload an image; the app extracts the text, splits it into
+~2,500-word chunks, and translates each chunk into up to 20 target languages using
+<strong>Gemini 3.6 Flash</strong> behind a 5-key rotation (5 free-tier API keys, ~1,250 requests/day
+combined). Translation runs entirely in <strong>Convex server actions</strong> — the browser never holds
+API keys, and the queue keeps running after the user closes the tab.</p>
+<p><strong>Stack:</strong> React 19 + Vite 7 + TypeScript 5.9 + Tailwind CSS 4 (dark neon royal theme)
+&middot; Convex 1.45 (database, file storage, reactive queries, scheduler) &middot; Gemini 3.6 Flash
+(5-key rotation via <code>Gemini_API_Key_1..5</code>) &middot; pdf.js (parse) + pdf-lib (server-side
+PDF generation) &middot; JSZip (batch download). Target languages: Urdu, Arabic, French, Japanese,
+Spanish, Hindi, Turkish, Chinese, Russian, Korean, German, Kashmiri, Romanian, Swahili, Italian,
+Latin, Indonesian, Nepali, Bangla, Portuguese.</p>
+<p class="note">This mirror is plain HTML for AI agents and raw HTTP fetchers. The interactive
+documentation dashboard lives at <a href="/#/overview">/#/overview</a>.</p>
+
+<h2>Documentation Pages</h2>
+<table>
+<tr><th>Page</th><th>Contents</th></tr>
+<tr><td><a href="/docs/architecture.html">architecture.html</a></td>
+<td>Convex schema (every table, field, index), session isolation model, end-to-end data flow:
+upload &rarr; parse &rarr; chunking &rarr; translation &rarr; PDF generation &rarr; ZIP</td></tr>
+<tr><td><a href="/docs/convex-functions.html">convex-functions.html</a></td>
+<td>Convex mutations + queries + history + import + upload — exact signatures and real code</td></tr>
+<tr><td><a href="/docs/convex-functions-2.html">convex-functions-2.html</a></td>
+<td><code>convex/translateContent.ts</code> — the unified translation action, full real source</td></tr>
+<tr><td><a href="/docs/convex-functions-3.html">convex-functions-3.html</a></td>
+<td><code>convex/translateQueue.ts</code> (autonomous scheduler queue) and
+<code>convex/translateImage.ts</code> (image OCR + translation)</td></tr>
+<tr><td><a href="/docs/convex-functions-4.html">convex-functions-4.html</a></td>
+<td><code>parsePdf.ts</code>, <code>generatePdf.ts</code>, <code>zipAssembly.ts</code> — PDF parsing,
+translated-PDF generation, ZIP assembly</td></tr>
+<tr><td><a href="/docs/translation-pipeline.html">translation-pipeline.html</a></td>
+<td>The Gemini flow: all 23 localization phases (real text), Bible pass, 5-key rotation,
+retry/backoff, sliding-window context, post-processing, QA checks, language chaining</td></tr>
+<tr><td><a href="/docs/frontend.html">frontend.html</a></td>
+<td>Every React component: props, useState/useQuery/useMutation/useAction inventory, render
+structure, theme CSS classes</td></tr>
+<tr><td><a href="/docs/history.html">history.html</a></td>
+<td>Change log — what was built, migrated, and fixed</td></tr>
+</table>
+
+<h2>Deployment</h2>
+<p class="meta">App: https://oyxtranslate.freebuff.app (SPA at /, hash routes #/overview)
+&middot; Convex deployment: curious-cat-677.convex.cloud &middot; Docs mirror: /docs/*.html (this mirror)</p>
+
+<hr>
+<p class="meta">OnyxTranslate static documentation mirror — plain HTML, no JavaScript. Interactive version: <a href="/#/overview">/#/overview</a></p>
+</body>
+</html>

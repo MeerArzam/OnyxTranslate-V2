@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frontend — OnyxTranslate Docs</title>
+<style>
+body{background:#0a0a0f;color:#e0e0e0;font-family:Georgia,'Times New Roman',serif;max-width:960px;margin:0 auto;padding:24px;line-height:1.6}
+h1{color:#8B5CF6;border-bottom:2px solid rgba(139,92,246,.3);padding-bottom:8px}
+h2{color:#00e5ff;margin-top:28px}
+h3{color:#fbbf24}
+a{color:#00e5ff}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#F59E0B}
+pre{background:rgba(0,0,0,.45);border:1px solid rgba(139,92,246,.25);border-radius:8px;padding:12px;overflow-x:auto}
+pre code{color:#e0e0e0;font-size:11px;line-height:1.5;white-space:pre}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border:1px solid rgba(139,92,246,.25);padding:6px 10px;text-align:left;vertical-align:top}
+th{color:#8B5CF6;background:rgba(139,92,246,.08)}
+td code{color:#00e5ff}
+.meta{color:#8b8ba0;font-size:12px;font-family:ui-monospace,monospace}
+.note{border-left:3px solid #fbbf24;background:rgba(251,191,36,.06);padding:8px 14px;font-size:13px}
+</style>
+</head>
+<body>
+<p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
+<h1>Frontend</h1>
+<p class="meta">React components, state, hooks, CSS &middot; generated 2026-09-05 08:24 UTC</p>
+
+<h2>1. Entry &amp; Routing (src/main.tsx)</h2>
+<pre><code>import { StrictMode, useState, useCallback, useEffect } from "react";
+import { createRoot } from "react-dom/client";
+import { ConvexProvider, ConvexReactClient } from "convex/react";
+import Translator from "./pages/Translator.tsx";
+import DragonIntro from "./components/DragonIntro.tsx";
+import { lazy, Suspense } from "react";
+
+// Overview dashboard is lazy-loaded — never bloats the main bundle
+const Overview = lazy(() =&gt; import("./pages/Overview.tsx"));
+
+import "./index.css";
+
+const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL!);
+
+/** Hash-based routing: #/overview → docs dashboard, everything else → Translator */
+function useHashRoute(): string {
+  const get = () =&gt; window.location.hash || "#/";
+  const [hash, setHash] = useState(get);
+  useEffect(() =&gt; {
+    const onChange = () =&gt; setHash(get());
+    window.addEventListener("hashchange", onChange);
+    return () =&gt; window.removeEventListener("hashchange", onChange);
+  }, []);
+  return hash;
+}
+
+function App() {
+  const hash = useHashRoute();
+  const isOverview = hash.startsWith("#/overview");
+
+  const [showIntro, setShowIntro] = useState(true);
+  const [showDebugBtn, setShowDebugBtn] = useState(false);
+
+  // ?debug=1 shows a floating "Play Intro" button
+  useEffect(() =&gt; {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("debug") === "1") {
+      setShowDebugBtn(true);
+    }
+  }, []);
+
+  const handleIntroComplete = useCallback(() =&gt; {
+    setShowIntro(false);
+  }, []);
+
+  const handleReplayIntro = useCallback(() =&gt; {
+    setShowIntro(true);
+  }, []);
+
+  return (
+    &lt;&gt;
+      {/* Intro overlay — plays on top of the app, does not block rendering */}
+      {showIntro &amp;&amp; !isOverview &amp;&amp; &lt;DragonIntro onComplete={handleIntroComplete} /&gt;}
+
+      {/* Hash routing: #/overview → docs dashboard, #/ → translator */}
+      {isOverview ? (
+        &lt;Suspense
+          fallback={
+            &lt;div
+              style={{
+                minHeight: "100vh",
+                background: "#0a0a0f",
+                color: "#8B5CF6",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontFamily: "ui-monospace, monospace",
+                fontSize: 13,
+              }}
+            &gt;
+              Loading documentation…
+            &lt;/div&gt;
+          }
+        &gt;
+          &lt;Overview /&gt;
+        &lt;/Suspense&gt;
+      ) : (
+        &lt;Translator /&gt;
+      )}
+
+      {/* Debug button: visible only with ?debug=1 */}
+      {showDebugBtn &amp;&amp; !isOverview &amp;&amp; (
+        &lt;button
+          onClick={handleReplayIntro}
+          style={{
+            position: "fixed",
+            bottom: 12,
+            left: 12,
+            zIndex: 99999,
+            padding: "6px 12px",
+            fontSize: 11,
+            background: "rgba(0,0,0,0.8)",
+            color: "#fbbf24",
+            border: "1px solid rgba(251,191,36,0.3)",
+            borderRadius: 6,
+            cursor: "pointer",
+            opacity: 0.7,
+          }}
+          title="Replay the Dragon intro"
+        &gt;
+          ▶ Play Intro
+        &lt;/button&gt;
+      )}
+    &lt;/&gt;
+  );
+}
+
+createRoot(document.getElementById("root")!).render(
+  &lt;StrictMode&gt;
+    &lt;ConvexProvider client={convex}&gt;
+      &lt;App /&gt;
+    &lt;/ConvexProvider&gt;
+  &lt;/StrictMode&gt;,
+);
+</code></pre>
+
+<h2>2. src/pages/Translator.tsx</h2>
+<p>Main page: upload/paste/image input, language picker, translation controls, progress,
+preview, QA panel, history, export/import. Line count: 1818.</p>
+
+<h3>2.1 React state (34 variables — real declarations)</h3>
+<table><tr><th>State</th><th>Type</th><th>Setter</th><th>Initial</th></tr><tr><td><code>projectId</code></td><td><code>Id&lt;"projects"&gt; | null</code></td><td><code>setProjectId</code></td><td>null</td></tr><tr><td><code>pdfFileName</code></td><td><code>string | null</code></td><td><code>setPdfFileName</code></td><td>null</td></tr><tr><td><code>pdfPageCount</code></td><td><code>number | null</code></td><td><code>setPdfPageCount</code></td><td>null</td></tr><tr><td><code>pdfWarnings</code></td><td><code>string[]</code></td><td><code>setPdfWarnings</code></td><td>[]</td></tr><tr><td><code>pageData</code></td><td><code>PDFPageData[]</code></td><td><code>setPageData</code></td><td>[]</td></tr><tr><td><code>originalPageTexts</code></td><td><code>string[]</code></td><td><code>setOriginalPageTexts</code></td><td>[]</td></tr><tr><td><code>sourceText</code></td><td><code>inferred</code></td><td><code>setSourceText</code></td><td>""</td></tr><tr><td><code>originalArrayBuffer</code></td><td><code>ArrayBuffer | null</code></td><td><code>setOriginalArrayBuffer</code></td><td>null</td></tr><tr><td><code>isUploading</code></td><td><code>inferred</code></td><td><code>setIsUploading</code></td><td>false</td></tr><tr><td><code>uploadError</code></td><td><code>string | null</code></td><td><code>setUploadError</code></td><td>null</td></tr><tr><td><code>isDragOver</code></td><td><code>inferred</code></td><td><code>setIsDragOver</code></td><td>false</td></tr><tr><td><code>parsePhase</code></td><td><code>"idle" | "loading" | "parsing" | "done"</code></td><td><code>setParsePhase</code></td><td>"idle"</td></tr><tr><td><code>isTranslating</code></td><td><code>inferred</code></td><td><code>setIsTranslating</code></td><td>false</td></tr><tr><td><code>translationError</code></td><td><code>string | null</code></td><td><code>setTranslationError</code></td><td>null</td></tr><tr><td><code>copiedPreview</code></td><td><code>inferred</code></td><td><code>setCopiedPreview</code></td><td>false</td></tr><tr><td><code>currentPreviewLangCode</code></td><td><code>string | null</code></td><td><code>setCurrentPreviewLangCode</code></td><td>null</td></tr><tr><td><code>pdfProgress</code></td><td><code>PDFGenerationProgress | null</code></td><td><code>setPdfProgress</code></td><td>null</td></tr><tr><td><code>currentPdfBlob</code></td><td><code>Blob | null</code></td><td><code>setCurrentPdfBlob</code></td><td>null</td></tr><tr><td><code>currentQaReport</code></td><td><code>QAReport | null</code></td><td><code>setCurrentQaReport</code></td><td>null</td></tr><tr><td><code>translationMode</code></td><td><code>TranslationMode | null</code></td><td><code>setTranslationMode</code></td><td>null</td></tr><tr><td><code>translationModel</code></td><td><code>string | null</code></td><td><code>setTranslationModel</code></td><td>null</td></tr><tr><td><code>showAllQaPhases</code></td><td><code>inferred</code></td><td><code>setShowAllQaPhases</code></td><td>false</td></tr><tr><td><code>baselineSummary</code></td><td><code>BaselineSummary | null</code></td><td><code>setBaselineSummary</code></td><td>null</td></tr><tr><td><code>baselineRunning</code></td><td><code>inferred</code></td><td><code>setBaselineRunning</code></td><td>false</td></tr><tr><td><code>baselineOpen</code></td><td><code>inferred</code></td><td><code>setBaselineOpen</code></td><td>false</td></tr><tr><td><code>selectedLangCodes</code></td><td><code>string[]</code></td><td><code>setSelectedLangCodes</code></td><td>[]</td></tr><tr><td><code>marketContext</code></td><td><code>
+    "standard" | "high-censorship" | "romance-focused" | "conservative"
+  </code></td><td><code>setMarketContext</code></td><td>"standard"</td></tr><tr><td><code>isDownloadingZip</code></td><td><code>inferred</code></td><td><code>setIsDownloadingZip</code></td><td>false</td></tr><tr><td><code>imageMode</code></td><td><code>"none" | "upload" | "camera"</code></td><td><code>setImageMode</code></td><td>"none"</td></tr><tr><td><code>imagePreview</code></td><td><code>string | null</code></td><td><code>setImagePreview</code></td><td>null</td></tr><tr><td><code>currentImageBase64</code></td><td><code>inferred</code></td><td><code>setCurrentImageBase64</code></td><td>""</td></tr><tr><td><code>isTranslatingImage</code></td><td><code>inferred</code></td><td><code>setIsTranslatingImage</code></td><td>false</td></tr><tr><td><code>imageSelectedLangs</code></td><td><code>string[]</code></td><td><code>setImageSelectedLangs</code></td><td>[]</td></tr><tr><td><code>showHistory</code></td><td><code>inferred</code></td><td><code>setShowHistory</code></td><td>false</td></tr></table>
+
+<h3>2.2 Convex / React hooks (13 — real bindings)</h3>
+<table><tr><th>Variable</th><th>Hook</th><th>Target</th></tr><tr><td><code>storePdfAction</code></td><td><code>useAction</code></td><td>api.upload.storePdf</td></tr><tr><td><code>parsePdfAction</code></td><td><code>useAction</code></td><td>api.parsePdf.parseUploadedPdf</td></tr><tr><td><code>translateLanguageAction</code></td><td><code>useAction</code></td><td>api.translateContent.translateLanguage</td></tr><tr><td><code>cancelTranslationAction</code></td><td><code>useAction</code></td><td>api.translateQueue.cancelTranslation</td></tr><tr><td><code>translateImageAction</code></td><td><code>useAction</code></td><td>api.translateImage.translateImage</td></tr><tr><td><code>createProjectMutation</code></td><td><code>useMutation</code></td><td>api.mutations.createProject</td></tr><tr><td><code>deleteProjectMutation</code></td><td><code>useMutation</code></td><td>api.mutations.deleteProject</td></tr><tr><td><code>deleteChunksForLangMutation</code></td><td><code>useMutation</code></td><td>api.mutations.deleteChunksForLang</td></tr><tr><td><code>latestProject</code></td><td><code>useQuery</code></td><td>api.queries.getLatestProject, { sessionId }</td></tr><tr><td><code>convexProject</code></td><td><code>useQuery</code></td><td>api.queries.getProject, projectId ? { projectId, sessionId } : "skip"</td></tr><tr><td><code>convexTranslations</code></td><td><code>useQuery</code></td><td>api.queries.getProjectTranslations, projectId ? { projectId, sessionId } : "skip"</td></tr><tr><td><code>saveHistoryMutation</code></td><td><code>useMutation</code></td><td>api.history.saveToHistory</td></tr><tr><td><code>importProjectAction</code></td><td><code>useAction</code></td><td>api.importProject.importProject</td></tr></table>
+
+<h3>2.3 Derived values (useMemo)</h3>
+<p><code>flowPhase</code>, <code>languageStatuses</code>, <code>activeLangIndex</code>, <code>overallProgress</code></p>
+
+<h3>2.4 Key functions (real code)</h3>
+<h4>startTranslation — kicks off the server-side chain</h4>
+<pre><code>// startTranslation not found</code></pre>
+<h4>handlePause — cancels the queue server-side</h4>
+<pre><code>// handlePause not found</code></pre>
+<h4>handleRetranslate — deletes chunks for one language and restarts it</h4>
+<pre><code>// handleRetranslate not found</code></pre>
+<h4>handleExportProgress — JSON export</h4>
+<pre><code>// handleExportProgress not found</code></pre>
+<h4>handleImportProgress — JSON import via Convex action</h4>
+<pre><code>// handleImportProgress not found</code></pre>
+<h4>handleFileSelect (first 50 lines) — PDF upload with batched parse progress</h4>
+<pre><code>// handleFileSelect not found</code></pre>
+<h4>flowPhase — derived UI phase (useMemo)</h4>
+<pre><code>// flowPhase not found</code></pre>
+
+<h2>3. Components</h2>
+
+<h3>3.1 src/components/DragonIntro.tsx (intro overlay)</h3>
+<pre><code>import { useState, useEffect } from "react";
+
+/**
+ * DragonIntro — Uses the actual Kali Linux dragon logo.svg
+ * with neon glow effects on a black background.
+ *
+ * Sequence (~3.5s):
+ *   1. Dark Reveal: Radial purple glow + gold ember particles
+ *   2. Logo Appears: logo.svg fades in with purple/neon glow filter
+ *   3. Flash Sweep: Left-to-right gold/white gradient bar
+ *   4. Title: "ONYX" + "TRANSLATE" fade in below
+ *   5. Fade Out: Everything dissolves, app appears
+ */
+export default function DragonIntro({
+  onComplete,
+}: {
+  onComplete: () =&gt; void;
+}) {
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() =&gt; {
+    const timer = setTimeout(() =&gt; {
+      setVisible(false);
+      onComplete();
+    }, 3700);
+    return () =&gt; clearTimeout(timer);
+  }, [onComplete]);
+
+  // Safety: force-complete after 4.5s
+  useEffect(() =&gt; {
+    const safety = setTimeout(() =&gt; {
+      setVisible(false);
+      onComplete();
+    }, 4500);
+    return () =&gt; clearTimeout(safety);
+  }, [onComplete]);
+
+  if (!visible) return null;
+
+  return (
+    &lt;div className="kali-overlay" aria-hidden="true"&gt;
+      {/* Background radial glow */}
+      &lt;div className="kali-glow" /&gt;
+
+      {/* Ember particles */}
+      &lt;div className="kali-ember" style={{ left: "15%", animationDelay: "0.0s", animationDuration: "2.8s" }} /&gt;
+      &lt;div className="kali-ember" style={{ left: "30%", animationDelay: "0.4s", animationDuration: "3.1s" }} /&gt;
+      &lt;div className="kali-ember" style={{ left: "45%", animationDelay: "0.8s", animationDuration: "2.6s" }} /&gt;
+      &lt;div className="kali-ember" style={{ left: "55%", animationDelay: "0.2s", animationDuration: "3.0s" }} /&gt;
+      &lt;div className="kali-ember" style={{ left: "70%", animationDelay: "0.6s", animationDuration: "2.9s" }} /&gt;
+      &lt;div className="kali-ember" style={{ left: "82%", animationDelay: "1.0s", animationDuration: "3.2s" }} /&gt;
+      &lt;div className="kali-ember" style={{ left: "25%", animationDelay: "1.2s", animationDuration: "2.7s" }} /&gt;
+      &lt;div className="kali-ember" style={{ left: "60%", animationDelay: "0.3s", animationDuration: "3.0s" }} /&gt;
+
+      {/* The actual Kali Linux dragon logo with neon glow */}
+      &lt;div className="kali-logo-wrap"&gt;
+        &lt;img src="/logo.svg" alt="Onyx Translate Dragon" /&gt;
+      &lt;/div&gt;
+
+      {/* Flash sweep bar */}
+      &lt;div className="kali-flash" /&gt;
+
+      {/* Title */}
+      &lt;div className="kali-title-block"&gt;
+        &lt;div className="kali-title"&gt;ONYX&lt;/div&gt;
+        &lt;div className="kali-subtitle"&gt;TRANSLATE&lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+
+<h3>3.2 src/components/RoyalProgressPanel.tsx (progress dashboard)</h3>
+<p><strong>Props</strong> (from the real interface):</p>
+<pre><code>// RoyalProgressPanelProps not found</code></pre>
+<pre><code>// LanguageStatus not found</code></pre>
+
+<h3>3.3 src/components/LanguageAccordion.tsx (per-language preview accordion)</h3>
+<p>Uses <code>useQuery(api.queries.getLivePreviewText, { projectId, langCode })</code> for the
+expanded language, with RTL support for <code>ar/ur/ks</code>. Props:</p>
+<pre><code>// LanguageAccordionProps not found</code></pre>
+
+<h3>3.4 src/components/HistoryPanel.tsx (slide-in history)</h3>
+<p>Reactive query <code>api.queries.getHistory</code> filtered by sessionId; delete via
+<code>api.history.deleteHistory</code>.</p>
+
+<h2>4. Theme CSS Classes (src/index.css — real properties)</h2>
+<table>
+<tr><th>Class</th><th>Key properties (from the real file)</th></tr>
+<tr><td><code>.app-bg-pattern</code></td><td>background: var(--bg); background-image:
+    radial-gradient(ellipse 60% 40% at 50% 0%, rgba(139, 92, 246, 0.06) 0%, transparent 70%),
+    radial-gradient(circle at 20% 80%, rgba(0, 229, 255, 0.03) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(251, 191, 36, 0.02) 0%, transparent </td></tr><tr><td><code>.neon-glow</code></td><td>box-shadow:
+    0 0 8px rgba(0, 229, 255, 0.25),
+    0 0 20px rgba(139, 92, 246, 0.15)</td></tr><tr><td><code>.logo-gradient</code></td><td>background: linear-gradient(135deg, var(--neon-cyan), var(--neon-purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text</td></tr><tr><td><code>.royal-card</code></td><td>background: linear-gradient(145deg, rgba(12, 12, 24, 0.95), rgba(8, 8, 16, 0.98)); border: 1px solid var(--border); box-shadow:
+    0 0 1px rgba(139, 92, 246, 0.1),
+    0 4px 16px rgba(0, 0, 0, 0.4)</td></tr><tr><td><code>.btn-royal-hover</code></td><td>background: linear-gradient(135deg, var(--neon-purple-deep), #6d28d9); color: #fff; border: 1px solid rgba(139, 92, 246, 0.3); transition: all 0.2s ease</td></tr><tr><td><code>.royal-shimmer</code></td><td>background: linear-gradient(90deg,
+    rgba(139, 92, 246, 0.1) 0%,
+    rgba(139, 92, 246, 0.4) 50%,
+    rgba(139, 92, 246, 0.1) 100%); background-size: 200% 100%; animation: royal-shimmer 2s linear infinite</td></tr><tr><td><code>.animate-royal-glow</code></td><td>animation: royal-glow-pulse 2s ease-in-out infinite</td></tr><tr><td><code>.animate-royal-pulse</code></td><td>animation: royal-pulse 1.5s ease-in-out infinite</td></tr><tr><td><code>.kali-overlay</code></td><td>position: fixed; inset: 0; z-index: 9999; background: #000; display: flex; align-items: center; justify-content: center; flex-direction: column; overflow: hidden; animation: kaliFadeOut 0.6s ease 3s forwards</td></tr><tr><td><code>.kali-glow</code></td><td>position: absolute; width: 300px; height: 300px; border-radius: 50%; background: radial-gradient(circle, rgba(139,92,246,0.15) 0%, transparent 70%); opacity: 0; animation: kaliGlowPulse 1.2s ease-in-out 0.2s forwards</td></tr><tr><td><code>.kali-ember</code></td><td>position: absolute; bottom: 10%; width: 3px; height: 3px; background: #D4A017; border-radius: 50%; opacity: 0; animation: kaliEmberRise 3s ease-out infinite; box-shadow: 0 0 4px rgba(212, 160, 23, 0.6)</td></tr><tr><td><code>.kali-logo-wrap</code></td><td>position: absolute; width: clamp(160px, 35vw, 280px); opacity: 0; animation: kaliLogoFadeIn 1s ease-out 0.5s forwards; filter: drop-shadow(0 0 20px rgba(139, 92, 246, 0.4))
+          drop-shadow(0 0 40px rgba(0, 229, 255, 0.15))</td></tr><tr><td><code>.kali-flash</code></td><td>position: absolute; top: 0; left: 0; width: 80px; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,215,0,0.5), rgba(255,255,255,0.7), rgba(255,215,0,0.5), transparent); opacity: 0; animation: kaliFlashSweep 1s ease-in-out 1.5s forwards; pointer-events: none</td></tr><tr><td><code>.kali-title-block</code></td><td>position: absolute; bottom: 20%; display: flex; flex-direction: column; align-items: center; gap: 6px; opacity: 0; animation: kaliTitleReveal 0.8s ease-out 2s forwards</td></tr><tr><td><code>.kali-title</code></td><td>font-family: Georgia, 'Times New Roman', serif; font-size: clamp(42px, 10vw, 68px); font-weight: 800; letter-spacing: 0.3em; color: #FFD700; text-shadow: 0 0 20px rgba(255,215,0,0.5), 0 0 40px rgba(255,215,0,0.2)</td></tr><tr><td><code>.kali-subtitle</code></td><td>font-family: Georgia, 'Times New Roman', serif; font-size: clamp(12px, 3vw, 20px); letter-spacing: 0.4em; color: #8B5CF6; font-weight: 600; text-shadow: 0 0 10px rgba(139,92,246,0.4); opacity: 0; animation: kaliSubReveal 0.5s ease-out 2.4s forwards</td></tr>
+</table>
+<p class="meta">Plus Tailwind utility classes and CSS variables
+(<code>--bg: #06060e</code>, <code>--neon-cyan: #00e5ff</code>,
+<code>--neon-purple: #a78bfa</code>, <code>--neon-gold: #fbbf24</code>).</p>
+
+<hr>
+<p class="meta">OnyxTranslate static documentation mirror — plain HTML, no JavaScript. Interactive version: <a href="/#/overview">/#/overview</a></p>
+</body>
+</html>

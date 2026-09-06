@@ -538,16 +538,24 @@ export default function Translator() {
   // ─── Export / Import Progress ───
   const handleExportProgress = useCallback(async () => {
     if (!convexProject) return;
+    // FIX 6: Complete export — includes sessionId, projectId mapping,
+    // parsedPages/pageData for PDF regeneration, and per-translation PDF
+    // fields so an import restores everything the UI needs.
     const exportData = {
       type: "onyx-translate-project" as const,
       version: 1,
       exportedAt: new Date().toISOString(),
       project: {
+        projectId: convexProject._id,
+        sessionId: convexProject.sessionId ?? sessionId,
         fileName: convexProject.fileName,
         pageCount: convexProject.pageCount,
         wordCount: convexProject.wordCount,
         fullText: convexProject.fullText,
         status: convexProject.status,
+        parsedPages: convexProject.parsedPages,
+        pageData: convexProject.pageData ?? [],
+        zipUrl: convexProject.zipUrl ?? undefined,
       },
       translations: activeTranslations.map((t) => ({
         langCode: t.langCode,
@@ -555,6 +563,10 @@ export default function Translator() {
         completedChunks: t.completedChunks,
         mergedText: t.mergedText,
         status: t.status,
+        pdfUrl: t.pdfUrl ?? undefined,
+        pdfGenerating: t.pdfGenerating ?? false,
+        startedAt: t.startedAt ?? undefined,
+        completedAt: t.completedAt ?? undefined,
       })),
     };
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
@@ -876,7 +888,7 @@ export default function Translator() {
       setTranslationError(err instanceof Error ? err.message : "Resume failed");
       setIsTranslating(false);
     }
-  }, [projectId, isTranslating, sessionId, activeTranslations, translateLanguageAction, marketContext]);
+  }, [projectId, isTranslating, sessionId, activeTranslations, translateLanguageAction, marketContext, convexClient]);
 
   const handleRetranslate = useCallback(
     async (langCode: string) => {
@@ -1710,10 +1722,7 @@ export default function Translator() {
                   overallProgress={overallProgress}
                   projectName={convexProject?.fileName ?? "Untitled"}
                   isPaused={!isTranslating && flowPhase === "translating" && completedCount > 0}
-                  onResume={() => {
-                    setIsTranslating(true);
-                    if (projectId) { const incomplete = activeTranslations.filter((t) => t.status !== "complete").map((t) => t.langCode); if (incomplete.length > 0) { translateLanguageAction({ projectId, langCode: incomplete[0], marketContext, nextLangCode: incomplete.length > 1 ? incomplete[1] : undefined, remainingLangs: incomplete.length > 2 ? incomplete.slice(2) : undefined }); } };
-                  }}
+                  onResume={resumeStalled}
                   onPause={handlePause}
                   onDownload={handleDownloadAllZIP}
                   onStartFresh={clearSource}

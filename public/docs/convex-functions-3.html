@@ -24,7 +24,7 @@ td code{color:#00e5ff}
 <body>
 <p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
 <h1>Convex Functions — Autonomous Queue + Image Translation</h1>
-<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-05 08:24 UTC</p>
+<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-06 16:41 UTC</p>
 <p>Files on this page: <code>convex/translateQueue.ts</code>, <code>convex/translateImage.ts</code></p><h2>convex/translateQueue.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>startTranslation</code> — action</li><li><code>processLanguage</code> — action</li><li><code>cancelTranslation</code> — action</li></ul></p><pre><code>"use node";
 /**
  * convex/translateQueue.ts — Autonomous server-side translation queue.
@@ -229,12 +229,56 @@ function buildSystemPrompt(langCode: string, marketContext = "standard"): string
 // Helpers
 // ════════════════════════════════════════════════════════════
 
+// FIX 2a: paragraph-aware chunking (identical logic to translateContent.ts so
+// both paths produce the same boundaries — never mid-sentence).
 function chunkText(text: string, maxWords: number): string[] {
-  const words = text.split(/\s+/);
+  const normalized = text.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return [];
+  const paragraphs = normalized.split(/\n{2,}/).map((p) =&gt; p.trim()).filter(Boolean);
+
   const chunks: string[] = [];
-  for (let i = 0; i &lt; words.length; i += maxWords) {
-    chunks.push(words.slice(i, i + maxWords).join(" "));
+  let currentParas: string[] = [];
+  let currentWords = 0;
+
+  const flush = () =&gt; {
+    if (currentParas.length &gt; 0) {
+      chunks.push(currentParas.join("\n\n"));
+      currentParas = [];
+      currentWords = 0;
+    }
+  };
+
+  for (const para of paragraphs) {
+    const paraWords = para.split(/\s+/).filter(Boolean).length;
+
+    if (paraWords &gt; maxWords) {
+      flush();
+      const sentences = para.match(/[^.!?\u06D4\u3002\uFF01\uFF1F]+[.!?\u06D4\u3002\uFF01\uFF1F]+["'\u00BB\u300D\u300F]?\s*|[^.!?\u06D4\u3002\uFF01\uFF1F]+$/g) || [para];
+      let sentenceBuf = "";
+      let sentenceWords = 0;
+      for (const sentence of sentences) {
+        const w = sentence.split(/\s+/).filter(Boolean).length;
+        if (sentenceBuf &amp;&amp; sentenceWords + w &gt; maxWords) {
+          chunks.push(sentenceBuf.trim());
+          sentenceBuf = sentence;
+          sentenceWords = w;
+        } else {
+          sentenceBuf += sentence;
+          sentenceWords += w;
+        }
+      }
+      if (sentenceBuf.trim()) chunks.push(sentenceBuf.trim());
+      continue;
+    }
+
+    if (currentWords + paraWords &gt; maxWords &amp;&amp; currentParas.length &gt; 0) {
+      flush();
+    }
+    currentParas.push(para);
+    currentWords += paraWords;
   }
+  flush();
+
   return chunks;
 }
 

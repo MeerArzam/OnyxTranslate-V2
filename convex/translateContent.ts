@@ -351,6 +351,98 @@ function restorePlaceholdersServer(text: string, placeholders: Map<string, strin
   return result;
 }
 
+/**
+ * FIX 1b: Strip leaked meta-commentary from the model output.
+ *
+ * Gemini sometimes leaks its internal self-check ("Check QA rules:",
+ * "Ready to generate output.", "Here is the translation") into the content.
+ * For non-Latin target scripts, any line that is predominantly Latin letters
+ * is by definition leaked English meta-text (legitimate prose is in the
+ * target script; allowed names are single inline words), so whole offending
+ * lines are dropped. Known meta phrases are also removed inline so a mixed
+ * line like "Ready to generate output.باب ۱" keeps its translated part.
+ */
+function stripMetaCommentary(text: string, langCode: string): string {
+  const cfg = getLocalizationConfig(langCode);
+  const script = cfg?.script || "Latin";
+  const isNonLatinScript = script !== "Latin";
+
+  let out = text;
+
+  // Known meta phrases — removed inline (keeps any translated text around them)
+  out = out.replace(/\bready\s+to\s+generate\s+(?:the\s+)?output\s*[.!:]*\s*/gi, "");
+  out = out.replace(/\bcheck(?:ing)?\s+qa\s+rules?\s*:\s*/gi, "");
+  out = out.replace(/\boutput\s+only\s+the\s+translated\s+text\s*[.!:]*\s*/gi, "");
+  out = out.replace(/^\s*here(?:'s|\s+is)\s+(?:the\s+)?translation\s*[.!:]*\s*/gim, "");
+
+  if (isNonLatinScript) {
+    // Whole lines of English prose are always leaked meta-commentary
+    out = out
+      .split("\n")
+      .filter((line) => {
+        const trimmed = line.trim();
+        if (!trimmed) return true;
+        const latin = (trimmed.match(/[A-Za-z]/g) ?? []).length;
+        const total = [...trimmed].length;
+        return latin / total < 0.5;
+      })
+      .join("\n");
+  }
+
+  return out.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/**
+ * FIX 1b: Normalize dictionary-format output.
+ *
+ * A failure mode where the model emits a numbered EN→X dictionary instead of
+ * pure prose:
+ *   27.
+ *   English:
+ *   The war was not between...
+ *   Urdu:
+ *   جنگ ...
+ *
+ * If the output contains English:/Urdu:-style pairs, extract ONLY the target-
+ * language values in order (the English sides are meta-text, not content).
+ */
+function normalizeDictionaryFormat(text: string): string {
+  const hasPairs = /(^|\n)\s*\d+\s*\.\s*\n\s*(?:English|Source)\s*:\s*\n/i.test(text) &&
+    /(^|\n)\s*(?:Urdu|Arabic|French|Japanese|Spanish|Hindi|Turkish|Chinese|Russian|Korean|German|Kashmiri|Romanian|Swahili|Italian|Latin|Indonesian|Nepali|Bangla|Portuguese|Target|Translation)\s*:\s*\n/i.test(text);
+  if (!hasPairs) return text;
+
+  const lines = text.split("\n");
+  const values: string[] = [];
+  let inTarget = false;
+  let buf: string[] = [];
+  const targetLabelRe = /^\s*(?:Urdu|Arabic|French|Japanese|Spanish|Hindi|Turkish|Chinese|Russian|Korean|German|Kashmiri|Romanian|Swahili|Italian|Latin|Indonesian|Nepali|Bangla|Portuguese|Target|Translation)\s*:\s*$/i;
+  const englishLabelRe = /^\s*(?:English|Source)\s*:\s*$/i;
+  const numberLabelRe = /^\s*\d+\s*\.\s*$/;
+
+  const flush = () => {
+    const v = buf.join("\n").trim();
+    if (v) values.push(v);
+    buf = [];
+  };
+
+  for (const line of lines) {
+    if (targetLabelRe.test(line)) {
+      flush();
+      inTarget = true;
+      continue;
+    }
+    if (englishLabelRe.test(line) || numberLabelRe.test(line)) {
+      flush();
+      inTarget = false;
+      continue;
+    }
+    if (inTarget) buf.push(line);
+  }
+  flush();
+
+  return values.length > 0 ? values.join("\n\n") : text;
+}
+
 function escapeRegex(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -360,39 +452,77 @@ function extractLastSentences(text: string): string {
   return sentences.slice(-2).join(" ");
 }
 
-// Gemini call with 5-key rotation + retries
+// Gemini call with 5-key rotation + retries.
+/**
+ *
+ * Uses the NATIVE generateContent API (not the OpenAI-compat layer) because
+ * gemini-3.6-flash is a thinking model: through the OpenAI-compat endpoint
+ * its invisible reasoning consumed ~3.8k tokens of the output budget and
+ * every chunk came back truncated at ~160 visible tokens with finish_reason
+ * "stop" (so truncation recovery never triggered). The native API exposes
+ * thinkingConfig.thinkingBudget — we disable thinking entirely; the 23-phase
+ * QA layer provides the quality control instead.
+ */
 async function callGemini(
   keys: string[],
   systemPrompt: string,
   userMessage: string,
-): Promise<{ text: string; model: string; usage: unknown }> {
+): Promise<{ text: string; model: string; usage: unknown; finishReason: string }> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+
   for (const key of keys) {
     for (let attempt = 0; attempt < 3; attempt++) {
+      // Attempt 0-1: thinking disabled. Attempt 2: fallback WITHOUT
+      // thinkingConfig in case this model rejects thinkingBudget: 0.
+      const disableThinking = attempt < 2;
       try {
-        const res = await fetch(GEMINI_ENDPOINT, {
+        const res = await fetch(url, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${key}`,
+            "x-goog-api-key": key,
           },
           body: JSON.stringify({
-            model: GEMINI_MODEL,
-            messages: [
-              { role: "system" as const, content: systemPrompt },
-              { role: "user" as const, content: userMessage },
-            ],
-            temperature: 0.3,
-            max_tokens: 4000,
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ role: "user", parts: [{ text: userMessage }] }],
+            generationConfig: {
+              temperature: 0.3,
+              maxOutputTokens: 16384,
+              ...(disableThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+            },
           }),
         });
 
         if (res.ok) {
-          const data: { choices?: { message?: { content?: string } }[]; model?: string; usage?: unknown } = await res.json();
-          const text = data.choices?.[0]?.message?.content;
-          if (!text) break;
-          const cleaned = text.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim();
-          return { text: cleaned, model: data.model || GEMINI_MODEL, usage: data.usage };
+          const data: {
+            candidates?: Array<{
+              content?: { parts?: Array<{ text?: string }> };
+              finishReason?: string;
+            }>;
+            modelVersion?: string;
+            usageMetadata?: {
+              promptTokenCount?: number;
+              candidatesTokenCount?: number;
+              totalTokenCount?: number;
+            };
+          } = await res.json();
+          const cand = data.candidates?.[0];
+          const raw = (cand?.content?.parts ?? []).map((p) => p.text || "").join("");
+          const finishReason = String(cand?.finishReason || "STOP");
+          if (!raw.trim()) break;
+          const cleaned = raw.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim();
+          return {
+            text: cleaned,
+            model: data.modelVersion || GEMINI_MODEL,
+            usage: {
+              promptTokens: data.usageMetadata?.promptTokenCount ?? 0,
+              completionTokens: data.usageMetadata?.candidatesTokenCount ?? 0,
+              totalTokens: data.usageMetadata?.totalTokenCount ?? 0,
+            },
+            finishReason,
+          };
         }
+
         if (res.status === 429) {
           await new Promise((r) => setTimeout(r, (attempt + 1) * 10000));
           continue;
@@ -401,6 +531,9 @@ async function callGemini(
           await new Promise((r) => setTimeout(r, (attempt + 1) * 5000));
           continue;
         }
+        // 400-class: log body for diagnostics, try next attempt/key
+        const errBody = await res.text().catch(() => "");
+        console.warn(`[callGemini] HTTP ${res.status}: ${errBody.slice(0, 200)}`);
         break;
       } catch {
         await new Promise((r) => setTimeout(r, (attempt + 1) * 5000));
@@ -581,9 +714,11 @@ export const translateLanguage = action({
       if (memoryLines.length > 0) {
         userContent = `# TRANSLATION MEMORY (mandatory — reuse these exact translations for consistency)\n${memoryLines.join("\n")}\n\n${userContent}`;
       }
+      // Anti-leak instruction: reply must START with the first translated word
+      userContent = `${userContent}\n\nTranslate ALL of the text above as one continuous piece of prose in ${args.langCode}. Begin your reply with the first translated word — no preamble, no self-checks, no notes. NEVER output a numbered list, NEVER output "English:"/"Urdu:" (or any language-label) pairs, NEVER a dictionary/line-by-line format — only the running translated story.`;
 
       // FIX 1c: Call Gemini + QA retry loop (max 2 attempts)
-      let geminiResult: { text: string; model: string; usage: unknown } | null = null;
+      let geminiResult: { text: string; model: string; usage: unknown; finishReason: string } | null = null;
       let processedText = "";
       let qaScore = 0;
       let qaOverall = "unknown";
@@ -596,8 +731,32 @@ export const translateLanguage = action({
 
         geminiResult = await callGemini(keys, systemPrompt, attemptUserContent);
 
+        // Truncation recovery: if the model hit the token ceiling mid-chunk,
+        // ask it to continue EXACTLY where it stopped and concatenate.
+        if (geminiResult.finishReason === "length") {
+          console.warn(`[translateContent] ${args.langCode} chunk ${i}: output truncated — requesting continuation`);
+          try {
+            const cont = await callGemini(
+              keys,
+              systemPrompt,
+              `${attemptUserContent}\n\n# CONTINUATION INSTRUCTION\nYour previous reply was cut off mid-sentence. Continue EXACTLY where you stopped — repeat nothing already translated, add no commentary. Translate the REMAINING source text to the very end.`,
+            );
+            geminiResult = {
+              ...geminiResult,
+              text: `${geminiResult.text}\n${cont.text}`.replace(/\n{3,}/g, "\n\n"),
+              finishReason: cont.finishReason,
+            };
+          } catch {
+            // keep the truncated best-effort text
+          }
+        }
+
         // ── FIX 1b: Post-processing pipeline ──
         let out = restorePlaceholdersServer(geminiResult.text, placeholders);
+        // Normalize dictionary-format output (27.\nEnglish:\n...\nUrdu:\n...)
+        out = normalizeDictionaryFormat(out);
+        // Strip leaked meta-commentary (self-check text, "Ready to generate output")
+        out = stripMetaCommentary(out, args.langCode);
         // Strip accidental paragraph-number labels like 【Paragraph 9】/ [Paragraph 3] / (Paragraph 2)
         out = out.replace(/\s*[\u3010\[](?:\s*)Paragraph(?:\s*#?\s*\d+)?[\u3011\]]\s*/gi, "\n");
         // Also strip localized variants with bare numbers in CJK brackets

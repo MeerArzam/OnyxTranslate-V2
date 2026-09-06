@@ -22,6 +22,8 @@ export const importProject = action({
         pageCount: number;
         wordCount: number;
         fullText: string;
+        parsedPages?: number;
+        pageData?: unknown[];
       };
       translations: Array<{
         langCode: string;
@@ -29,6 +31,7 @@ export const importProject = action({
         completedChunks: number;
         mergedText?: string;
         status: string;
+        pdfUrl?: string;
       }>;
     };
 
@@ -43,8 +46,14 @@ export const importProject = action({
         "Invalid export file format — expected Onyx Translate JSON export"
       );
     }
+    if (!data.project || !Array.isArray(data.translations)) {
+      throw new Error(
+        "Invalid export file structure — missing project or translations"
+      );
+    }
 
-    // Create project
+    // Create project — restore pageData/parsedPages so PDF regeneration
+    // coordinates survive an import round-trip (FIX 6).
     const projectId: Id<"projects"> = await ctx.runMutation(
       api.mutations.createProject,
       {
@@ -52,9 +61,9 @@ export const importProject = action({
         fileName: data.project.fileName,
         pageCount: data.project.pageCount,
         wordCount: data.project.wordCount,
-        pageData: [],
+        pageData: (data.project.pageData ?? []) as object[],
         fullText: data.project.fullText,
-        parsedPages: data.project.pageCount,
+        parsedPages: data.project.parsedPages ?? data.project.pageCount,
         status: "ready",
       }
     );

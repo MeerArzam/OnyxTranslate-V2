@@ -202,12 +202,56 @@ function buildSystemPrompt(langCode: string, marketContext = "standard"): string
 // Helpers
 // ════════════════════════════════════════════════════════════
 
+// FIX 2a: paragraph-aware chunking (identical logic to translateContent.ts so
+// both paths produce the same boundaries — never mid-sentence).
 function chunkText(text: string, maxWords: number): string[] {
-  const words = text.split(/\s+/);
+  const normalized = text.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return [];
+  const paragraphs = normalized.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+
   const chunks: string[] = [];
-  for (let i = 0; i < words.length; i += maxWords) {
-    chunks.push(words.slice(i, i + maxWords).join(" "));
+  let currentParas: string[] = [];
+  let currentWords = 0;
+
+  const flush = () => {
+    if (currentParas.length > 0) {
+      chunks.push(currentParas.join("\n\n"));
+      currentParas = [];
+      currentWords = 0;
+    }
+  };
+
+  for (const para of paragraphs) {
+    const paraWords = para.split(/\s+/).filter(Boolean).length;
+
+    if (paraWords > maxWords) {
+      flush();
+      const sentences = para.match(/[^.!?\u06D4\u3002\uFF01\uFF1F]+[.!?\u06D4\u3002\uFF01\uFF1F]+["'\u00BB\u300D\u300F]?\s*|[^.!?\u06D4\u3002\uFF01\uFF1F]+$/g) || [para];
+      let sentenceBuf = "";
+      let sentenceWords = 0;
+      for (const sentence of sentences) {
+        const w = sentence.split(/\s+/).filter(Boolean).length;
+        if (sentenceBuf && sentenceWords + w > maxWords) {
+          chunks.push(sentenceBuf.trim());
+          sentenceBuf = sentence;
+          sentenceWords = w;
+        } else {
+          sentenceBuf += sentence;
+          sentenceWords += w;
+        }
+      }
+      if (sentenceBuf.trim()) chunks.push(sentenceBuf.trim());
+      continue;
+    }
+
+    if (currentWords + paraWords > maxWords && currentParas.length > 0) {
+      flush();
+    }
+    currentParas.push(para);
+    currentWords += paraWords;
   }
+  flush();
+
   return chunks;
 }
 

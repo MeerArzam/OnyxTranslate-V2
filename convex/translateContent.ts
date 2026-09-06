@@ -27,6 +27,9 @@ const GEMINI_ENDPOINT =
   "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 const CHUNK_SIZE = 2500;
+// FIX 5: Convex actions time out; cap fresh Gemini translations per run and
+// continue in a fresh scheduled run (completed chunks are always skipped).
+const MAX_CHUNKS_PER_RUN = 6;
 
 const LOCKED_TERM_LIST = [
   "Signet", "Venin", "Sages", "Mavens", "Wards", "Empyrean", "Conduits",
@@ -139,12 +142,54 @@ function buildSystemPrompt(langCode: string, marketContext = "standard"): string
     ([name, style, example], i) => `${i + 1}. ${name}: ${style}${example ? `\n   Example: ${example}` : ""}`
   ).join("\n");
 
+  // FIX 4c: Per-language punctuation map
+  const PUNCTUATION_MAP: Record<string, string> = {
+    fr: "Dialogue uses « » guillemets. Non-breaking space before » and after « is correct.",
+    it: "Dialogue uses « » guillemets (Italian preference).",
+    de: "Dialogue uses German quotes: opening „ (low), closing “ (high).",
+    es: "Dialogue uses em-dash (—) at the start of speaker turns; « » optional.",
+    pt: 'Dialogue uses em-dash (—) or " " quotes.',
+    ru: "Dialogue uses « » guillemets and — dashes for speaker turns.",
+    ar: 'Dialogue uses « » or " " quotes. Full stop is \u06DB where natural; RTL flow must be native.',
+    ur: 'Dialogue uses " " quotes; full stop is \u06DB (Urdu full stop) — NEVER use the Latin period.',
+    ks: 'Dialogue uses " " quotes; use Kashmiri/Arabic-script punctuation, never Latin periods.',
+    hi: 'Dialogue uses " " quotes; sentence end uses danda (।) optionally, otherwise standard full stop.',
+    ne: 'Dialogue uses " " quotes; danda (।) is the natural sentence end.',
+    bn: 'Dialogue uses " " quotes; sentence end uses daṛi (।).',
+    ja: "Dialogue uses 「」; internal thoughts use 「」 (or 『』 for nested).",
+    ko: 'Dialogue uses " " or 「」; internal thoughts use 「」.',
+    zh: 'Dialogue uses " " (or 「」 in traditional contexts); internal thoughts use 「」.',
+    la: 'Standard " " quotes and classical punctuation conventions.',
+    id: 'Standard " " quotes and standard punctuation.',
+    sw: 'Standard " " quotes and standard punctuation.',
+    tr: 'Standard " " quotes and standard punctuation.',
+    ro: 'Standard " " quotes and standard punctuation.',
+  };
+
   return [
+    "# ─── ABSOLUTE OUTPUT CONTRACT (read first, violate nothing) ───",
+    "// FIX 4a: PURE OUTPUT — Your ENTIRE reply must be ONLY the translated prose.",
+    "NEVER output: 'Paragraph 9' style labels, 【】/[]/{} brackets with numbers or annotations, numbered list markers, 'Here is the translation', any meta-commentary, explanations, apologies, or notes.",
+    "If the source itself contains such labels/markers, translate the text they wrap but DO NOT reproduce the label markers themselves.",
+    "// FIX 4b: FULL TRANSLATION — Every source word must be rendered in the target language.",
+    "ZERO English leakage is permitted except: character names and fantasy proper nouns exactly as given in the Name Map and locked glossary (Violet, Xaden, Tairn, Andarna, Ridoc, Dain, Basgiath, Navarre, Tyrrendor, Venin, and every term in the LOCKED GLOSSARY below).",
+    "Low-resource languages (Kashmiri, Nepali, Swahili, Latin) must be written FULLY in their native script — never mixed English/script.",
+    "// FIX 4e: STRUCTURAL CONSISTENCY — one source paragraph → one target paragraph.",
+    "Preserve blank-line separations and paragraph ORDER exactly. Do not merge, split, reorder, or drop paragraphs. Never add narration, chapter exits, or continuation that is not in the source.",
+    "",
+    "# CHARACTER VOICE CALIBRATION (FIX 4d — voices must stay distinct in every language)",
+    "- Violet Sorrengail — determined, vulnerable, dry wit.",
+    "- Xaden Riorson — terse, possessive, dark; short declaratives.",
+    "- Ridoc Gamlyn — informal, comic relief; slang must be natural to the target language.",
+    "- Dain Aetos — formal military register; titles and protocol.",
+    "- Dragons (Tairn, Andarna) — alien, NO contractions, telepathy formatted per P16 with 「」 convention.",
+    "",
     "You are the Empyrean Translator \u2014 a world-class literary localization engine for the epic high-fantasy novel ONYX STORM (English source).",
     "You translate the source text into a professionally localized edition that reads as NATIVE fiction in the target market \u2014 never as word-swapped English. You follow every phase below, in order, before producing your output.",
     "",
     `TARGET LANGUAGE: ${langLine}`,
     `MARKET CONTEXT: ${buildMarketContext(marketContext)}`,
+    `// FIX 4c — PUNCTUATION CONTRACT: ${PUNCTUATION_MAP[langCode] || "Use the language's standard punctuation conventions."}`,
     "",
     "# THE 23 PHASES",
     phaseRules,
@@ -190,12 +235,65 @@ function buildSystemPrompt(langCode: string, marketContext = "standard"): string
   ].join("\n");
 }
 
+/**
+ * FIX 2a: Paragraph-aware chunking.
+ *
+ * Accumulates whole paragraphs (split on blank lines) until the word cap is
+ * reached, then closes the chunk at a PARAGRAPH boundary. A single oversized
+ * paragraph is split at sentence boundaries — never mid-sentence. Page text
+ * (from PDF extraction) already uses blank-line separation, so page boundaries
+ * are respected automatically.
+ */
 function chunkText(text: string, maxWords: number): string[] {
-  const words = text.split(/\s+/);
+  const normalized = text.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return [];
+  const paragraphs = normalized.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+
   const chunks: string[] = [];
-  for (let i = 0; i < words.length; i += maxWords) {
-    chunks.push(words.slice(i, i + maxWords).join(" "));
+  let currentParas: string[] = [];
+  let currentWords = 0;
+
+  const flush = () => {
+    if (currentParas.length > 0) {
+      chunks.push(currentParas.join("\n\n"));
+      currentParas = [];
+      currentWords = 0;
+    }
+  };
+
+  for (const para of paragraphs) {
+    const paraWords = para.split(/\s+/).filter(Boolean).length;
+
+    if (paraWords > maxWords) {
+      // Oversized single paragraph: flush what we have, then split the
+      // paragraph at SENTENCE boundaries (never mid-sentence).
+      flush();
+      const sentences = para.match(/[^.!?\u06D4\u3002\uFF01\uFF1F]+[.!?\u06D4\u3002\uFF01\uFF1F]+["'\u00BB\u300D\u300F]?\s*|[^.!?\u06D4\u3002\uFF01\uFF1F]+$/g) || [para];
+      let sentenceBuf = "";
+      let sentenceWords = 0;
+      for (const sentence of sentences) {
+        const w = sentence.split(/\s+/).filter(Boolean).length;
+        if (sentenceBuf && sentenceWords + w > maxWords) {
+          chunks.push(sentenceBuf.trim());
+          sentenceBuf = sentence;
+          sentenceWords = w;
+        } else {
+          sentenceBuf += sentence;
+          sentenceWords += w;
+        }
+      }
+      if (sentenceBuf.trim()) chunks.push(sentenceBuf.trim());
+      continue;
+    }
+
+    if (currentWords + paraWords > maxWords && currentParas.length > 0) {
+      flush();
+    }
+    currentParas.push(para);
+    currentWords += paraWords;
   }
+  flush();
+
   return chunks;
 }
 
@@ -251,6 +349,10 @@ function restorePlaceholdersServer(text: string, placeholders: Map<string, strin
     result = result.split(ph).join(value);
   }
   return result;
+}
+
+function escapeRegex(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function extractLastSentences(text: string): string {
@@ -350,11 +452,11 @@ export const translateLanguage = action({
 
     if (keys.length === 0) return { ok: false, langCode: args.langCode, chunksProcessed: 0, totalChunks: 0, error: "No Gemini API keys" };
 
-    const sourceChunks = chunkText(project.fullText, CHUNK_SIZE);
-    const totalChunks = sourceChunks.length;
-
-    // Get existing chunks (for skip + context)
-    const existingChunks: Array<{
+    // ═══════ FIX 2b: SINGLE-SOURCE CHUNKING ═══════
+    // If chunk records already exist for this language, they are the ONLY
+    // source of truth (never re-chunk fullText). Otherwise chunk once,
+    // deterministically, and persist the records.
+    let existingChunks: Array<{
       _id: Id<"chunks">;
       chunkIndex: number;
       status: string;
@@ -364,6 +466,30 @@ export const translateLanguage = action({
       projectId: args.projectId,
       langCode: args.langCode,
     });
+
+    if (existingChunks.length === 0) {
+      // First run for this language: chunk ONCE from fullText (paragraph-aware)
+      const sourceChunks = chunkText(project.fullText, CHUNK_SIZE);
+      for (let i = 0; i < sourceChunks.length; i++) {
+        await ctx.runMutation(api.mutations.upsertChunk, {
+          projectId: args.projectId,
+          langCode: args.langCode,
+          chunkIndex: i,
+          sourceText: sourceChunks[i],
+        });
+      }
+      existingChunks = await ctx.runQuery(api.queries.getChunksForLang, {
+        projectId: args.projectId,
+        langCode: args.langCode,
+      });
+    }
+    existingChunks.sort((a, b) => a.chunkIndex - b.chunkIndex);
+    const totalChunks = existingChunks.length;
+    if (totalChunks === 0) {
+      return { ok: false, langCode: args.langCode, chunksProcessed: 0, totalChunks: 0, error: "No text to translate" };
+    }
+    // From here on, ONLY stored chunk records are read — no re-chunking.
+    const sourceChunks = existingChunks.map((c) => c.sourceText);
 
     // Build system prompt ONCE (expensive — don't rebuild per chunk)
     const systemPrompt = buildSystemPrompt(args.langCode, args.marketContext || "standard");
@@ -391,6 +517,15 @@ export const translateLanguage = action({
     // ═══════ END P0 FIX ═══════
 
     let processedCount = 0;
+    // FIX 1d: translation memory accumulated across chunks of this language
+    const translationMemory: Array<{ source: string; translation: string }> = [];
+    // FIX 1c: current QA failures (fed into corrective retry)
+    let qaFailures: string[] = [];
+    // FIX 5c: track a chunk-level failure so the language can be retried
+    let chunkFailure: string | null = null;
+    // FIX 5: action-timeout safety — cap fresh chunks per run, then continue
+    let chunksTranslatedThisRun = 0;
+    let needContinuation = false;
 
     for (let i = 0; i < totalChunks; i++) {
       // Skip already-done chunks
@@ -403,6 +538,16 @@ export const translateLanguage = action({
       // Check cancellation before each chunk
       const proj = await ctx.runQuery(api.queries.getProjectRaw, { projectId: args.projectId });
       if (!proj || proj.status === "cancelled") break;
+
+      // FIX 5: cap fresh chunks per action run (Convex action timeout safety)
+      if (chunksTranslatedThisRun >= MAX_CHUNKS_PER_RUN) {
+        needContinuation = true;
+        break;
+      }
+
+      // FIX 5c: A chunk failure must NOT abort the whole action — mark the
+      // language incomplete and let the watchdog/single retry pick it up.
+      try {
 
       const sourceText = sourceChunks[i];
 
@@ -423,25 +568,81 @@ export const translateLanguage = action({
         userContent = `Previous chunk ended with: ${previousContext}\n\nContinue seamlessly.\n\n${userContent}`;
       }
 
-      // Call Gemini
-      const geminiResult = await callGemini(keys, systemPrompt, userContent);
-
-      // Post-processing
-      let processedText = restorePlaceholdersServer(geminiResult.text, placeholders);
-      processedText = applyCulturalFilters(processedText, args.langCode, args.marketContext || "standard");
-      processedText = processedText.replace(/\*([^*]+)\*/g, (_: string, thought: string) =>
-        formatDragonTelepathy(thought, args.langCode)
-      );
-      if (isRTLLang(args.langCode) && !processedText.startsWith("\u200F")) {
-        processedText = `\u200F${processedText}`;
+      // FIX 1d: Translation memory — running glossary of term→translation
+      // locked by EARLIER chunks of this language, included so the same term
+      // is translated identically every time it recurs.
+      const memoryLines: string[] = [];
+      for (const entry of translationMemory) {
+        const re = new RegExp(`\\b${escapeRegex(entry.source)}\\b`, "i");
+        if (re.test(sourceText)) {
+          memoryLines.push(`- "${entry.source}" \u2192 "${entry.translation}"`);
+        }
+      }
+      if (memoryLines.length > 0) {
+        userContent = `# TRANSLATION MEMORY (mandatory — reuse these exact translations for consistency)\n${memoryLines.join("\n")}\n\n${userContent}`;
       }
 
-      // QA
+      // FIX 1c: Call Gemini + QA retry loop (max 2 attempts)
+      let geminiResult: { text: string; model: string; usage: unknown } | null = null;
+      let processedText = "";
       let qaScore = 0;
-      try {
-        const qaReport = runQA(sourceText, processedText, args.langCode, []);
-        qaScore = qaReport.score;
-      } catch { /* non-critical */ }
+      let qaOverall = "unknown";
+
+      for (let qaAttempt = 0; qaAttempt < 2; qaAttempt++) {
+        const attemptUserContent =
+          qaAttempt === 0
+            ? userContent
+            : `${userContent}\n\n# CRITICAL QUALITY CORRECTION\nYour previous attempt scored ${qaScore}/100 in automated QA. Regenerate the translation fixing ALL of these violations:\n${qaFailures.join("\n")}\nReturn ONLY the corrected translated text.`;
+
+        geminiResult = await callGemini(keys, systemPrompt, attemptUserContent);
+
+        // ── FIX 1b: Post-processing pipeline ──
+        let out = restorePlaceholdersServer(geminiResult.text, placeholders);
+        // Strip accidental paragraph-number labels like 【Paragraph 9】/ [Paragraph 3] / (Paragraph 2)
+        out = out.replace(/\s*[\u3010\[](?:\s*)Paragraph(?:\s*#?\s*\d+)?[\u3011\]]\s*/gi, "\n");
+        // Also strip localized variants with bare numbers in CJK brackets
+        out = out.replace(/\s*\u3010\s*\d+\s*\u3011\s*/g, "\n");
+        out = applyCulturalFilters(out, args.langCode, args.marketContext || "standard");
+        out = out.replace(/\*([^*]+)\*/g, (_: string, thought: string) =>
+          formatDragonTelepathy(thought, args.langCode)
+        );
+        if (isRTLLang(args.langCode) && !out.startsWith("\u200F")) {
+          out = `\u200F${out}`;
+        }
+        processedText = out;
+
+        // FIX 1c: QA check
+        try {
+          const qaReport = runQA(sourceText, processedText, args.langCode, translationMemory);
+          qaScore = qaReport.score;
+          qaOverall = qaReport.overall;
+          qaFailures = qaReport.summary
+            .filter((s) => s.includes("\u2717") || s.includes("\u26A0"))
+            .slice(0, 5);
+          if (qaReport.overall !== "fail" || qaAttempt === 1) break;
+        } catch (qaErr) {
+          console.warn(`[QA] Failed for ${args.langCode} chunk ${i}:`, qaErr);
+          break;
+        }
+      }
+
+      if (!geminiResult) {
+        throw new Error(`Gemini returned nothing for chunk ${i}`);
+      }
+      if (qaOverall !== "pass") {
+        // FIX 1c: Log QA failure — never silent
+        console.warn(`[QA] ${args.langCode} chunk ${i}: score ${qaScore}/100 (${qaOverall}) — stored best-effort result`);
+      }
+
+      // FIX 1d: Lock new glossary hits into translation memory for later chunks
+      const glossary = glossaryData.magicMilitary as Record<string, Record<string, string>>;
+      for (const term of LOCKED_TERM_LIST) {
+        const re = new RegExp(`\\b${escapeRegex(term)}\\b`, "i");
+        if (re.test(sourceText) && !translationMemory.some((m) => m.source === term)) {
+          const target = glossary[term]?.[args.langCode] || glossary[term]?.en;
+          if (target) translationMemory.push({ source: term, translation: target });
+        }
+      }
 
       // Save chunk
       if (existing) {
@@ -478,8 +679,9 @@ export const translateLanguage = action({
       });
 
       processedCount++;
+      chunksTranslatedThisRun++;
 
-      // Update translation progress
+      // Update translation progress (heartbeat for the watchdog)
       const translations: Array<{ _id: Id<"translations">; langCode: string; startedAt?: number }> =
         await ctx.runQuery(api.queries.getTranslationsRaw, { projectId: args.projectId });
       const translation = translations.find((t) => t.langCode === args.langCode);
@@ -489,11 +691,80 @@ export const translateLanguage = action({
           status: "in_progress",
           completedChunks: processedCount,
           startedAt: translation.startedAt || Date.now(),
+          lastChunkAt: Date.now(),
         });
+      }
+      } catch (chunkErr) {
+        // FIX 5c: chunk-level resilience — log, keep completed chunks (no
+        // progress loss), mark incomplete; watchdog/single retry picks it up.
+        chunkFailure = chunkErr instanceof Error ? chunkErr.message : String(chunkErr);
+        console.error(`[translateContent] ${args.langCode} chunk ${i} failed:`, chunkErr);
+        break;
       }
     }
 
-    // Merge all chunks
+    // ── FIX 5: Post-loop resolution ──
+    // Case A: action-timeout safety — more chunks remain, continue in a new run
+    if (needContinuation) {
+      const translationsCont: Array<{ _id: Id<"translations">; langCode: string }> =
+        await ctx.runQuery(api.queries.getTranslationsRaw, { projectId: args.projectId });
+      const translationCont = translationsCont.find((t) => t.langCode === args.langCode);
+      if (translationCont) {
+        await ctx.runMutation(api.mutations.updateTranslation, {
+          translationId: translationCont._id,
+          status: "in_progress",
+          completedChunks: processedCount,
+        });
+      }
+      await ctx.scheduler.runAfter(0, api.translateContent.translateLanguage, {
+        projectId: args.projectId,
+        langCode: args.langCode,
+        marketContext: args.marketContext,
+        nextLangCode: args.nextLangCode,
+        remainingLangs: args.remainingLangs,
+      });
+      return {
+        ok: true,
+        langCode: args.langCode,
+        chunksProcessed: processedCount,
+        totalChunks,
+        chained: true,
+      };
+    }
+
+    // Case B: chunk failure — mark stalled/error, schedule ONE retry, keep chain alive
+    if (chunkFailure) {
+      const translationsErr: Array<{ _id: Id<"translations">; langCode: string }> =
+        await ctx.runQuery(api.queries.getTranslationsRaw, { projectId: args.projectId });
+      const translationErr = translationsErr.find((t) => t.langCode === args.langCode);
+      if (translationErr) {
+        await ctx.runMutation(api.mutations.updateTranslation, {
+          translationId: translationErr._id,
+          status: "stalled",
+          completedChunks: processedCount,
+        });
+      }
+      console.warn(
+        `[translateContent] ${args.langCode}: chunk failure (${chunkFailure}). Single retry scheduled in 60s; chain continues.`,
+      );
+      await ctx.scheduler.runAfter(60_000, api.translateContent.translateLanguage, {
+        projectId: args.projectId,
+        langCode: args.langCode,
+        marketContext: args.marketContext,
+        nextLangCode: args.nextLangCode,
+        remainingLangs: args.remainingLangs,
+      });
+      return {
+        ok: false,
+        langCode: args.langCode,
+        chunksProcessed: processedCount,
+        totalChunks,
+        error: chunkFailure,
+        chained: true,
+      };
+    }
+
+    // Case C: language finished — merge, mark complete, generate PDF, chain next
     const allChunks: Array<{ chunkIndex: number; translatedText?: string; status: string }> =
       await ctx.runQuery(api.queries.getChunksForLang, { projectId: args.projectId, langCode: args.langCode });
     const mergedText = allChunks
@@ -501,7 +772,6 @@ export const translateLanguage = action({
       .map((c) => c.translatedText || "")
       .join("\n\n");
 
-    // Mark translation complete
     const translations: Array<{ _id: Id<"translations">; langCode: string }> =
       await ctx.runQuery(api.queries.getTranslationsRaw, { projectId: args.projectId });
     const translation = translations.find((t) => t.langCode === args.langCode);
@@ -515,14 +785,44 @@ export const translateLanguage = action({
       });
     }
 
-    // Chain to next language via scheduler
-    let chained = false;
     // Determine next language: explicit nextLangCode takes priority, then remainingLangs
     const nextLang = args.nextLangCode || (args.remainingLangs && args.remainingLangs.length > 0 ? args.remainingLangs[0] : undefined);
     const restLangs = args.nextLangCode
-      ? (args.remainingLangs || [])  // if nextLangCode was explicit, remaining is whatever was passed
-      : (args.remainingLangs || []).slice(1);  // if using remainingLangs, drop the first one we just used
-    
+      ? (args.remainingLangs || [])
+      : (args.remainingLangs || []).slice(1);
+
+    // UNIFIED: after each language completes, generate its PDF server-side,
+    // then chain to the next language. generateTranslatedPdf itself chains to
+    // the next translateLanguage run (or the final ZIP) when it finishes.
+    if (translation) {
+      await ctx.runMutation(api.mutations.updateTranslation, {
+        translationId: translation._id,
+        status: "generating_pdf",
+        completedChunks: totalChunks,
+        mergedText,
+        pdfGenerating: true,
+      });
+      await ctx.scheduler.runAfter(0, api.generatePdf.generateTranslatedPdf, {
+        projectId: args.projectId,
+        langCode: args.langCode,
+        translationId: translation._id,
+        mergedText,
+        nextLangCode: nextLang,
+        remainingLangs: restLangs.length > 0 ? restLangs : undefined,
+        marketContext: args.marketContext,
+      });
+      return {
+        ok: true,
+        langCode: args.langCode,
+        chunksProcessed: processedCount,
+        totalChunks,
+        mergedText,
+        chained: true,
+      };
+    }
+
+    // No translation record (shouldn't happen) — chain directly
+    let chainedDirect = false;
     if (nextLang) {
       await ctx.scheduler.runAfter(0, api.translateContent.translateLanguage, {
         projectId: args.projectId,
@@ -531,7 +831,7 @@ export const translateLanguage = action({
         nextLangCode: restLangs.length > 0 ? restLangs[0] : undefined,
         remainingLangs: restLangs.length > 1 ? restLangs.slice(1) : undefined,
       });
-      chained = true;
+      chainedDirect = true;
     }
 
     return {
@@ -540,7 +840,7 @@ export const translateLanguage = action({
       chunksProcessed: processedCount,
       totalChunks,
       mergedText,
-      chained,
+      chained: chainedDirect,
     };
   },
 });

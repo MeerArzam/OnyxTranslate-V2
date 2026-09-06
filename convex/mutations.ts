@@ -163,6 +163,7 @@ export const updateTranslation = mutation({
     pdfProgress: v.optional(v.string()),
     startedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
+    lastChunkAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const { translationId, ...updates } = args;

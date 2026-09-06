@@ -69,7 +69,7 @@ import {
 
   type TranslationChunk,
 } from "@/lib/translator/storage";
-import { useQuery, useMutation, useAction } from "convex/react";
+import { useQuery, useMutation, useAction, useConvex } from "convex/react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { api } from "../../convex/_generated/api";
 
@@ -124,6 +124,8 @@ export default function Translator() {
   const translateLanguageAction = useAction(api.translateContent.translateLanguage);
   const cancelTranslationAction = useAction(api.translateQueue.cancelTranslation);
   const translateImageAction = useAction(api.translateImage.translateImage);
+
+  const convexClient = useConvex();
 
   // ─── Convex database state ───
   const [projectId, setProjectId] = useState<Id<"projects"> | null>(null);
@@ -838,6 +840,43 @@ export default function Translator() {
       console.error("Failed to pause:", error);
     }
   }, [projectId, cancelTranslationAction]);
+
+  // FIX 5b: Watchdog resume — find languages that died mid-flight (stalled
+  // heartbeat or left incomplete after a crash) and re-invoke the server
+  // chain from the first incomplete one. Also revives a project stuck on
+  // "translating" with no active server work.
+  const resumeStalled = useCallback(async () => {
+    if (!projectId || isTranslating) return;
+    try {
+      const stalled = (await convexClient.query(api.queries.getStalledLanguages, {
+        projectId,
+        sessionId,
+      })) as string[];
+      const incomplete = activeTranslations
+        .filter((t) => t.status !== "complete")
+        .map((t) => t.langCode);
+      // Prefer server-confirmed stalled languages, else any incomplete
+      const queue = stalled.length > 0 ? stalled : incomplete;
+      if (queue.length === 0) {
+        toast.info("Nothing to resume — all languages are complete.");
+        return;
+      }
+      setIsTranslating(true);
+      setTranslationError(null);
+      await translateLanguageAction({
+        projectId,
+        langCode: queue[0],
+        marketContext,
+        nextLangCode: queue.length > 1 ? queue[1] : undefined,
+        remainingLangs: queue.length > 2 ? queue.slice(2) : undefined,
+      });
+      toast.success(`Resuming translation — ${queue.length} language(s) remaining.`);
+    } catch (err) {
+      console.error("Resume failed:", err);
+      setTranslationError(err instanceof Error ? err.message : "Resume failed");
+      setIsTranslating(false);
+    }
+  }, [projectId, isTranslating, sessionId, activeTranslations, translateLanguageAction, marketContext]);
 
   const handleRetranslate = useCallback(
     async (langCode: string) => {

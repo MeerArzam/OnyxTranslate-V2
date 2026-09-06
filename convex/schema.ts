@@ -43,6 +43,8 @@ export default defineSchema({
     pdfProgress: v.optional(v.string()),
     startedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
+    // Watchdog heartbeat: timestamp of the last completed chunk (FIX 5a)
+    lastChunkAt: v.optional(v.number()),
   }).index("by_project_lang", ["projectId", "langCode"]),
 
   imageTranslations: defineTable({

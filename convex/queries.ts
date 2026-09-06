@@ -106,6 +106,34 @@ export const getHistory = query({
   },
 });
 
+// FIX 5a: Watchdog query — languages that were in_progress but whose last
+// chunk heartbeat is older than STALL_THRESHOLD_MS are considered stalled
+// (browser closed / action crashed / timeout). "complete" languages and
+// recently-active ones are excluded.
+export const getStalledLanguages = query({
+  args: { projectId: v.id("projects"), sessionId: v.string() },
+  handler: async (ctx, args) => {
+    const project = await ctx.db.get(args.projectId);
+    if (!project || project.sessionId !== args.sessionId) return [];
+
+    const STALL_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes without a heartbeat
+    const now = Date.now();
+
+    const translations = await ctx.db
+      .query("translations")
+      .withIndex("by_project_lang", (q) => q.eq("projectId", args.projectId))
+      .collect();
+
+    return translations
+      .filter((t) => {
+        if (t.status === "complete" || t.status === "generating_pdf") return false;
+        const lastActivity = t.lastChunkAt ?? t.startedAt ?? 0;
+        return now - lastActivity > STALL_THRESHOLD_MS;
+      })
+      .map((t) => t.langCode);
+  },
+});
+
 // C2: Real-time chunk progress for a specific language
 export const getTranslationProgress = query({
   args: { projectId: v.id("projects"), langCode: v.string() },

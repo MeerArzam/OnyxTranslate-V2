@@ -24,7 +24,7 @@ td code{color:#00e5ff}
 <body>
 <p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
 <h1>Translation Pipeline</h1>
-<p class="meta">Gemini 3.6 Flash — 23 phases, Bible pass, rotation, QA &middot; generated 2026-09-06 16:41 UTC</p>
+<p class="meta">Gemini 3.6 Flash — 23 phases, Bible pass, rotation, QA &middot; generated 2026-09-06 17:06 UTC</p>
 
 <h2>1. The 23 Localization Phases (verbatim PHASE_RULES)</h2>
 <p>These rules are embedded verbatim into every Gemini system prompt
@@ -331,34 +331,62 @@ if (previousContext) {
   keys: string[],
   systemPrompt: string,
   userMessage: string,
-): Promise&lt;{ text: string; model: string; usage: unknown }&gt; {
+): Promise&lt;{ text: string; model: string; usage: unknown; finishReason: string }&gt; {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+
   for (const key of keys) {
     for (let attempt = 0; attempt &lt; 3; attempt++) {
+      // Attempt 0-1: thinking disabled. Attempt 2: fallback WITHOUT
+      // thinkingConfig in case this model rejects thinkingBudget: 0.
+      const disableThinking = attempt &lt; 2;
       try {
-        const res = await fetch(GEMINI_ENDPOINT, {
+        const res = await fetch(url, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${key}`,
+            "x-goog-api-key": key,
           },
           body: JSON.stringify({
-            model: GEMINI_MODEL,
-            messages: [
-              { role: "system" as const, content: systemPrompt },
-              { role: "user" as const, content: userMessage },
-            ],
-            temperature: 0.3,
-            max_tokens: 4000,
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ role: "user", parts: [{ text: userMessage }] }],
+            generationConfig: {
+              temperature: 0.3,
+              maxOutputTokens: 16384,
+              ...(disableThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+            },
           }),
         });
 
         if (res.ok) {
-          const data: { choices?: { message?: { content?: string } }[]; model?: string; usage?: unknown } = await res.json();
-          const text = data.choices?.[0]?.message?.content;
-          if (!text) break;
-          const cleaned = text.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim();
-          return { text: cleaned, model: data.model || GEMINI_MODEL, usage: data.usage };
+          const data: {
+            candidates?: Array&lt;{
+              content?: { parts?: Array&lt;{ text?: string }&gt; };
+              finishReason?: string;
+            }&gt;;
+            modelVersion?: string;
+            usageMetadata?: {
+              promptTokenCount?: number;
+              candidatesTokenCount?: number;
+              totalTokenCount?: number;
+            };
+          } = await res.json();
+          const cand = data.candidates?.[0];
+          const raw = (cand?.content?.parts ?? []).map((p) =&gt; p.text || "").join("");
+          const finishReason = String(cand?.finishReason || "STOP");
+          if (!raw.trim()) break;
+          const cleaned = raw.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim();
+          return {
+            text: cleaned,
+            model: data.modelVersion || GEMINI_MODEL,
+            usage: {
+              promptTokens: data.usageMetadata?.promptTokenCount ?? 0,
+              completionTokens: data.usageMetadata?.candidatesTokenCount ?? 0,
+              totalTokens: data.usageMetadata?.totalTokenCount ?? 0,
+            },
+            finishReason,
+          };
         }
+
         if (res.status === 429) {
           await new Promise((r) =&gt; setTimeout(r, (attempt + 1) * 10000));
           continue;
@@ -366,6 +394,14 @@ if (previousContext) {
         if (res.status &gt;= 500) {
           await new Promise((r) =&gt; setTimeout(r, (attempt + 1) * 5000));
           continue;
+        }
+        // 400/404: model may reject thinkingBudget — retry WITHOUT
+        // thinkingConfig (attempt 2) before giving up on this key.
+        if (res.status === 400 || res.status === 404) {
+          const errBody = await res.text().catch(() =&gt; "");
+          console.warn(`[callGemini] HTTP ${res.status}: ${errBody.slice(0, 200)}`);
+          if (disableThinking) continue;
+          break;
         }
         break;
       } catch {

@@ -531,9 +531,14 @@ async function callGemini(
           await new Promise((r) => setTimeout(r, (attempt + 1) * 5000));
           continue;
         }
-        // 400-class: log body for diagnostics, try next attempt/key
-        const errBody = await res.text().catch(() => "");
-        console.warn(`[callGemini] HTTP ${res.status}: ${errBody.slice(0, 200)}`);
+        // 400/404: model may reject thinkingBudget — retry WITHOUT
+        // thinkingConfig (attempt 2) before giving up on this key.
+        if (res.status === 400 || res.status === 404) {
+          const errBody = await res.text().catch(() => "");
+          console.warn(`[callGemini] HTTP ${res.status}: ${errBody.slice(0, 200)}`);
+          if (disableThinking) continue;
+          break;
+        }
         break;
       } catch {
         await new Promise((r) => setTimeout(r, (attempt + 1) * 5000));
@@ -733,7 +738,8 @@ export const translateLanguage = action({
 
         // Truncation recovery: if the model hit the token ceiling mid-chunk,
         // ask it to continue EXACTLY where it stopped and concatenate.
-        if (geminiResult.finishReason === "length") {
+        // (OpenAI-compat returns "length"; native Gemini returns "MAX_TOKENS".)
+        if (geminiResult.finishReason === "length" || geminiResult.finishReason === "MAX_TOKENS") {
           console.warn(`[translateContent] ${args.langCode} chunk ${i}: output truncated — requesting continuation`);
           try {
             const cont = await callGemini(

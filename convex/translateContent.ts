@@ -580,6 +580,12 @@ export const translateLanguage = action({
     if (!project) return { ok: false, langCode: args.langCode, chunksProcessed: 0, totalChunks: 0, error: "Project not found" };
     if (project.status === "cancelled") return { ok: false, langCode: args.langCode, chunksProcessed: 0, totalChunks: 0, error: "Cancelled" };
 
+    // Guard against empty/invalid langCode — a scheduler bug elsewhere must
+    // never cause an infinite chain loop.
+    if (!args.langCode || !args.langCode.trim()) {
+      return { ok: false, langCode: args.langCode, chunksProcessed: 0, totalChunks: 0, error: "Empty langCode — chain loop prevented" };
+    }
+
     const keys = [
       process.env.Gemini_API_Key_1,
       process.env.Gemini_API_Key_2,

@@ -54,8 +54,45 @@ export const parseUploadedPdf = action({
     const arrayBuffer = await blob.arrayBuffer();
     const uint8 = new Uint8Array(arrayBuffer);
 
-    // 2. Dynamically import pdfjs-dist
-    const pdfjsLib = await import("pdfjs-dist");
+    // 2. Dynamically import pdfjs-dist.
+    // CRITICAL FIX: pdfjs-dist references DOMMatrix at module load. In the
+    // browser that global exists; in the Node runtime ("use node" actions)
+    // it does not, and the optional @napi-rs/canvas polyfill is unavailable,
+    // so the import crashed with "DOMMatrix is not defined". Text extraction
+    // never performs real rendering — a minimal stub is sufficient.
+    const g = globalThis as Record<string, unknown>;
+    if (typeof g.pdfjsWorker === "undefined") {
+      // (b) In Node, pdf.js falls back to a "fake worker" that does a runtime
+      // dynamic import of pdf.worker.mjs — impossible inside Convex's
+      // bundler. Pre-registering the worker module on globalThis.pdfjsWorker
+      // is the documented escape hatch pdf.js checks FIRST.
+      const workerMod = await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
+      g.pdfjsWorker = workerMod;
+    }
+    if (typeof g.DOMMatrix === "undefined") {
+      class DOMMatrixStub {
+        a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
+        constructor(init?: unknown) {
+          if (Array.isArray(init) && init.length === 6) {
+            [this.a, this.b, this.c, this.d, this.e, this.f] = init as number[];
+          }
+        }
+        multiply() { return this; }
+        translate() { return this; }
+        scale() { return this; }
+        rotate() { return this; }
+        inverse() { return this; }
+        transformPoint(p: { x: number; y: number }) { return { x: p.x, y: p.y, z: 0, w: 1 }; }
+      }
+      g.DOMMatrix = DOMMatrixStub;
+    }
+    if (typeof g.Path2D === "undefined") {
+      g.Path2D = class {
+        moveTo() {} lineTo() {} closePath() {} rect() {} arc() {}
+        bezierCurveTo() {} quadraticCurveTo() {}
+      };
+    }
+    const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
     // 3. Load the PDF document
     const loadingTask = pdfjsLib.getDocument({
@@ -71,50 +108,65 @@ export const parseUploadedPdf = action({
     const allTexts: string[] = [];
 
     for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
-      const page = await pdf.getPage(pageNum);
-      const viewport = page.getViewport({ scale: 1 });
-      const pageWidth = viewport.width;
-      const pageHeight = viewport.height;
+      try {
+        const page = await pdf.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 1 });
+        const pageWidth = viewport.width;
+        const pageHeight = viewport.height;
 
-      // Use getTextContent with normalizeWhitespace enabled via the options
-      // object. In pdfjs-dist v6+, the text items are already combined by
-      // default when disableCombineTextItems is NOT set to true.
-      const textContent = await page.getTextContent({
-        normalizeWhitespace: true,
-      } as any);
+        // Use getTextContent with normalizeWhitespace enabled via the options
+        // object. In pdfjs-dist v6+, the text items are already combined by
+        // default when disableCombineTextItems is NOT set to true.
+        const textContent = await page.getTextContent({
+          normalizeWhitespace: true,
+        } as any);
 
-      const rawItems = (textContent.items as RawTextItem[]).filter(
-        (item) => "str" in item && item.str.trim().length > 0
-      );
+        const rawItems = (textContent.items as RawTextItem[]).filter(
+          (item) => "str" in item && item.str.trim().length > 0
+        );
 
-      // Map to clean format (PDF bottom-origin coordinates, unscaled)
-      const textItems: ServerParsedTextItem[] = rawItems.map((item) => {
-        const t = item.transform || [1, 0, 0, 1, 0, 0];
-        return {
-          str: item.str,
-          x: t[4],
-          y: t[5],
-          width: item.width || 0,
-          height: item.height || 0,
-          fontName: item.fontName || "",
-        };
-      });
+        // Map to clean format (PDF bottom-origin coordinates, unscaled)
+        const textItems: ServerParsedTextItem[] = rawItems.map((item) => {
+          const t = item.transform || [1, 0, 0, 1, 0, 0];
+          return {
+            str: item.str,
+            x: t[4],
+            y: t[5],
+            width: item.width || 0,
+            height: item.height || 0,
+            fontName: item.fontName || "",
+          };
+        });
 
-      // Group items into lines by Y-coordinate proximity (2px tolerance)
-      const lines = groupIntoLines(textItems, 2);
+        // Group items into lines by Y-coordinate proximity (2px tolerance)
+        const lines = groupIntoLines(textItems, 2);
 
-      // Build clean page text from grouped lines
-      const pageText = lines.map((l) => l.text).join("\n").trim();
+        // Build clean page text from grouped lines
+        const pageText = lines.map((l) => l.text).join("\n").trim();
 
-      allPages.push({
-        num: pageNum,
-        text: pageText,
-        lines,
-        textItems,
-        pageWidth,
-        pageHeight,
-      });
-      allTexts.push(pageText);
+        allPages.push({
+          num: pageNum,
+          text: pageText,
+          lines,
+          textItems,
+          pageWidth,
+          pageHeight,
+        });
+        allTexts.push(pageText);
+      } catch (pageErr) {
+        // One unreadable page must not kill the whole parse — record an
+        // empty page and continue.
+        console.warn(`[parsePdf] page ${pageNum} failed:`, pageErr);
+        allPages.push({
+          num: pageNum,
+          text: "",
+          lines: [],
+          textItems: [],
+          pageWidth: 595,
+          pageHeight: 842,
+        });
+        allTexts.push("");
+      }
 
       // Yield every 20 pages to stay within action timeout
       if (pageNum % 20 === 0) {

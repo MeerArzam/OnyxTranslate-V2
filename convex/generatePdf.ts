@@ -132,13 +132,25 @@ export const generateTranslatedPdf = action({
         pdfGenerating: false,
         completedAt: Date.now(),
       });
-      await ctx.scheduler.runAfter(0, api.translateContent.translateLanguage, {
-        projectId: args.projectId,
-        langCode: args.nextLangCode || "",
-        marketContext: args.marketContext,
-        nextLangCode: args.remainingLangs && args.remainingLangs.length > 0 ? args.remainingLangs[0] : undefined,
-        remainingLangs: args.remainingLangs && args.remainingLangs.length > 1 ? args.remainingLangs.slice(1) : undefined,
-      });
+      if (args.nextLangCode) {
+        const rest = args.remainingLangs || [];
+        await ctx.scheduler.runAfter(0, api.translateContent.translateLanguage, {
+          projectId: args.projectId,
+          langCode: args.nextLangCode,
+          marketContext: args.marketContext,
+          nextLangCode: rest.length > 0 ? rest[0] : undefined,
+          remainingLangs: rest.length > 1 ? rest.slice(1) : undefined,
+        });
+      } else {
+        // All languages done — finalize project + build ZIP
+        await ctx.runMutation(api.mutations.updateProject, {
+          projectId: args.projectId,
+          status: "all_translated",
+        });
+        await ctx.scheduler.runAfter(0, api.zipAssembly.buildZip, {
+          projectId: args.projectId,
+        });
+      }
       return { skipped: true, url: undefined, storageId: undefined };
     }
 

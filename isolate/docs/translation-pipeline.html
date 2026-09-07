@@ -24,7 +24,7 @@ td code{color:#00e5ff}
 <body>
 <p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
 <h1>Translation Pipeline</h1>
-<p class="meta">Gemini 3.6 Flash — 23 phases, Bible pass, rotation, QA &middot; generated 2026-09-05 08:24 UTC</p>
+<p class="meta">Gemini 3.6 Flash — 23 phases, Bible pass, rotation, QA &middot; generated 2026-09-06 17:06 UTC</p>
 
 <h2>1. The 23 Localization Phases (verbatim PHASE_RULES)</h2>
 <p>These rules are embedded verbatim into every Gemini system prompt
@@ -109,12 +109,54 @@ name map, voice matrix, and output rules.</p>
     ([name, style, example], i) =&gt; `${i + 1}. ${name}: ${style}${example ? `\n   Example: ${example}` : ""}`
   ).join("\n");
 
+  // FIX 4c: Per-language punctuation map
+  const PUNCTUATION_MAP: Record&lt;string, string&gt; = {
+    fr: "Dialogue uses « » guillemets. Non-breaking space before » and after « is correct.",
+    it: "Dialogue uses « » guillemets (Italian preference).",
+    de: "Dialogue uses German quotes: opening „ (low), closing “ (high).",
+    es: "Dialogue uses em-dash (—) at the start of speaker turns; « » optional.",
+    pt: 'Dialogue uses em-dash (—) or " " quotes.',
+    ru: "Dialogue uses « » guillemets and — dashes for speaker turns.",
+    ar: 'Dialogue uses « » or " " quotes. Full stop is \u06DB where natural; RTL flow must be native.',
+    ur: 'Dialogue uses " " quotes; full stop is \u06DB (Urdu full stop) — NEVER use the Latin period.',
+    ks: 'Dialogue uses " " quotes; use Kashmiri/Arabic-script punctuation, never Latin periods.',
+    hi: 'Dialogue uses " " quotes; sentence end uses danda (।) optionally, otherwise standard full stop.',
+    ne: 'Dialogue uses " " quotes; danda (।) is the natural sentence end.',
+    bn: 'Dialogue uses " " quotes; sentence end uses daṛi (।).',
+    ja: "Dialogue uses 「」; internal thoughts use 「」 (or 『』 for nested).",
+    ko: 'Dialogue uses " " or 「」; internal thoughts use 「」.',
+    zh: 'Dialogue uses " " (or 「」 in traditional contexts); internal thoughts use 「」.',
+    la: 'Standard " " quotes and classical punctuation conventions.',
+    id: 'Standard " " quotes and standard punctuation.',
+    sw: 'Standard " " quotes and standard punctuation.',
+    tr: 'Standard " " quotes and standard punctuation.',
+    ro: 'Standard " " quotes and standard punctuation.',
+  };
+
   return [
+    "# ─── ABSOLUTE OUTPUT CONTRACT (read first, violate nothing) ───",
+    "// FIX 4a: PURE OUTPUT — Your ENTIRE reply must be ONLY the translated prose.",
+    "NEVER output: 'Paragraph 9' style labels, 【】/[]/{} brackets with numbers or annotations, numbered list markers, 'Here is the translation', any meta-commentary, explanations, apologies, or notes.",
+    "If the source itself contains such labels/markers, translate the text they wrap but DO NOT reproduce the label markers themselves.",
+    "// FIX 4b: FULL TRANSLATION — Every source word must be rendered in the target language.",
+    "ZERO English leakage is permitted except: character names and fantasy proper nouns exactly as given in the Name Map and locked glossary (Violet, Xaden, Tairn, Andarna, Ridoc, Dain, Basgiath, Navarre, Tyrrendor, Venin, and every term in the LOCKED GLOSSARY below).",
+    "Low-resource languages (Kashmiri, Nepali, Swahili, Latin) must be written FULLY in their native script — never mixed English/script.",
+    "// FIX 4e: STRUCTURAL CONSISTENCY — one source paragraph → one target paragraph.",
+    "Preserve blank-line separations and paragraph ORDER exactly. Do not merge, split, reorder, or drop paragraphs. Never add narration, chapter exits, or continuation that is not in the source.",
+    "",
+    "# CHARACTER VOICE CALIBRATION (FIX 4d — voices must stay distinct in every language)",
+    "- Violet Sorrengail — determined, vulnerable, dry wit.",
+    "- Xaden Riorson — terse, possessive, dark; short declaratives.",
+    "- Ridoc Gamlyn — informal, comic relief; slang must be natural to the target language.",
+    "- Dain Aetos — formal military register; titles and protocol.",
+    "- Dragons (Tairn, Andarna) — alien, NO contractions, telepathy formatted per P16 with 「」 convention.",
+    "",
     "You are the Empyrean Translator \u2014 a world-class literary localization engine for the epic high-fantasy novel ONYX STORM (English source).",
     "You translate the source text into a professionally localized edition that reads as NATIVE fiction in the target market \u2014 never as word-swapped English. You follow every phase below, in order, before producing your output.",
     "",
     `TARGET LANGUAGE: ${langLine}`,
     `MARKET CONTEXT: ${buildMarketContext(marketContext)}`,
+    `// FIX 4c — PUNCTUATION CONTRACT: ${PUNCTUATION_MAP[langCode] || "Use the language's standard punctuation conventions."}`,
     "",
     "# THE 23 PHASES",
     phaseRules,
@@ -212,11 +254,55 @@ Gemini cannot mangle them, then restored after translation:</p>
 
 <h2>7. Chunking + Sliding-Window Context (P21)</h2>
 <pre><code>function chunkText(text: string, maxWords: number): string[] {
-  const words = text.split(/\s+/);
+  const normalized = text.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return [];
+  const paragraphs = normalized.split(/\n{2,}/).map((p) =&gt; p.trim()).filter(Boolean);
+
   const chunks: string[] = [];
-  for (let i = 0; i &lt; words.length; i += maxWords) {
-    chunks.push(words.slice(i, i + maxWords).join(" "));
+  let currentParas: string[] = [];
+  let currentWords = 0;
+
+  const flush = () =&gt; {
+    if (currentParas.length &gt; 0) {
+      chunks.push(currentParas.join("\n\n"));
+      currentParas = [];
+      currentWords = 0;
+    }
+  };
+
+  for (const para of paragraphs) {
+    const paraWords = para.split(/\s+/).filter(Boolean).length;
+
+    if (paraWords &gt; maxWords) {
+      // Oversized single paragraph: flush what we have, then split the
+      // paragraph at SENTENCE boundaries (never mid-sentence).
+      flush();
+      const sentences = para.match(/[^.!?\u06D4\u3002\uFF01\uFF1F]+[.!?\u06D4\u3002\uFF01\uFF1F]+["'\u00BB\u300D\u300F]?\s*|[^.!?\u06D4\u3002\uFF01\uFF1F]+$/g) || [para];
+      let sentenceBuf = "";
+      let sentenceWords = 0;
+      for (const sentence of sentences) {
+        const w = sentence.split(/\s+/).filter(Boolean).length;
+        if (sentenceBuf &amp;&amp; sentenceWords + w &gt; maxWords) {
+          chunks.push(sentenceBuf.trim());
+          sentenceBuf = sentence;
+          sentenceWords = w;
+        } else {
+          sentenceBuf += sentence;
+          sentenceWords += w;
+        }
+      }
+      if (sentenceBuf.trim()) chunks.push(sentenceBuf.trim());
+      continue;
+    }
+
+    if (currentWords + paraWords &gt; maxWords &amp;&amp; currentParas.length &gt; 0) {
+      flush();
+    }
+    currentParas.push(para);
+    currentWords += paraWords;
   }
+  flush();
+
   return chunks;
 }</code></pre>
 <pre><code>function extractLastSentences(text: string): string {
@@ -245,34 +331,62 @@ if (previousContext) {
   keys: string[],
   systemPrompt: string,
   userMessage: string,
-): Promise&lt;{ text: string; model: string; usage: unknown }&gt; {
+): Promise&lt;{ text: string; model: string; usage: unknown; finishReason: string }&gt; {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+
   for (const key of keys) {
     for (let attempt = 0; attempt &lt; 3; attempt++) {
+      // Attempt 0-1: thinking disabled. Attempt 2: fallback WITHOUT
+      // thinkingConfig in case this model rejects thinkingBudget: 0.
+      const disableThinking = attempt &lt; 2;
       try {
-        const res = await fetch(GEMINI_ENDPOINT, {
+        const res = await fetch(url, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${key}`,
+            "x-goog-api-key": key,
           },
           body: JSON.stringify({
-            model: GEMINI_MODEL,
-            messages: [
-              { role: "system" as const, content: systemPrompt },
-              { role: "user" as const, content: userMessage },
-            ],
-            temperature: 0.3,
-            max_tokens: 4000,
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ role: "user", parts: [{ text: userMessage }] }],
+            generationConfig: {
+              temperature: 0.3,
+              maxOutputTokens: 16384,
+              ...(disableThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+            },
           }),
         });
 
         if (res.ok) {
-          const data: { choices?: { message?: { content?: string } }[]; model?: string; usage?: unknown } = await res.json();
-          const text = data.choices?.[0]?.message?.content;
-          if (!text) break;
-          const cleaned = text.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim();
-          return { text: cleaned, model: data.model || GEMINI_MODEL, usage: data.usage };
+          const data: {
+            candidates?: Array&lt;{
+              content?: { parts?: Array&lt;{ text?: string }&gt; };
+              finishReason?: string;
+            }&gt;;
+            modelVersion?: string;
+            usageMetadata?: {
+              promptTokenCount?: number;
+              candidatesTokenCount?: number;
+              totalTokenCount?: number;
+            };
+          } = await res.json();
+          const cand = data.candidates?.[0];
+          const raw = (cand?.content?.parts ?? []).map((p) =&gt; p.text || "").join("");
+          const finishReason = String(cand?.finishReason || "STOP");
+          if (!raw.trim()) break;
+          const cleaned = raw.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim();
+          return {
+            text: cleaned,
+            model: data.modelVersion || GEMINI_MODEL,
+            usage: {
+              promptTokens: data.usageMetadata?.promptTokenCount ?? 0,
+              completionTokens: data.usageMetadata?.candidatesTokenCount ?? 0,
+              totalTokens: data.usageMetadata?.totalTokenCount ?? 0,
+            },
+            finishReason,
+          };
         }
+
         if (res.status === 429) {
           await new Promise((r) =&gt; setTimeout(r, (attempt + 1) * 10000));
           continue;
@@ -280,6 +394,14 @@ if (previousContext) {
         if (res.status &gt;= 500) {
           await new Promise((r) =&gt; setTimeout(r, (attempt + 1) * 5000));
           continue;
+        }
+        // 400/404: model may reject thinkingBudget — retry WITHOUT
+        // thinkingConfig (attempt 2) before giving up on this key.
+        if (res.status === 400 || res.status === 404) {
+          const errBody = await res.text().catch(() =&gt; "");
+          console.warn(`[callGemini] HTTP ${res.status}: ${errBody.slice(0, 200)}`);
+          if (disableThinking) continue;
+          break;
         }
         break;
       } catch {

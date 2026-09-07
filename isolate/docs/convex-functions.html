@@ -24,7 +24,7 @@ td code{color:#00e5ff}
 <body>
 <p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
 <h1>Convex Functions — Mutations, Queries, History, Import, Upload</h1>
-<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-05 08:24 UTC</p>
+<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-06 17:06 UTC</p>
 <p>Files on this page: <code>convex/mutations.ts</code>, <code>convex/queries.ts</code>, <code>convex/history.ts</code>, <code>convex/importProject.ts</code>, <code>convex/upload.ts</code></p><h2>convex/mutations.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>createProject</code> — mutation</li><li><code>updateProject</code> — mutation</li><li><code>deleteProject</code> — mutation</li><li><code>upsertChunk</code> — mutation</li><li><code>updateChunk</code> — mutation</li><li><code>upsertTranslation</code> — mutation</li><li><code>updateTranslation</code> — mutation</li><li><code>deleteChunksForLang</code> — mutation</li><li><code>createJob</code> — mutation</li><li><code>saveImageTranslation</code> — mutation</li></ul></p><pre><code>import { v } from "convex/values";
 import { mutation } from "./_generated/server";
 
@@ -190,6 +190,7 @@ export const updateTranslation = mutation({
     pdfProgress: v.optional(v.string()),
     startedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
+    lastChunkAt: v.optional(v.number()),
   },
   handler: async (ctx, args) =&gt; {
     const { translationId, ...updates } = args;
@@ -257,7 +258,7 @@ export const saveImageTranslation = mutation({
     });
   },
 });
-</code></pre><h2>convex/queries.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>getProject</code> — query</li><li><code>getLatestProject</code> — query</li><li><code>getProjectTranslations</code> — query</li><li><code>getProjectRaw</code> — query</li><li><code>getTranslationsRaw</code> — query</li><li><code>getChunkProgress</code> — query</li><li><code>getChunksForLang</code> — query</li><li><code>getAllJobs</code> — query</li><li><code>getHistory</code> — query</li><li><code>getTranslationProgress</code> — query</li><li><code>getAllProjectsForWatchdog</code> — query</li><li><code>getLivePreviewText</code> — query</li></ul></p><pre><code>import { v } from "convex/values";
+</code></pre><h2>convex/queries.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>getProject</code> — query</li><li><code>getLatestProject</code> — query</li><li><code>getProjectTranslations</code> — query</li><li><code>getProjectRaw</code> — query</li><li><code>getTranslationsRaw</code> — query</li><li><code>getChunkProgress</code> — query</li><li><code>getChunksForLang</code> — query</li><li><code>getAllJobs</code> — query</li><li><code>getHistory</code> — query</li><li><code>getStalledLanguages</code> — query</li><li><code>getTranslationProgress</code> — query</li><li><code>getAllProjectsForWatchdog</code> — query</li><li><code>getLivePreviewText</code> — query</li></ul></p><pre><code>import { v } from "convex/values";
 import { query } from "./_generated/server";
 
 // ─── Client-facing queries (require sessionId) ───
@@ -362,6 +363,34 @@ export const getHistory = query({
       .withIndex("by_session", (q) =&gt; q.eq("sessionId", args.sessionId))
       .order("desc")
       .collect();
+  },
+});
+
+// FIX 5a: Watchdog query — languages that were in_progress but whose last
+// chunk heartbeat is older than STALL_THRESHOLD_MS are considered stalled
+// (browser closed / action crashed / timeout). "complete" languages and
+// recently-active ones are excluded.
+export const getStalledLanguages = query({
+  args: { projectId: v.id("projects"), sessionId: v.string() },
+  handler: async (ctx, args) =&gt; {
+    const project = await ctx.db.get(args.projectId);
+    if (!project || project.sessionId !== args.sessionId) return [];
+
+    const STALL_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes without a heartbeat
+    const now = Date.now();
+
+    const translations = await ctx.db
+      .query("translations")
+      .withIndex("by_project_lang", (q) =&gt; q.eq("projectId", args.projectId))
+      .collect();
+
+    return translations
+      .filter((t) =&gt; {
+        if (t.status === "complete" || t.status === "generating_pdf") return false;
+        const lastActivity = t.lastChunkAt ?? t.startedAt ?? 0;
+        return now - lastActivity &gt; STALL_THRESHOLD_MS;
+      })
+      .map((t) =&gt; t.langCode);
   },
 });
 
@@ -482,6 +511,8 @@ export const importProject = action({
         pageCount: number;
         wordCount: number;
         fullText: string;
+        parsedPages?: number;
+        pageData?: unknown[];
       };
       translations: Array&lt;{
         langCode: string;
@@ -489,6 +520,7 @@ export const importProject = action({
         completedChunks: number;
         mergedText?: string;
         status: string;
+        pdfUrl?: string;
       }&gt;;
     };
 
@@ -503,8 +535,14 @@ export const importProject = action({
         "Invalid export file format — expected Onyx Translate JSON export"
       );
     }
+    if (!data.project || !Array.isArray(data.translations)) {
+      throw new Error(
+        "Invalid export file structure — missing project or translations"
+      );
+    }
 
-    // Create project
+    // Create project — restore pageData/parsedPages so PDF regeneration
+    // coordinates survive an import round-trip (FIX 6).
     const projectId: Id&lt;"projects"&gt; = await ctx.runMutation(
       api.mutations.createProject,
       {
@@ -512,9 +550,9 @@ export const importProject = action({
         fileName: data.project.fileName,
         pageCount: data.project.pageCount,
         wordCount: data.project.wordCount,
-        pageData: [],
+        pageData: (data.project.pageData ?? []) as object[],
         fullText: data.project.fullText,
-        parsedPages: data.project.pageCount,
+        parsedPages: data.project.parsedPages ?? data.project.pageCount,
         status: "ready",
       }
     );

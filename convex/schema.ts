@@ -82,4 +82,25 @@ export default defineSchema({
   })
     .index("by_status_scheduled", ["status", "scheduledFor"])
     .index("by_project", ["projectId"]),
+
+  // LIVE TEST: per-language live verification results (one row per language,
+  // upserted by the saveLiveTest mutation after each Gemini round-trip).
+  liveTests: defineTable({
+    langCode: v.string(),
+    langName: v.string(),
+    nativeName: v.string(),
+    script: v.string(),
+    rtl: v.boolean(),
+    status: v.string(), // pending | running | pass | warn | fail
+    score: v.optional(v.number()),
+    output: v.optional(v.string()),
+    qaSummary: v.optional(v.array(v.string())),
+    issueCount: v.optional(v.number()),
+    missingNames: v.optional(v.array(v.string())),
+    scriptIssues: v.optional(v.array(v.string())),
+    model: v.optional(v.string()),
+    durationMs: v.optional(v.number()),
+    error: v.optional(v.string()),
+    testedAt: v.number(),
+  }).index("by_lang", ["langCode"]),
 });

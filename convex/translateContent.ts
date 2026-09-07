@@ -556,6 +556,42 @@ async function callGemini(
 // No scheduler chain between chunks. No fragile multi-action pipeline.
 // ════════════════════════════════════════════════════════════
 
+// ════════════════════════════════════════════════════════════
+// LIVE TEST EXPORTS (used by convex/liveTest.ts)
+// Additive: nothing existing is renamed or removed.
+// ════════════════════════════════════════════════════════════
+
+/** The single locked baseline sentence every market must reproduce. */
+export const LIVE_TEST_SOURCE =
+  `Violet wakes up in Aretia confused, with a ring and a note from Xaden: "Don't look for me." ` +
+  `She realizes she is married, but her husband is lost in the dark.`;
+
+export const buildSystemPromptForTest = buildSystemPrompt;
+export const applyBiblePassForTest = applyBiblePassServer;
+export const restorePlaceholdersForTest = restorePlaceholdersServer;
+export const callGeminiForTest = callGemini;
+
+export const postProcessTranslationForTest = (
+  raw: string,
+  langCode: string,
+  marketContext: string,
+  placeholders: Map<string, string>,
+): string => {
+  let out = restorePlaceholdersServer(raw, placeholders);
+  out = normalizeDictionaryFormat(out);
+  out = stripMetaCommentary(out, langCode);
+  out = out.replace(/\s*[\u3010\[](?:\s*)Paragraph(?:\s*#?\s*\d+)?[\u3011\]]\s*/gi, "\n");
+  out = out.replace(/\s*\u3010\s*\d+\s*\u3011\s*/g, "\n");
+  out = applyCulturalFilters(out, langCode, marketContext);
+  out = out.replace(/\*([^*]+)\*/g, (_: string, thought: string) =>
+    formatDragonTelepathy(thought, langCode)
+  );
+  if (isRTLLang(langCode) && !out.startsWith("\u200F")) {
+    out = `\u200F${out}`;
+  }
+  return out.trim();
+};
+
 export const translateLanguage = action({
   args: {
     projectId: v.id("projects"),

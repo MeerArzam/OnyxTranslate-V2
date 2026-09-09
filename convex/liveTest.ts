@@ -15,6 +15,10 @@
  *  - same post-processing (dictionary normalization, meta strip, cultural
  *    filters, dragon telepathy, RTL marker)
  *  - same runQA() 23-phase engine, scored per language
+ *
+ * runAllLiveTests: batch orchestrator that runs ALL 20 languages by chaining
+ * the per-language action on the Convex scheduler (survives page closes,
+ * action timeouts, and rate limits — same resilience pattern as translate).
  */
 import { action } from "./_generated/server";
 import { v } from "convex/values";
@@ -29,6 +33,12 @@ import {
 } from "./translateContent";
 import { runQA } from "../src/lib/translator/qa";
 import { getLocalizationConfig } from "../src/data/localization";
+
+/** The exact order the dashboard displays (matches liveTestStore). */
+export const LIVE_TEST_LANGUAGES = [
+  "ur", "ar", "fr", "ja", "es", "hi", "tr", "zh", "ru", "ko",
+  "de", "ks", "ro", "sw", "it", "la", "id", "ne", "bn", "pt",
+] as const;
 
 /** Names that must appear in the localized spelling (P2 spot check). */
 const TEST_NAMES = ["Violet", "Xaden", "Aretia"] as const;
@@ -58,6 +68,7 @@ export const runLiveTestLanguage = action({
   args: {
     langCode: v.string(),
     marketContext: v.optional(v.string()),
+    remaining: v.optional(v.array(v.string())), // batch chaining
   },
   handler: async (
     ctx,
@@ -103,6 +114,16 @@ export const runLiveTestLanguage = action({
         durationMs,
         error: payload.error,
       });
+
+      // ── Batch chaining: schedule the next language in the remaining list ──
+      if (args.remaining && args.remaining.length > 0) {
+        await ctx.scheduler.runAfter(2_000, api.liveTest.runLiveTestLanguage, {
+          langCode: args.remaining[0],
+          marketContext: args.marketContext,
+          remaining: args.remaining.slice(1),
+        });
+      }
+
       return {
         ok: payload.ok,
         langCode: args.langCode,
@@ -218,5 +239,34 @@ export const runLiveTestLanguage = action({
       console.error(`[liveTest] ${args.langCode} failed:`, message);
       return finish({ ok: false, error: message });
     }
+  },
+});
+
+// ──────────────────────────────────────────────
+// Action: run ALL 20 languages (batch orchestrator)
+//
+// Kicks off the first language immediately; each per-language run chains the
+// next via ctx.scheduler.runAfter, so the whole suite survives page closes,
+// action timeouts, and per-key rate limits (2s spacing between languages).
+// ──────────────────────────────────────────────
+
+export const runAllLiveTests = action({
+  args: {
+    marketContext: v.optional(v.string()),
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{ ok: boolean; total: number; firstLang: string }> => {
+    const langs = [...LIVE_TEST_LANGUAGES];
+    const first = langs.shift()!;
+
+    await ctx.scheduler.runAfter(0, api.liveTest.runLiveTestLanguage, {
+      langCode: first,
+      marketContext: args.marketContext,
+      remaining: langs,
+    });
+
+    return { ok: true, total: langs.length + 1, firstLang: first };
   },
 });

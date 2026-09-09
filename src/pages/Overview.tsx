@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import rawDoc from "../docs/PROJECT_DOCUMENTATION.json";
+import LiveTestPanel from "@/components/LiveTestPanel";
 
 // ─── Types (loosely cast — the JSON is generated) ───
 
@@ -273,6 +274,8 @@ export default function Overview() {
   const [selected, setSelected] = useState<string | null>(null);
   const [isNarrow, setIsNarrow] = useState(() => window.innerWidth < 860);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // View switch: codebase docs ↔ live per-language Gemini test results
+  const [view, setView] = useState<"docs" | "livetest">("docs");
 
   // Debounce search 300ms
   useEffect(() => {
@@ -482,9 +485,26 @@ export default function Overview() {
           className="logo-gradient"
           style={{ fontSize: 14, fontWeight: 700, letterSpacing: "0.04em", whiteSpace: "nowrap" }}
         >
-          Codebase Documentation
+          {view === "docs" ? "Codebase Documentation" : "Live Language Tests"}
         </span>
         <div style={{ flex: 1 }} />
+        <button
+          onClick={() => setView((v) => (v === "docs" ? "livetest" : "docs"))}
+          style={{
+            background: view === "livetest" ? "rgba(0,229,255,0.15)" : "rgba(139,92,246,0.12)",
+            border: view === "livetest" ? "1px solid rgba(0,229,255,0.45)" : T.border,
+            color: view === "livetest" ? T.cyan : T.heading,
+            borderRadius: 6,
+            padding: "5px 12px",
+            fontSize: 11.5,
+            fontFamily: T.mono,
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
+          title="Run / view REAL Gemini round-trip tests for all 20 languages"
+        >
+          {view === "docs" ? "⚡ Live Tests" : "📄 Docs"}
+        </button>
         <input
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
@@ -521,7 +541,9 @@ export default function Overview() {
 
         {/* Main panel */}
         <div style={{ flex: 1, overflowY: "auto", padding: 20, minWidth: 0 }}>
-          {!selectedFile ? (
+          {view === "livetest" ? (
+            <LiveTestPanel />
+          ) : !selectedFile ? (
             <ProjectOverview onOpenFile={selectFile} />
           ) : (
             <FileDetail

@@ -25,6 +25,33 @@ body {
   color: var(--text-primary);
 }
 
+/* ─── Mobile viewport hardening (Android 5.1-safe) ─── */
+html,
+body,
+#root {
+  height: 100%;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+input,
+textarea,
+select {
+  /* Prevent iOS/Android auto-zoom on focus (focus zooms when < 16px) */
+  font-size: 16px;
+}
+a,
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+.safe-pad {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+}
+
 /* ─── App Background Pattern ─── */
 .app-bg-pattern {
   background: var(--bg);

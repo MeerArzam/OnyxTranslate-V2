@@ -306,11 +306,40 @@ function applyBiblePassServer(text: string, targetLanguage: string): BiblePassRe
   return { lockedText: result, placeholders };
 }
 
+/**
+ * Restore Bible-Pass placeholder tokens back to their locked target-language
+ * values. HARDENED (Phase D2): repairs mangled tokens ("__PH2__" → "PH2",
+ * "__ PH2 __", "__PHO__") by index — insertion order of the placeholders
+ * map IS the token numbering — so a locked name can never vanish.
+ */
 function restorePlaceholdersServer(text: string, placeholders: Map<string, string>): string {
   let result = text;
   for (const [ph, value] of placeholders) {
     result = result.split(ph).join(value);
   }
+  if (placeholders.size === 0) return result;
+
+  const entries = [...placeholders.entries()];
+
+  // Repair mangled underscore forms: "__PH2__", "__ PH2 __", "__PHO" (O/0 and l/1 confusion fixed by index lookup)
+  result = result.replace(/_{0,4}\s*PH\s*([0-9OQoIl]{1,3})\s*_{0,4}/gi, (m, digits: string) => {
+    const normalized = digits.replace(/[OQoIl]/g, (c) => (c.toLowerCase() === "l" ? "1" : "0"));
+    const idx = parseInt(normalized, 10);
+    if (Number.isInteger(idx) && idx >= 0 && idx < entries.length) {
+      return entries[idx][1];
+    }
+    return m;
+  });
+
+  // Repair fully bare tokens: "PH2" (model stripped the underscores)
+  result = result.replace(/(^|[^A-Za-z0-9])PH\s*([0-9OQoIl]{1,3})(?![A-Za-z0-9])/g, (m, pre: string, digits: string) => {
+    const normalized = digits.replace(/[OQoIl]/g, (c) => (c.toLowerCase() === "l" ? "1" : "0"));
+    const idx = parseInt(normalized, 10);
+    if (Number.isInteger(idx) && idx >= 0 && idx < entries.length) {      return `${pre}${entries[idx][1]}`;
+    }
+    return m;
+  });
+
   return result;
 }
 

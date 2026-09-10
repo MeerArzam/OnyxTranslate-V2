@@ -2,13 +2,15 @@
 
 import { v } from "convex/values";
 import { action } from "./_generated/server";
+import { itemsToBlocks, mergeItemsIntoLines, type LayoutTextItem } from "./pdfLayout";
 
 /**
  * convex/parsePdf.ts — Server-side PDF text extraction.
  *
  * The browser's pdf.js parser extracts individual text items without merging
  * nearby fragments, causing broken words and missing letters. This action
- * re-parses the PDF server-side with proper Y-coordinate grouping into lines.
+ * re-parses the PDF server-side with geometry-aware word merging (x-gap
+ * based) and paragraph block clustering.
  */
 
 interface RawTextItem {
@@ -39,6 +41,16 @@ export interface ServerParsedPage {
   text: string;
   lines: ServerParsedLine[];
   textItems: ServerParsedTextItem[];
+  blocks: Array<{
+    text: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    fontSize: number;
+    lineCount: number;
+    align: "left" | "center";
+  }>;
   pageWidth: number;
   pageHeight: number;
 }
@@ -55,14 +67,14 @@ export const parseUploadedPdf = action({
     const uint8 = new Uint8Array(arrayBuffer);
 
     // 2. Dynamically import pdfjs-dist.
-    // CRITICAL FIX: pdfjs-dist references DOMMatrix at module load. In the
+    // CRITICAL: pdfjs-dist references DOMMatrix at module load. In the
     // browser that global exists; in the Node runtime ("use node" actions)
     // it does not, and the optional @napi-rs/canvas polyfill is unavailable,
     // so the import crashed with "DOMMatrix is not defined". Text extraction
     // never performs real rendering — a minimal stub is sufficient.
     const g = globalThis as Record<string, unknown>;
     if (typeof g.pdfjsWorker === "undefined") {
-      // (b) In Node, pdf.js falls back to a "fake worker" that does a runtime
+      // In Node, pdf.js falls back to a "fake worker" that does a runtime
       // dynamic import of pdf.worker.mjs — impossible inside Convex's
       // bundler. Pre-registering the worker module on globalThis.pdfjsWorker
       // is the documented escape hatch pdf.js checks FIRST.
@@ -114,9 +126,6 @@ export const parseUploadedPdf = action({
         const pageWidth = viewport.width;
         const pageHeight = viewport.height;
 
-        // Use getTextContent with normalizeWhitespace enabled via the options
-        // object. In pdfjs-dist v6+, the text items are already combined by
-        // default when disableCombineTextItems is NOT set to true.
         const textContent = await page.getTextContent({
           normalizeWhitespace: true,
         } as any);
@@ -138,17 +147,26 @@ export const parseUploadedPdf = action({
           };
         });
 
-        // Group items into lines by Y-coordinate proximity (2px tolerance)
-        const lines = groupIntoLines(textItems, 2);
+        // Geometry-aware merging (x-gap based) — fixes "Ony xStor m"
+        const layoutLines = mergeItemsIntoLines(textItems as LayoutTextItem[]);
+
+        // Paragraph block clustering for coordinate-aware PDF output
+        const blocks = itemsToBlocks(textItems as LayoutTextItem[]);
+
+        const lines: ServerParsedLine[] = layoutLines.map((l) => ({
+          text: l.text,
+          y: l.y,
+        }));
 
         // Build clean page text from grouped lines
-        const pageText = lines.map((l) => l.text).join("\n").trim();
+        const pageText = layoutLines.map((l) => l.text).join("\n").trim();
 
         allPages.push({
           num: pageNum,
           text: pageText,
           lines,
           textItems,
+          blocks,
           pageWidth,
           pageHeight,
         });
@@ -162,6 +180,7 @@ export const parseUploadedPdf = action({
           text: "",
           lines: [],
           textItems: [],
+          blocks: [],
           pageWidth: 595,
           pageHeight: 842,
         });
@@ -185,53 +204,3 @@ export const parseUploadedPdf = action({
     };
   },
 });
-
-/**
- * Group text items into lines by Y-coordinate proximity.
- *
- * Items within `tolerance` pixels vertically are on the same line.
- * Within each line, items are sorted left-to-right by X position.
- * Words within a line are joined with single spaces.
- */
-function groupIntoLines(
-  items: ServerParsedTextItem[],
-  tolerance: number
-): ServerParsedLine[] {
-  if (items.length === 0) return [];
-
-  // Sort by Y descending (higher Y = top of page in PDF coords)
-  const sorted = [...items].sort((a, b) => b.y - a.y);
-
-  const groups: ServerParsedTextItem[][] = [];
-  let currentGroup: ServerParsedTextItem[] = [sorted[0]];
-
-  for (let i = 1; i < sorted.length; i++) {
-    const item = sorted[i];
-    const lastInGroup = currentGroup[currentGroup.length - 1];
-
-    if (Math.abs(item.y - lastInGroup.y) <= tolerance) {
-      currentGroup.push(item);
-    } else {
-      groups.push(currentGroup);
-      currentGroup = [item];
-    }
-  }
-  groups.push(currentGroup);
-
-  // Sort each group left-to-right and build line text
-  return groups.map((group) => {
-    group.sort((a, b) => a.x - b.x);
-
-    const text = group
-      .map((it) => it.str.trim())
-      .filter(Boolean)
-      .join(" ")
-      .replace(/\s+/g, " ")
-      .trim();
-
-    const avgY =
-      group.reduce((sum, it) => sum + it.y, 0) / group.length;
-
-    return { text, y: avgY };
-  });
-}

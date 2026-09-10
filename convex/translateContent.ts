@@ -222,6 +222,12 @@ function buildSystemPrompt(langCode: string, marketContext = "standard"): string
     "# NAME MAP (same name = same spelling, always)",
     buildNameMap(langCode),
     "",
+    "# PLACEHOLDER PROTOCOL (CRITICAL — Bible Pass is active)",
+    "Some terms in the source text are hidden behind placeholder tokens like __PH0__, __PH1__, __PH2__.",
+    "1. Copy EVERY __PHn__ token into your output EXACTLY as written — never translate, transliterate, rename, reorder, merge, split or drop them.",
+    "2. NEVER substitute a placeholder with any other name or term from this prompt (for example never replace a placeholder with 'Basgiath' or 'Navarre'). Each token stands for exactly the term it replaced.",
+    "3. Treat a placeholder as one indestructible word: local grammar/case endings go OUTSIDE the token (e.g. Turkish __PH2__'da, Japanese __PH2__で), and punctuation stays natural around it.",
+    "",
     "# CHARACTER VOICE MATRIX",
     voices,
     "",
@@ -343,11 +349,43 @@ function applyBiblePassServer(text: string, targetLanguage: string): BiblePassRe
   return { lockedText: result, placeholders };
 }
 
+/**
+ * Restore Bible-Pass placeholder tokens back to their locked target-language
+ * values. HARDENED (Phase D2): Gemini occasionally mangles a token —
+ * "__PH2__" → "PH2", "__ PH2 __", "__PHO__", or substitutes a different
+ * known name. After exact restore, any残 leftover token-ish artifact is
+ * repaired by index (insertion order of the placeholders map IS the token
+ * numbering), so a locked name can never vanish from the output.
+ */
 function restorePlaceholdersServer(text: string, placeholders: Map<string, string>): string {
   let result = text;
   for (const [ph, value] of placeholders) {
     result = result.split(ph).join(value);
   }
+  if (placeholders.size === 0) return result;
+
+  const entries = [...placeholders.entries()];
+
+  // Repair mangled underscore forms: "__PH2__", "__ PH2 __", "PH2__", "__PHO" (O/0 confusion is fixed by index lookup)
+  result = result.replace(/_{0,4}\s*PH\s*([0-9OQoIl]{1,3})\s*_{0,4}/gi, (m, digits: string) => {
+    const normalized = digits.replace(/[OQoIl]/g, (c) => (c.toLowerCase() === "l" ? "1" : "0"));
+    const idx = parseInt(normalized, 10);
+    if (Number.isInteger(idx) && idx >= 0 && idx < entries.length) {
+      return entries[idx][1];
+    }
+    return m;
+  });
+
+  // Repair fully bare tokens: "PH2" (model stripped the underscores)
+  result = result.replace(/(^|[^A-Za-z0-9])PH\s*([0-9OQoIl]{1,3})(?![A-Za-z0-9])/g, (m, pre: string, digits: string) => {
+    const normalized = digits.replace(/[OQoIl]/g, (c) => (c.toLowerCase() === "l" ? "1" : "0"));
+    const idx = parseInt(normalized, 10);
+    if (Number.isInteger(idx) && idx >= 0 && idx < entries.length) {
+      return `${pre}${entries[idx][1]}`;
+    }
+    return m;
+  });
+
   return result;
 }
 
@@ -762,7 +800,7 @@ export const translateLanguage = action({
         userContent = `# TRANSLATION MEMORY (mandatory — reuse these exact translations for consistency)\n${memoryLines.join("\n")}\n\n${userContent}`;
       }
       // Anti-leak instruction: reply must START with the first translated word
-      userContent = `${userContent}\n\nTranslate ALL of the text above as one continuous piece of prose in ${args.langCode}. Begin your reply with the first translated word — no preamble, no self-checks, no notes. NEVER output a numbered list, NEVER output "English:"/"Urdu:" (or any language-label) pairs, NEVER a dictionary/line-by-line format — only the running translated story.`;
+      userContent = `${userContent}\n\nTranslate ALL of the text above as one continuous piece of prose in ${args.langCode}. Begin your reply with the first translated word — no preamble, no self-checks, no notes. NEVER output a numbered list, NEVER output "English:"/"Urdu:" (or any language-label) pairs, NEVER a dictionary/line-by-line format — only the running translated story. Preserve every __PHn__ placeholder token EXACTLY as written — never translate, rename or substitute them.`;
 
       // FIX 1c: Call Gemini + QA retry loop (max 2 attempts)
       let geminiResult: { text: string; model: string; usage: unknown; finishReason: string } | null = null;

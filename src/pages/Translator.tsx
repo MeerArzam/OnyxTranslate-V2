@@ -1125,7 +1125,7 @@ export default function Translator() {
   // ─── Render ───
 
   return (
-    <div className="min-h-screen bg-background text-foreground app-bg-pattern">
+    <div className="min-h-screen bg-background text-foreground app-bg-pattern safe-pad">
       <input
         ref={fileInputRef}
         type="file"
@@ -1136,7 +1136,7 @@ export default function Translator() {
 
       {/* Header */}
       <header className="sticky top-0 z-40 backdrop-blur-xl" style={{ background: 'rgba(6,6,14,0.85)', borderBottom: '1px solid rgba(0,229,255,0.10)' }}>
-        <div className="max-w-[1200px] mx-auto px-6 h-14 flex items-center justify-between">
+        <div className="w-full max-w-[1100px] mx-auto px-4 md:px-6 min-h-14 py-2 flex flex-wrap items-center justify-between gap-y-1">
           <div className="flex items-center gap-3">
             <div className="size-8 rounded-lg neon-glow flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #00e5ff, #a78bfa)' }}>
               <Languages className="size-4 text-primary-foreground" />
@@ -1216,11 +1216,11 @@ export default function Translator() {
         </div>
       </header>
 
-      <div className="max-w-[1200px] mx-auto px-6 py-6">
+      <div className="w-full max-w-[1100px] mx-auto px-4 md:px-6 py-4 md:py-6">
 
-        <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-4 md:gap-6">
           {/* Left Panel */}
-          <div className="space-y-4">
+          <div className="space-y-4 min-w-0">
             {/* Step 1: Upload */}
             <div className="rounded-xl border border-border/50 bg-card overflow-hidden royal-card">
               <div className="px-4 py-3 border-b border-border/30 bg-muted/30">

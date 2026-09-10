@@ -3,6 +3,11 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { api } from "./_generated/api";
+import {
+  planPageOverlay,
+  wrapText,
+  type RenderBlock,
+} from "./renderPdfCore";
 
 /**
  * convex/generatePdf.ts — Server-side translated PDF generation (Segment B).
@@ -49,57 +54,7 @@ async function getFontBytes(url: string): Promise<ArrayBuffer> {
   return bytes;
 }
 
-// ─── Text wrapping ──────────────────────────────────────────────────────
-
-function wrapText(
-  font: { widthOfTextAtSize: (text: string, size: number) => number },
-  text: string,
-  maxWidth: number,
-  size: number,
-): string[] {
-  const paragraphs = text.split("\n");
-  const lines: string[] = [];
-
-  for (const paragraph of paragraphs) {
-    if (!paragraph.trim()) {
-      lines.push("");
-      continue;
-    }
-    const words = paragraph.split(/\s+/).filter(Boolean);
-    let current = "";
-
-    for (const word of words) {
-      if (font.widthOfTextAtSize(word, size) > maxWidth) {
-        if (current) {
-          lines.push(current);
-          current = "";
-        }
-        // Break very long words character by character
-        let chunk = "";
-        for (const ch of word) {
-          if (chunk && font.widthOfTextAtSize(chunk + ch, size) > maxWidth) {
-            lines.push(chunk);
-            chunk = ch;
-          } else {
-            chunk += ch;
-          }
-        }
-        current = chunk;
-        continue;
-      }
-      const test = current ? `${current} ${word}` : word;
-      if (font.widthOfTextAtSize(test, size) <= maxWidth) {
-        current = test;
-      } else {
-        if (current) lines.push(current);
-        current = word;
-      }
-    }
-    if (current) lines.push(current);
-  }
-
-  return lines.length > 0 ? lines : [""];
-}
+// ─── Text wrapping now lives in renderPdfCore (shared with tests) ────────
 
 // ─── Main action ────────────────────────────────────────────────────────
 
@@ -204,12 +159,35 @@ export const generateTranslatedPdf = action({
       pageHeight?: number;
     }> = project.pageData || [];
 
-    // Split translated text proportionally across pages
+    // C1: Split translated text into PARAGRAPHS (\n\n sentinel preserved by
+    // the 23-phase pipeline) and distribute across pages by original word
+    // share. Falls back to word-proportional fill per page when a page's
+    // block structure is missing (recorded in pdfFit for the report).
+    const translatedParagraphs = args.mergedText
+      .split(/\n{2,}/)
+      .map((p) => p.trim())
+      .filter(Boolean);
     const translatedWords = args.mergedText.split(/\s+/).filter(Boolean);
     const totalWords = translatedWords.length;
-    const perPageWords = Math.ceil(totalWords / srcPageCount);
-
-    let wordIdx = 0;
+    let paraIdx = 0;
+    const srcWordsPerPage = (project.pageData || []).map((p: {
+      text?: string;
+      textItems?: Array<{ str: string }>;
+    }) => {
+      const text = p.text ?? (p.textItems || []).map((it) => it.str).join(" ");
+      return Math.max(text.split(/\s+/).filter(Boolean).length, 1);
+    });
+    const totalSrcWords = Math.max(
+      srcWordsPerPage.reduce((a: number, b: number) => a + b, 0),
+      1,
+    );
+    const pdfFit: Record<string, unknown> = {
+      pagesUsingBlocks: 0,
+      pagesFallback: 0,
+      paragraphsMatchedPages: 0,
+      minFontSize: 999,
+      wordSpaceCompressions: 0,
+    };
 
     // 6. Process each page: copy original → coordinate-aware whiteout → overlay translation
     for (let i = 0; i < srcPageCount; i++) {
@@ -258,20 +236,73 @@ export const generateTranslatedPdf = action({
         });
       }
 
-      // Get words for this page
-      const endIdx = Math.min(wordIdx + perPageWords, totalWords);
-      let pageText = translatedWords.slice(wordIdx, endIdx).join(" ");
-      wordIdx = endIdx;
-
-      // Append remaining to last page
-      if (i === srcPageCount - 1 && wordIdx < totalWords) {
-        const remaining = translatedWords.slice(wordIdx).join(" ");
-        pageText = pageText ? pageText + " " + remaining : remaining;
+      // C1: Get translated paragraphs for this page by ORIGINAL word share
+      const share = (srcWordsPerPage[i] ?? 1) / totalSrcWords;
+      const targetWords = Math.floor(share * totalWords);
+      const pageParas: string[] = [];
+      let pageParaWords = 0;
+      while (
+        paraIdx < translatedParagraphs.length &&
+        (pageParaWords +
+          translatedParagraphs[paraIdx].split(/\s+/).filter(Boolean).length <=
+          targetWords ||
+          i === srcPageCount - 1)
+      ) {
+        pageParas.push(translatedParagraphs[paraIdx]);
+        pageParaWords += translatedParagraphs[paraIdx]
+          .split(/\s+/)
+          .filter(Boolean).length;
+        paraIdx++;
+        if (i < srcPageCount - 1 && pageParaWords >= targetWords) break;
       }
+      const pageText = pageParas.join("\n\n");
 
-      // CRITICAL FIX 3: Overlay translated text at coordinates if pageData available
-      if (textItems.length > 0 && pageText.trim()) {
-        // Calculate average font size from text items
+      // C1/C2: Block-based overlay when the parse produced paragraph blocks.
+      // Each block: erase (bounds +1px, white) → auto-fit translation at the
+      // block's OWN font size, wrapped at the block's ORIGINAL width/height.
+      const storedBlocks = (pageEntry as { blocks?: RenderBlock[] } | undefined)?.blocks;
+      if (storedBlocks && storedBlocks.length > 0 && pageText.trim()) {
+        const plan = planPageOverlay({
+          textItems: [],
+          storedBlocks,
+          pageWidth,
+          pageHeight,
+          paragraphs: pageParas,
+          font: font as unknown as {
+            widthOfTextAtSize(text: string, size: number): number;
+            heightAtSize(size: number): number;
+          },
+          isRTL,
+        });
+        for (const op of plan.ops) {
+          copiedPage.drawRectangle({
+            x: op.erase.x,
+            y: op.eraseYBottomOrigin,
+            width: op.erase.width,
+            height: op.erase.height,
+            color: white,
+            borderWidth: 0,
+          });
+          for (const line of op.lines) {
+            try {
+              copiedPage.drawText(line.text, {
+                x: line.x,
+                y: pageHeight - line.y, // top-origin baseline → bottom-origin
+                size: line.size,
+                font,
+                color: black,
+              });
+            } catch {
+              // Skip lines with unencodable glyphs
+            }
+          }
+        }
+        pdfFit.pagesUsingBlocks = (pdfFit.pagesUsingBlocks as number) + 1;
+        if (plan.paragraphsMatched) pdfFit.paragraphsMatchedPages = (pdfFit.paragraphsMatchedPages as number) + 1;
+        if (plan.minFontSize > 0) pdfFit.minFontSize = Math.min(pdfFit.minFontSize as number, plan.minFontSize);
+      } else if (textItems.length > 0 && pageText.trim()) {
+        pdfFit.pagesFallback = (pdfFit.pagesFallback as number) + 1;
+        // Fallback (legacy band fill): average font size from text items
         const avgFontSize = textItems.length > 0
           ? textItems.reduce((sum, it) => sum + (it.height || 10), 0) / textItems.length
           : 10;
@@ -380,6 +411,9 @@ export const generateTranslatedPdf = action({
     }
 
     // 7. Save and store in Convex Storage
+    console.log(
+      `[generatePdf] ${args.langCode} pdfFit: blocks=${pdfFit.pagesUsingBlocks} fallback=${pdfFit.pagesFallback} paraMatched=${pdfFit.paragraphsMatchedPages} minFont=${pdfFit.minFontSize}pt`,
+    );
     const resultBytes = await outDoc.save();
     const resultBlob = new Blob(
       [new Uint8Array(resultBytes).buffer as ArrayBuffer],

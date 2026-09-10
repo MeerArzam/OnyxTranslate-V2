@@ -212,55 +212,69 @@ async function pdfjsCounts(bytes) {
   return { numPages: doc.numPages, pages };
 }
 
-// ────────────────────── renderPdfCore re-run (assert 5) ────────────────
+// ────────────────────── production render re-run (assert 5) ────────────
 
-async function assertNoOverflow({ pageData, pageParasByPage, langCode }) {
-  const { planPageOverlay } = await import("../convex/renderPdfCore");
-  const fontUrlByLang = {
-    ar: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansArabic-Regular.ttf",
-    ja: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansJP-Regular.ttf",
+async function assertNoOverflow({ srcBytes, pageData, mergedText, langCode }) {
+  const core = await import("../convex/renderPdfCore");
+  const fontkitModule = await import("@pdf-lib/fontkit");
+  const fontkit = fontkitModule.default ?? fontkitModule;
+  const fontCache = new Map();
+  const getFontBytes = async (url) => {
+    if (fontCache.has(url)) return fontCache.get(url);
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`font HTTP ${resp.status}`);
+    const buf = await resp.arrayBuffer();
+    fontCache.set(url, buf);
+    return buf;
   };
-  const { PDFDocument: PD, StandardFonts: SF } = { PDFDocument: PDFDocument, StandardFonts };
-  const tmp = await PD.create();
+
+  // Re-render with the EXACT production code path (self-contained since the
+  // interop refactor — no ref injection needed)
+  const { stats } = await core.renderTranslatedPdf({
+    srcBytes: new Uint8Array(srcBytes),
+    pageData,
+    mergedText,
+    langCode,
+    getFontBytes,
+  });
+
+  // Then verify line geometry against the same planner the render used
   let font;
-  if (fontUrlByLang[langCode]) {
-    const resp = await fetch(fontUrlByLang[langCode]);
-    font = await tmp.embedFont(new Uint8Array(await resp.arrayBuffer()));
-  } else {
-    font = await tmp.embedFont(SF.Helvetica);
-  }
-  const RTL = new Set(["ar", "ur", "ks"]);
+  const tmpDoc = await PDFDocument.create();
+  const fontUrl = core.RENDER_FONT_URLS[langCode];
+  if (fontUrl) font = await tmpDoc.embedFont(await getFontBytes(fontUrl));
+  else font = await tmpDoc.embedFont(StandardFonts.Helvetica);
+  const isRTL = ["ar", "ur", "ks"].includes(langCode);
+  const byPage = distributePageParagraphs(mergedText, pageData);
+
   const violations = [];
   let checks = 0;
-
   for (const pd of pageData) {
     const storedBlocks = pd.blocks || [];
-    if (storedBlocks.length === 0 || !pageParasByPage[pd.num]) continue;
-    const pageHeight = pd.pageHeight || 842;
-    const plan = planPageOverlay({
+    if (storedBlocks.length === 0) continue;
+    const plan = core.planPageOverlay({
       textItems: [],
       storedBlocks,
       pageWidth: pd.pageWidth || 595,
-      pageHeight,
-      paragraphs: pageParasByPage[pd.num],
+      pageHeight: pd.pageHeight || 842,
+      paragraphs: byPage[pd.num] || [],
       font,
-      isRTL: RTL.has(langCode),
+      isRTL,
     });
     for (const op of plan.ops) {
       for (const line of op.lines) {
         checks++;
         const lw = font.widthOfTextAtSize(line.text, line.size);
         if (line.x < op.erase.x - 2 || line.x + lw > op.erase.x + op.erase.width + 1) {
-          violations.push(`pg${pd.num} x-overflow: x=${line.x.toFixed(1)} w=${lw.toFixed(1)} rect=[${op.erase.x.toFixed(1)},${(op.erase.x + op.erase.width).toFixed(1)}]`);
+          violations.push(`pg${pd.num} x-overflow x=${line.x.toFixed(1)}+${lw.toFixed(1)} rect=[${op.erase.x.toFixed(1)},${(op.erase.x + op.erase.width).toFixed(1)}]`);
         }
-        const baseline = line.y; // top-origin
-        if (baseline > op.erase.y + op.erase.height + 2) {
-          violations.push(`pg${pd.num} y-overflow: baseline=${baseline.toFixed(1)} > ${(op.erase.y + op.erase.height).toFixed(1)}`);
+        if (line.y > op.erase.y + op.erase.height + 2) {
+          violations.push(`pg${pd.num} y-overflow baseline=${line.y.toFixed(1)} > ${(op.erase.y + op.erase.height).toFixed(1)}`);
         }
       }
     }
   }
-  return { checks, violations: violations.slice(0, 10), violationCount: violations.length };
+  return { stats, checks, violations: violations.slice(0, 10), violationCount: violations.length };
 }
 
 // ────────────────────── production page-para distribution ──────────────
@@ -327,6 +341,113 @@ async function main() {
     console.log("PHASE B: PASS ✓");
   }
 
+  // Short resumable modes: the terminal cap is 180s, but the server-side
+  // language chain keeps running after the client exits. `kick` fires a
+  // language (~15s); `assert` polls, repairs a stalled PDF gen with the real
+  // merged text, and runs the 5 assertions.
+  if (onlyPhase === "kick") {
+    const langCode = process.argv[3];
+    const srcBytes = await buildFidelityPdf();
+    fs.writeFileSync("/tmp/onyx-fidelity-src.pdf", srcBytes);
+    const storageId = (await post("upload:storePdf", { fileName: "fidelity-src.pdf", pdfBase64: srcBytes.toString("base64") })).storageId;
+    const parsed = await post("parsePdf:parseUploadedPdf", { pdfStorageId: storageId });
+    const sessionId = `e2e-fidelity-${langCode}-${Date.now()}`;
+    const pid = (await post("mutations:createProject", {
+      sessionId, fileName: "fidelity-src.pdf", pageCount: parsed.pageCount,
+      wordCount: parsed.wordCount, pdfStorageId: storageId, pageData: parsed.pageData,
+      fullText: parsed.fullText, parsedPages: parsed.pageCount, status: "ready",
+    }, "mutation"));
+    await post("translateContent:translateLanguage", { projectId: pid, langCode, marketContext: "standard" });
+    const srcCounts = await pdfjsCounts(srcBytes);
+    fs.writeFileSync(`/tmp/fidelity-kick-${langCode}.json`, JSON.stringify({ pid, sessionId, storageId, parsed, srcCounts }));
+    console.log(`KICKED ${langCode}: pid=${pid} blocks=${parsed.pageData.reduce((s, p) => s + (p.blocks || []).length, 0)}`);
+    return;
+  }
+
+  if (onlyPhase === "assert") {
+    const langCode = process.argv[3];
+    const { pid, parsed, srcCounts } = JSON.parse(fs.readFileSync(`/tmp/fidelity-kick-${langCode}.json`, "utf8"));
+    console.log(`\n═══ PHASE C — ${langCode} fidelity assertions ═══`);
+    const t0 = Date.now();
+    let translation = null;
+    for (let i = 0; i < 9; i++) {
+      const ts = await post("queries:getTranslationsRaw", { projectId: pid }, "query");
+      const t = ts.find((x) => x.langCode === langCode);
+      if (t && t.status === "complete" && t.pdfUrl && !t.pdfGenerating) { translation = t; break; }
+      // Repair: text finished but the chained PDF gen stalled (e.g. crashed
+      // action before a fix) — re-fire it with the REAL merged text.
+      if (t && t.status === "complete" && !t.pdfUrl) {
+        const mergedNow = (await post("queries:getChunksForLang", { projectId: pid, langCode }, "query"))
+          .sort((a, b) => a.chunkIndex - b.chunkIndex).map((c) => c.translatedText || "").filter(Boolean).join("\n\n");
+        if (mergedNow.trim()) {
+          console.log(`  [repair] re-firing PDF gen for ${langCode}`);
+          await post("generatePdf:generateTranslatedPdf", { projectId: pid, langCode, translationId: t._id, mergedText: mergedNow });
+        }
+      }
+      process.stdout.write(`  ...poll ${i + 1}/9 (${Math.round((Date.now() - t0) / 1000)}s)\r`);
+      await new Promise((r) => setTimeout(r, 15000));
+    }
+    if (!translation) throw new Error(`timeout waiting for ${langCode} translate+pdf (rerun: resumable)`);
+    const merged = (await post("queries:getChunksForLang", { projectId: pid, langCode }, "query"))
+      .sort((a, b) => a.chunkIndex - b.chunkIndex).map((c) => c.translatedText || "").filter(Boolean).join("\n\n");
+
+    const pdfBytes = Buffer.from(await (await fetch(translation.pdfUrl)).arrayBuffer());
+    fs.writeFileSync(`/tmp/fidelity-${langCode}.pdf`, pdfBytes);
+    const outCounts = await pdfjsCounts(pdfBytes);
+
+    const a1 = outCounts.numPages === srcCounts.numPages;
+    const a2 = outCounts.pages[2].images >= srcCounts.pages[2].images &&
+               outCounts.pages[2].fills >= srcCounts.pages[2].fills;
+    const blockCount = parsed.pageData.reduce((s, p) => s + (p.blocks || []).length, 0);
+    const whiteFills = outCounts.pages.reduce((s, p) => s + p.fills, 0);
+    const a3 = whiteFills >= blockCount;
+    const allText = outCounts.pages.map((p) => p.text).join("\n");
+    let a4 = false, scriptCheck = "";
+    if (langCode === "ar") {
+      const arabic = (allText.match(/[\u0600-\u06FF]/g) || []).length;
+      scriptCheck = `arabic chars: ${arabic}`;
+      a4 = arabic > 100;
+    } else if (langCode === "ja") {
+      const cjk = (allText.match(/[\u3040-\u30FF\u4E00-\u9FFF]/g) || []).length;
+      scriptCheck = `cjk chars: ${cjk}`;
+      a4 = cjk > 100;
+    } else {
+      const sample = merged.split(/\s+/).filter((w) => w.length >= 5).slice(0, 40);
+      const hits = sample.filter((w) => allText.includes(w.replace(/[.,!?;:«»"']/g, ""))).length;
+      scriptCheck = `sample-word hits: ${hits}/${sample.length}`;
+      a4 = hits >= sample.length * 0.5;
+    }
+    const overflow = await assertNoOverflow({
+      srcBytes: fs.readFileSync("/tmp/onyx-fidelity-src.pdf"),
+      pageData: parsed.pageData, mergedText: merged, langCode,
+    });
+    const a5 = overflow.violationCount === 0;
+    const pass = a1 && a2 && a3 && a4 && a5;
+    results.languages[langCode] = {
+      pass, projectId: pid,
+      assertions: { pageCount: a1, imagesVectorPreserved: a2, whiteoutCoverage: a3, translatedScriptPresent: a4, noBlockOverflow: a5 },
+      evidence: {
+        pages: `${outCounts.numPages}/${srcCounts.numPages}`,
+        p3Images: `${outCounts.pages[2].images}/${srcCounts.pages[2].images}`,
+        p3Fills: `${outCounts.pages[2].fills}/${srcCounts.pages[2].fills}`,
+        whiteFillsVsBlocks: `${whiteFills}/${blockCount}`,
+        scriptCheck, overflowChecks: overflow.checks, overflowViolations: overflow.violations,
+        renderStats: overflow.stats,
+        seconds: Math.round((Date.now() - t0) / 1000),
+      },
+    };
+    console.log(`\n  1 page-count:   ${a1 ? "PASS" : "FAIL"} (${outCounts.numPages}/${srcCounts.numPages})`);
+    console.log(`  2 image/vector: ${a2 ? "PASS" : "FAIL"} (img ${outCounts.pages[2].images}/${srcCounts.pages[2].images}, fills ${outCounts.pages[2].fills}/${srcCounts.pages[2].fills})`);
+    console.log(`  3 whiteout:     ${a3 ? "PASS" : "FAIL"} (${whiteFills} white fills ≥ ${blockCount} blocks)`);
+    console.log(`  4 script:       ${a4 ? "PASS" : "FAIL"} (${scriptCheck})`);
+    console.log(`  5 overflow≤2px: ${a5 ? "PASS" : "FAIL"} (${overflow.checks} lines checked, ${overflow.violationCount} violations${overflow.violations.length ? ": " + overflow.violations[0] : ""})`);
+    console.log(`  renderStats: ${JSON.stringify(overflow.stats)}`);
+    const project = await post("queries:getProjectRaw", { projectId: pid }, "query");
+    console.log(`  ${langCode}: ${pass ? "ALL PASS ✓" : "FAIL ✗"} in ${results.languages[langCode].evidence.seconds}s  zipUrl=${project.zipUrl ? "YES" : "pending"}`);
+    fs.writeFileSync(OUT, JSON.stringify(results, null, 1));
+    return;
+  }
+
   if (onlyPhase === "all" || onlyPhase === "fidelity") {
     const argLang = process.argv[3]; // optional: run ONE language (resumable)
     const langs = argLang ? [argLang] : ["ar", "ja", "de"].filter((l) => !results.languages[l]);
@@ -390,7 +511,7 @@ async function main() {
       }
       // Assert 5: no line exceeds block bounds by >2px (planner re-run)
       const pageParasByPage = distributePageParagraphs(merged, parsed.pageData);
-      const overflow = await assertNoOverflow({ pageData: parsed.pageData, pageParasByPage, langCode });
+      const overflow = await assertNoOverflow({ srcBytes, pageData: parsed.pageData, mergedText: merged, langCode });
       const a5 = overflow.violationCount === 0;
 
       const project = await post("queries:getProjectRaw", { projectId: pid }, "query");
@@ -404,6 +525,7 @@ async function main() {
           p3Fills: `${outCounts.pages[2].fills}/${srcCounts.pages[2].fills}`,
           whiteFillsVsBlocks: `${whiteFills}/${blockCount}`,
           scriptCheck, overflowChecks: overflow.checks, overflowViolations: overflow.violations,
+          renderStats: overflow.stats,
           seconds: Math.round((Date.now() - t0) / 1000),
         },
       };

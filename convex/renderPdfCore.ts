@@ -20,6 +20,7 @@
  */
 
 import { itemsToBlocks, type LayoutTextItem } from "./pdfLayout";
+import type { PDFDocument, PDFFont, PDFPage } from "pdf-lib";
 
 export interface RenderFont {
   widthOfTextAtSize(text: string, size: number): number;
@@ -321,4 +322,254 @@ export function planPageOverlay(opts: {
     paragraphsMatched: matched,
     minFontSize: Number.isFinite(minSize) ? minSize : 0,
   };
+}
+
+// ════════════════════════════════════════════════════════════
+// Full-document render (shared by generatePdf action + fidelity tests)
+// ════════════════════════════════════════════════════════════
+
+export interface SourcePageData {
+  num: number;
+  text?: string;
+  textItems?: Array<{ str: string; x: number; y: number; width: number; height: number; fontName?: string }>;
+  blocks?: RenderBlock[];
+  pageWidth?: number;
+  pageHeight?: number;
+}
+
+export interface RenderFontUrls {
+  /** Per-language CDN font URL; absent = Helvetica. */
+  [langCode: string]: string | undefined;
+}
+
+export interface RenderStats {
+  pagesUsingBlocks: number;
+  pagesFallback: number;
+  paragraphsMatchedPages: number;
+  minFontSize: number;
+  wordSpaceCompressions: number;
+}
+
+export const RENDER_FONT_URLS: RenderFontUrls = {
+  ur: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notonastaliqurdu/NotoNastaliqUrdu[wght].ttf",
+  ar: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansarabic/NotoSansArabic[wdth,wght].ttf",
+  ks: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansarabic/NotoSansArabic[wdth,wght].ttf",
+  ja: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansjp/NotoSansJP[wght].ttf",
+  zh: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanssc/NotoSansSC[wght].ttf",
+  ko: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanskr/NotoSansKR[wght].ttf",
+  hi: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansdevanagari/NotoSansDevanagari[wdth,wght].ttf",
+  ne: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansdevanagari/NotoSansDevanagari[wdth,wght].ttf",
+  bn: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansbengali/NotoSansBengali[wdth,wght].ttf",
+};
+
+const RTL_LANGS = new Set(["ar", "ur", "ks"]);
+
+/**
+ * Render the translated PDF in memory (NO Convex imports — used by the
+ * generatePdf action and by scripts/testPdfFidelity.cjs to assert on the
+ * exact production drawing code).
+ */
+export async function renderTranslatedPdf(opts: {
+  srcBytes: Uint8Array;
+  pageData: SourcePageData[];
+  mergedText: string;
+  langCode: string;
+  getFontBytes: (url: string) => Promise<ArrayBuffer>;
+}): Promise<{ bytes: Uint8Array; stats: RenderStats; usedFallbackFont: boolean }> {
+  const { srcBytes, pageData, mergedText, langCode, getFontBytes } = opts;
+
+  // Resolve pdf-lib with CJS/ESM interop fallbacks (action bundlers can
+  // expose the CJS build either as named exports or under .default).
+  const pdfLibMod = (await import("pdf-lib")) as unknown as Record<string, unknown>;
+  const pdfLib = (
+    pdfLibMod.PDFDocument ? pdfLibMod : (pdfLibMod.default as Record<string, unknown>)
+  ) as typeof import("pdf-lib");
+  const PDFDocument = pdfLib.PDFDocument;
+  const StandardFontsRef = pdfLib.StandardFonts;
+  const rgbRef = pdfLib.rgb;
+
+  const srcDoc = await PDFDocument.load(srcBytes, { ignoreEncryption: true });
+  const srcPageCount = srcDoc.getPageCount();
+  if (srcPageCount === 0) throw new Error("Source PDF has no pages");
+
+  const outDoc = await PDFDocument.create();
+  try {
+    const fontkitMod = (await import("@pdf-lib/fontkit")) as unknown as Record<string, unknown>;
+    const fontkit = fontkitMod.default ?? fontkitMod;
+    outDoc.registerFontkit(fontkit as never);
+  } catch {
+    // fontkit optional — only needed for custom (Noto) fonts
+  }
+
+  const isRTL = RTL_LANGS.has(langCode);
+  const fontUrl = RENDER_FONT_URLS[langCode];
+  let font: PDFFont;
+  try {
+    if (fontUrl) font = await outDoc.embedFont(await getFontBytes(fontUrl));
+    else font = await outDoc.embedFont(StandardFontsRef.Helvetica);
+  } catch {
+    font = await outDoc.embedFont(StandardFontsRef.Helvetica);
+  }
+  const usedFallbackFont = !fontUrl;
+  const black = rgbRef(0, 0, 0);
+  const white = rgbRef(1, 1, 1);
+
+  // C1: split translated text into paragraphs and distribute across pages by
+  // ORIGINAL word share (identical to the previous inline implementation).
+  const translatedParagraphs = mergedText
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const totalWords = mergedText.split(/\s+/).filter(Boolean).length;
+  let paraIdx = 0;
+  const srcWordsPerPage = pageData.map((p) => {
+    const text = p.text ?? (p.textItems || []).map((it) => it.str).join(" ");
+    return Math.max(text.split(/\s+/).filter(Boolean).length, 1);
+  });
+  const totalSrcWords = Math.max(srcWordsPerPage.reduce((a, b) => a + b, 0), 1);
+
+  const stats: RenderStats = {
+    pagesUsingBlocks: 0, pagesFallback: 0, paragraphsMatchedPages: 0,
+    minFontSize: 999, wordSpaceCompressions: 0,
+  };
+
+  for (let i = 0; i < srcPageCount; i++) {
+    const [copiedPage] = await outDoc.copyPages(srcDoc, [i]);
+    outDoc.addPage(copiedPage);
+    const pageWidth = copiedPage.getWidth();
+    const pageHeight = copiedPage.getHeight();
+
+    const pageEntry = pageData.find((p) => p.num === i + 1);
+    const textItems = pageEntry?.textItems || [];
+
+    // White-out with per-item coordinates (preserves images/maps/illustrations)
+    if (textItems.length > 0) {
+      for (const item of textItems) {
+        if (!item.str.trim()) continue;
+        const w = Math.max(item.width + 2, 10);
+        const h = Math.max(item.height + 2, 6);
+        const y = pageHeight - item.y - item.height; // top-origin → bottom-origin
+        copiedPage.drawRectangle({ x: item.x, y, width: w, height: h, color: white, borderWidth: 0 });
+      }
+    } else {
+      const margin = 50;
+      copiedPage.drawRectangle({
+        x: margin - 5,
+        y: margin + 10 - 5,
+        width: pageWidth - 2 * margin + 10,
+        height: pageHeight - 2 * margin - 20 + 10,
+        color: white, borderWidth: 0,
+      });
+    }
+
+    // C1: page paragraphs by original word share
+    const share = (srcWordsPerPage[i] ?? 1) / totalSrcWords;
+    const targetWords = Math.floor(share * totalWords);
+    const pageParas: string[] = [];
+    let pageParaWords = 0;
+    while (
+      paraIdx < translatedParagraphs.length &&
+      (pageParaWords + translatedParagraphs[paraIdx].split(/\s+/).filter(Boolean).length <= targetWords ||
+        i === srcPageCount - 1)
+    ) {
+      pageParas.push(translatedParagraphs[paraIdx]);
+      pageParaWords += translatedParagraphs[paraIdx].split(/\s+/).filter(Boolean).length;
+      paraIdx++;
+      if (i < srcPageCount - 1 && pageParaWords >= targetWords) break;
+    }
+    const pageText = pageParas.join("\n\n");
+
+    // C1/C2: block-based overlay (erase → auto-fit at block's own font size)
+    const storedBlocks = pageEntry?.blocks;
+    if (storedBlocks && storedBlocks.length > 0 && pageText.trim()) {
+      const plan = planPageOverlay({
+        textItems: [],
+        storedBlocks,
+        pageWidth, pageHeight,
+        paragraphs: pageParas,
+        font: font as unknown as { widthOfTextAtSize(t: string, s: number): number; heightAtSize(s: number): number },
+        isRTL,
+      });
+      for (const op of plan.ops) {
+        copiedPage.drawRectangle({
+          x: op.erase.x, y: op.eraseYBottomOrigin,
+          width: op.erase.width, height: op.erase.height,
+          color: white, borderWidth: 0,
+        });
+        for (const line of op.lines) {
+          try {
+            copiedPage.drawText(line.text, {
+              x: line.x, y: pageHeight - line.y, // top-origin baseline → bottom-origin
+              size: line.size, font, color: black,
+            });
+          } catch { /* skip unencodable glyph lines */ }
+        }
+      }
+      stats.pagesUsingBlocks++;
+      if (plan.paragraphsMatched) stats.paragraphsMatchedPages++;
+      if (plan.minFontSize > 0) stats.minFontSize = Math.min(stats.minFontSize, plan.minFontSize);
+    } else if (textItems.length > 0 && pageText.trim()) {
+      stats.pagesFallback++;
+      // Legacy band fill (avg font, band width/height from stored coordinates)
+      const avgFontSize = textItems.reduce((s, it) => s + (it.height || 10), 0) / textItems.length;
+      const fontSize = Math.min(Math.max(avgFontSize, 7), 14);
+      const lineHeight = fontSize * 1.35;
+      const allYs = textItems.filter((it) => it.str.trim()).map((it) => it.y);
+      const storedTopY = allYs.length ? Math.min(...allYs) : 50;
+      const storedBottomY = allYs.length ? Math.max(...allYs) : pageHeight - 50;
+      const topY = pageHeight - storedTopY;
+      const bottomY = pageHeight - storedBottomY;
+      const totalHeight = topY - bottomY;
+      const maxLines = Math.max(1, Math.floor(totalHeight / lineHeight));
+      const allXs = textItems.filter((it) => it.str.trim()).map((it) => it.x);
+      const textLeft = allXs.length ? Math.max(0, Math.min(...allXs) - 4) : 40;
+      const textRight = Math.max(...textItems.filter((it) => it.str.trim()).map((it) => it.x + it.width), textLeft + 100);
+      const bandWidth = Math.min(pageWidth - 40 - textLeft, Math.max(textRight - textLeft, 200));
+      const wrappedLines = wrapText(font, pageText, bandWidth, fontSize);
+      const toVisualRTL = (l: string) => l.split(/\s+/).filter(Boolean).reverse().join(" ");
+      for (let ln = 0; ln < Math.min(wrappedLines.length, maxLines); ln++) {
+        const line = wrappedLines[ln];
+        if (!line.trim()) continue;
+        const y = topY - ln * lineHeight;
+        if (y < bottomY) break;
+        try {
+          if (isRTL) {
+            const visual = toVisualRTL(line);
+            const lineWidth = font.widthOfTextAtSize(visual, fontSize);
+            copiedPage.drawText(visual, { x: textLeft + bandWidth - lineWidth, y, size: fontSize, font, color: black });
+          } else {
+            copiedPage.drawText(line, { x: textLeft, y, size: fontSize, font, color: black });
+          }
+        } catch { /* skip */ }
+      }
+    } else if (pageText.trim()) {
+      // Fixed-margin fallback (no pageData)
+      const margin = 50;
+      const textLeft = margin;
+      const maxWidth = pageWidth - 2 * margin;
+      const fontSize = 10;
+      const lineHeight = fontSize * 1.4;
+      const textBottom = margin + 10;
+      const wrappedLines = wrapText(font, pageText, maxWidth, fontSize);
+      let baseline = pageHeight - margin - fontSize;
+      for (const line of wrappedLines) {
+        if (baseline - fontSize < textBottom) break;
+        if (line.trim()) {
+          try {
+            if (isRTL) {
+              const visual = line.split(/\s+/).reverse().join(" ");
+              const lineWidth = font.widthOfTextAtSize(visual, fontSize);
+              copiedPage.drawText(visual, { x: textLeft + maxWidth - lineWidth, y: baseline, size: fontSize, font, color: black });
+            } else {
+              copiedPage.drawText(line, { x: textLeft, y: baseline, size: fontSize, font, color: black });
+            }
+          } catch { /* skip */ }
+        }
+        baseline -= lineHeight;
+      }
+    }
+  }
+
+  const bytes = await outDoc.save();
+  return { bytes, stats, usedFallbackFont };
 }

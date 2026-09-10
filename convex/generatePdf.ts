@@ -3,42 +3,20 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { api } from "./_generated/api";
-import {
-  planPageOverlay,
-  wrapText,
-  type RenderBlock,
-} from "./renderPdfCore";
+import { renderTranslatedPdf } from "./renderPdfCore";
 
 /**
  * convex/generatePdf.ts — Server-side translated PDF generation (Segment B).
  *
- * Reads the original PDF from Convex Storage, copies each page (preserving
- * images/maps), whites out English text, overlays translated text using
- * Noto Sans fonts for non-Latin scripts, stores the result in Convex Storage,
- * and chains to the NEXT language's translation or ZIP assembly.
+ * Reads the original PDF from Convex Storage, renders the translated overlay
+ * via the shared pure module renderPdfCore.ts (per-block erase + auto-fit,
+ * paragraph mapping, RTL word-order handling), stores the result in Convex
+ * Storage, and chains to the NEXT language's translation or ZIP assembly.
+ *
+ * The rendering body lives in renderPdfCore so scripts/testPdfFidelity.cjs
+ * can execute the EXACT production render code (no drift between prod and
+ * the fidelity assertions).
  */
-
-// ─── Font URLs for non-Latin scripts ────────────────────────────────────
-
-const FONT_URLS: Record<string, string> = {
-  ur: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoNastaliqUrdu-Regular.ttf",
-  ar: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansArabic-Regular.ttf",
-  ks: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansArabic-Regular.ttf",
-  ja: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansJP-Regular.ttf",
-  zh: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansSC-Regular.ttf",
-  ko: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansKR-Regular.ttf",
-  hi: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansDevanagari-Regular.ttf",
-  ne: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansDevanagari-Regular.ttf",
-  bn: "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansBengali-Regular.ttf",
-  // Latin-script languages use Helvetica (built-in)
-};
-
-const RTL_CODES = new Set(["ar", "ur", "ks"]);
-
-const LANGUAGES = [
-  "ur", "ar", "fr", "ja", "es", "hi", "tr", "zh", "ru", "ko",
-  "de", "ks", "ro", "sw", "it", "la", "id", "ne", "bn", "pt",
-];
 
 // ─── Font cache (across calls within same action worker) ────────────────
 
@@ -53,8 +31,6 @@ async function getFontBytes(url: string): Promise<ArrayBuffer> {
   fontCache.set(url, bytes);
   return bytes;
 }
-
-// ─── Text wrapping now lives in renderPdfCore (shared with tests) ────────
 
 // ─── Main action ────────────────────────────────────────────────────────
 
@@ -71,7 +47,6 @@ export const generateTranslatedPdf = action({
     marketContext: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { PDFDocument, rgb, StandardFonts } = await import("pdf-lib");
 
     // 1. Get project and original PDF
     const project = await ctx.runQuery(api.queries.getProjectRaw, {
@@ -114,307 +89,26 @@ export const generateTranslatedPdf = action({
     const pdfArrayBuffer = await pdfBlob.arrayBuffer();
     const pdfBytes = new Uint8Array(pdfArrayBuffer);
 
-    // 2. Load original PDF
-    const srcDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
-    const srcPageCount = srcDoc.getPageCount();
-    if (srcPageCount === 0) throw new Error("Source PDF has no pages");
+    // 2. Render via the shared production core (identical code path as the
+    // fidelity tests): copy pages → per-item whiteout → block overlay
 
-    // 3. Create output document
-    const outDoc = await PDFDocument.create();
+    const pageData = (project.pageData || []) as NonNullable<
+      Parameters<typeof renderTranslatedPdf>[0]["pageData"]
+    >;
 
-    // Register fontkit for custom font embedding
-    const fontkitModule = await import("@pdf-lib/fontkit");
-    const fontkit = (fontkitModule as { default?: unknown }).default ?? fontkitModule;
-    outDoc.registerFontkit(fontkit as never);
-
-    // 4. Embed font for this language
-    const isRTL = RTL_CODES.has(args.langCode);
-    const fontUrl = FONT_URLS[args.langCode];
-    let font;
-    try {
-      if (fontUrl) {
-        font = await outDoc.embedFont(await getFontBytes(fontUrl));
-      } else {
-        font = await outDoc.embedFont(StandardFonts.Helvetica);
-      }
-    } catch {
-      font = await outDoc.embedFont(StandardFonts.Helvetica);
-    }
-
-    const black = rgb(0, 0, 0);
-    const white = rgb(1, 1, 1);
-
-    // 5. Read pageData from project for coordinate-aware overlay
-    // CRITICAL FIX 3 (root cause): pageData is stored by the client in
-    // TOP-ORIGIN coordinates (y measured from page top). pdf-lib draws in
-    // BOTTOM-ORIGIN coordinates, so every stored y must be converted:
-    //   y_pdf = pageHeight - y_top - height
-    // Without this conversion the whiteout rectangles and text overlay land
-    // at mirrored positions (bottom of the page instead of top).
-    const pageData: Array<{
-      num: number;
-      textItems: Array<{ str: string; x: number; y: number; width: number; height: number; fontName: string }>;
-      text?: string;
-      pageWidth?: number;
-      pageHeight?: number;
-    }> = project.pageData || [];
-
-    // C1: Split translated text into PARAGRAPHS (\n\n sentinel preserved by
-    // the 23-phase pipeline) and distribute across pages by original word
-    // share. Falls back to word-proportional fill per page when a page's
-    // block structure is missing (recorded in pdfFit for the report).
-    const translatedParagraphs = args.mergedText
-      .split(/\n{2,}/)
-      .map((p) => p.trim())
-      .filter(Boolean);
-    const translatedWords = args.mergedText.split(/\s+/).filter(Boolean);
-    const totalWords = translatedWords.length;
-    let paraIdx = 0;
-    const srcWordsPerPage = (project.pageData || []).map((p: {
-      text?: string;
-      textItems?: Array<{ str: string }>;
-    }) => {
-      const text = p.text ?? (p.textItems || []).map((it) => it.str).join(" ");
-      return Math.max(text.split(/\s+/).filter(Boolean).length, 1);
+    const { bytes: resultBytes, stats: pdfFit } = await renderTranslatedPdf({
+      srcBytes: pdfBytes,
+      pageData,
+      mergedText: args.mergedText,
+      langCode: args.langCode,
+      getFontBytes,
     });
-    const totalSrcWords = Math.max(
-      srcWordsPerPage.reduce((a: number, b: number) => a + b, 0),
-      1,
-    );
-    const pdfFit: Record<string, unknown> = {
-      pagesUsingBlocks: 0,
-      pagesFallback: 0,
-      paragraphsMatchedPages: 0,
-      minFontSize: 999,
-      wordSpaceCompressions: 0,
-    };
 
-    // 6. Process each page: copy original → coordinate-aware whiteout → overlay translation
-    for (let i = 0; i < srcPageCount; i++) {
-      const [copiedPage] = await outDoc.copyPages(srcDoc, [i]);
-      outDoc.addPage(copiedPage);
-
-      const pageWidth = copiedPage.getWidth();
-      const pageHeight = copiedPage.getHeight();
-
-      const pageEntry = pageData.find((p) => p.num === i + 1);
-      const textItems = pageEntry?.textItems || [];
-
-      // CRITICAL FIX 3: White-out using per-text-item coordinates if available
-      // This preserves images, maps, and illustrations that are NOT text areas
-      if (textItems.length > 0) {
-        // White-out each individual text item's bounding box.
-        // Stored pageData is TOP-origin → convert to PDF bottom-origin.
-        for (const item of textItems) {
-          if (!item.str.trim()) continue;
-          const w = Math.max(item.width + 2, 10);
-          const h = Math.max(item.height + 2, 6);
-          const y = pageHeight - item.y - item.height; // top-origin → bottom-origin
-          copiedPage.drawRectangle({
-            x: item.x,
-            y,
-            width: w,
-            height: h,
-            color: white,
-            borderWidth: 0,
-          });
-        }
-      } else {
-        // Fallback: white-out the entire text area (old behavior)
-        const margin = 50;
-        const textLeft = margin;
-        const textRight = pageWidth - margin;
-        const maxWidth = textRight - textLeft;
-        const textBottom = margin + 10;
-        copiedPage.drawRectangle({
-          x: textLeft - 5,
-          y: textBottom - 5,
-          width: maxWidth + 10,
-          height: pageHeight - textBottom - margin + 10,
-          color: white,
-          borderWidth: 0,
-        });
-      }
-
-      // C1: Get translated paragraphs for this page by ORIGINAL word share
-      const share = (srcWordsPerPage[i] ?? 1) / totalSrcWords;
-      const targetWords = Math.floor(share * totalWords);
-      const pageParas: string[] = [];
-      let pageParaWords = 0;
-      while (
-        paraIdx < translatedParagraphs.length &&
-        (pageParaWords +
-          translatedParagraphs[paraIdx].split(/\s+/).filter(Boolean).length <=
-          targetWords ||
-          i === srcPageCount - 1)
-      ) {
-        pageParas.push(translatedParagraphs[paraIdx]);
-        pageParaWords += translatedParagraphs[paraIdx]
-          .split(/\s+/)
-          .filter(Boolean).length;
-        paraIdx++;
-        if (i < srcPageCount - 1 && pageParaWords >= targetWords) break;
-      }
-      const pageText = pageParas.join("\n\n");
-
-      // C1/C2: Block-based overlay when the parse produced paragraph blocks.
-      // Each block: erase (bounds +1px, white) → auto-fit translation at the
-      // block's OWN font size, wrapped at the block's ORIGINAL width/height.
-      const storedBlocks = (pageEntry as { blocks?: RenderBlock[] } | undefined)?.blocks;
-      if (storedBlocks && storedBlocks.length > 0 && pageText.trim()) {
-        const plan = planPageOverlay({
-          textItems: [],
-          storedBlocks,
-          pageWidth,
-          pageHeight,
-          paragraphs: pageParas,
-          font: font as unknown as {
-            widthOfTextAtSize(text: string, size: number): number;
-            heightAtSize(size: number): number;
-          },
-          isRTL,
-        });
-        for (const op of plan.ops) {
-          copiedPage.drawRectangle({
-            x: op.erase.x,
-            y: op.eraseYBottomOrigin,
-            width: op.erase.width,
-            height: op.erase.height,
-            color: white,
-            borderWidth: 0,
-          });
-          for (const line of op.lines) {
-            try {
-              copiedPage.drawText(line.text, {
-                x: line.x,
-                y: pageHeight - line.y, // top-origin baseline → bottom-origin
-                size: line.size,
-                font,
-                color: black,
-              });
-            } catch {
-              // Skip lines with unencodable glyphs
-            }
-          }
-        }
-        pdfFit.pagesUsingBlocks = (pdfFit.pagesUsingBlocks as number) + 1;
-        if (plan.paragraphsMatched) pdfFit.paragraphsMatchedPages = (pdfFit.paragraphsMatchedPages as number) + 1;
-        if (plan.minFontSize > 0) pdfFit.minFontSize = Math.min(pdfFit.minFontSize as number, plan.minFontSize);
-      } else if (textItems.length > 0 && pageText.trim()) {
-        pdfFit.pagesFallback = (pdfFit.pagesFallback as number) + 1;
-        // Fallback (legacy band fill): average font size from text items
-        const avgFontSize = textItems.length > 0
-          ? textItems.reduce((sum, it) => sum + (it.height || 10), 0) / textItems.length
-          : 10;
-        const fontSize = Math.min(Math.max(avgFontSize, 7), 14);
-        const lineHeight = fontSize * 1.35;
-
-        // Calculate total text area height from text items.
-        // Stored ys are TOP-origin: smaller y = higher on page. Convert the
-        // band into PDF bottom-origin before placing lines.
-        const allYs = textItems.filter(it => it.str.trim()).map(it => it.y);
-        const storedTopY = allYs.length > 0 ? Math.min(...allYs) : 50;      // topmost stored y
-        const storedBottomY = allYs.length > 0 ? Math.max(...allYs) : pageHeight - 50;
-        const topY = pageHeight - storedTopY;           // bottom-origin top of text band
-        const bottomY = pageHeight - storedBottomY;     // bottom-origin bottom of text band
-        const totalHeight = topY - bottomY;
-        const maxLines = Math.max(1, Math.floor(totalHeight / lineHeight));
-
-        // FIX 3: wrap to the ACTUAL text band width from stored coordinates
-        const allXs = textItems.filter(it => it.str.trim()).map(it => it.x);
-        const textLeft = allXs.length > 0 ? Math.max(0, Math.min(...allXs) - 4) : 40;
-        const textRight = Math.max(
-          ...textItems.filter(it => it.str.trim()).map(it => it.x + it.width),
-          textLeft + 100,
-        );
-        const bandWidth = Math.min(pageWidth - 40 - textLeft, Math.max(textRight - textLeft, 200));
-        const wrappedLines = wrapText(font, pageText, bandWidth, fontSize);
-
-        // FIX 3 (RTL): reverse WORD ORDER ONLY, never characters — reversing
-        // per-character corrupts Arabic/Urdu shaping (ligatures, joining).
-        const toVisualRTL = (line: string): string =>
-          line.split(/\s+/).filter(Boolean).reverse().join(" ");
-
-        // Place lines from top of text area downward
-        for (let ln = 0; ln < Math.min(wrappedLines.length, maxLines); ln++) {
-          const line = wrappedLines[ln];
-          if (!line.trim()) continue;
-          const y = topY - (ln * lineHeight);
-          if (y < bottomY) break;
-
-          try {
-            if (isRTL) {
-              const visual = toVisualRTL(line);
-              const lineWidth = font.widthOfTextAtSize(visual, fontSize);
-              copiedPage.drawText(visual, {
-                x: textLeft + bandWidth - lineWidth,
-                y,
-                size: fontSize,
-                font,
-                color: black,
-              });
-            } else {
-              copiedPage.drawText(line, {
-                x: textLeft,
-                y,
-                size: fontSize,
-                font,
-                color: black,
-              });
-            }
-          } catch {
-            // Skip lines with unencodable glyphs
-          }
-        }
-      } else if (pageText.trim()) {
-        // Fallback: use fixed margins (old behavior when no pageData)
-        const margin = 50;
-        const textLeft = margin;
-        const textRight = pageWidth - margin;
-        const maxWidth = textRight - textLeft;
-        const fontSize = 10;
-        const lineHeight = fontSize * 1.4;
-        const textBottom = margin + 10;
-        const wrappedLines = wrapText(font, pageText, maxWidth, fontSize);
-        let baseline = pageHeight - margin - fontSize;
-
-        for (const line of wrappedLines) {
-          if (baseline - fontSize < textBottom) break;
-          if (line.trim()) {
-            try {
-              if (isRTL) {
-                const visual = line.split(/\s+/).reverse().join(" ");
-                const lineWidth = font.widthOfTextAtSize(visual, fontSize);
-                copiedPage.drawText(visual, {
-                  x: textLeft + maxWidth - lineWidth,
-                  y: baseline,
-                  size: fontSize,
-                  font,
-                  color: black,
-                });
-              } else {
-                copiedPage.drawText(line, {
-                  x: textLeft,
-                  y: baseline,
-                  size: fontSize,
-                  font,
-                  color: black,
-                });
-              }
-            } catch {
-              // Skip lines with unencodable glyphs
-            }
-          }
-          baseline -= lineHeight;
-        }
-      }
-    }
-
-    // 7. Save and store in Convex Storage
     console.log(
-      `[generatePdf] ${args.langCode} pdfFit: blocks=${pdfFit.pagesUsingBlocks} fallback=${pdfFit.pagesFallback} paraMatched=${pdfFit.paragraphsMatchedPages} minFont=${pdfFit.minFontSize}pt`,
+      `[generatePdf] ${args.langCode} pdfFit: blocks=${pdfFit.pagesUsingBlocks} fallback=${pdfFit.pagesFallback} paraMatched=${pdfFit.paragraphsMatchedPages} minFont=${pdfFit.minFontSize === 999 ? 0 : pdfFit.minFontSize}pt`,
     );
-    const resultBytes = await outDoc.save();
+
+    // 3. Store in Convex Storage
     const resultBlob = new Blob(
       [new Uint8Array(resultBytes).buffer as ArrayBuffer],
       { type: "application/pdf" },
@@ -422,7 +116,7 @@ export const generateTranslatedPdf = action({
     const storageId = await ctx.storage.store(resultBlob);
     const url = (await ctx.storage.getUrl(storageId)) ?? undefined;
 
-    // 8. Update translation record
+    // 4. Update translation record
     await ctx.runMutation(api.mutations.updateTranslation, {
       translationId: args.translationId,
       pdfStorageId: storageId,
@@ -432,7 +126,7 @@ export const generateTranslatedPdf = action({
       completedAt: Date.now(),
     });
 
-    // 9. UNIFIED chain: next language comes from the args set by
+    // 5. UNIFIED chain: next language comes from the args set by
     // translateContent (nextLangCode + remainingLangs). If none remain,
     // all languages are done — mark project and build the ZIP.
     if (args.nextLangCode) {

@@ -24,7 +24,7 @@ td code{color:#00e5ff}
 <body>
 <p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
 <h1>Architecture</h1>
-<p class="meta">Schema, sessions, data flow &middot; generated 2026-09-06 17:06 UTC</p>
+<p class="meta">Schema, sessions, data flow &middot; generated 2026-09-12 16:38 UTC</p>
 
 <h2>1. Convex Schema (verbatim from convex/schema.ts)</h2>
 <table>
@@ -35,6 +35,7 @@ td code{color:#00e5ff}
 <tr><td><strong>imageTranslations</strong></td><td><code>projectId</code>: v.optional(v.id("projects"))<br><code>imageBase64</code>: v.string()<br><code>extractedText</code>: v.optional(v.string())<br><code>translatedText</code>: v.optional(v.string())<br><code>targetLangCode</code>: v.string()<br><code>status</code>: v.string()<br><code>createdAt</code>: v.number()</td><td><code>by_session</code> ("sessionId")</td></tr>
 <tr><td><strong>history</strong></td><td><code>sessionId</code>: v.string()<br><code>projectId</code>: v.id("projects")<br><code>fileName</code>: v.string()<br><code>pageCount</code>: v.number()<br><code>wordCount</code>: v.number()<br><code>status</code>: v.string()<br><code>languagesCompleted</code>: v.number()<br><code>createdAt</code>: v.number()<br><code>completedAt</code>: v.optional(v.number())<br><code>zipUrl</code>: v.optional(v.string())</td><td><code>by_session</code> ("sessionId"), <code>by_status_scheduled</code> ("status", "scheduledFor")</td></tr>
 <tr><td><strong>jobs</strong></td><td><code>projectId</code>: v.id("projects")<br><code>type</code>: v.string()<br><code>langCode</code>: v.optional(v.string())<br><code>chunkIndex</code>: v.optional(v.number())<br><code>status</code>: v.string()<br><code>error</code>: v.optional(v.string())<br><code>scheduledFor</code>: v.number()<br><code>createdAt</code>: v.number()</td><td><code>by_status_scheduled</code> ("status", "scheduledFor"), <code>by_project</code> ("projectId")</td></tr>
+<tr><td><strong>liveTests</strong></td><td><code>langCode</code>: v.string()<br><code>langName</code>: v.string()<br><code>nativeName</code>: v.string()<br><code>script</code>: v.string()<br><code>rtl</code>: v.boolean()<br><code>status</code>: v.string() <em>// pending | running | pass | warn | fail</em><br><code>score</code>: v.optional(v.number())<br><code>output</code>: v.optional(v.string())<br><code>qaSummary</code>: v.optional(v.array(v.string()))<br><code>issueCount</code>: v.optional(v.number())<br><code>missingNames</code>: v.optional(v.array(v.string()))<br><code>scriptIssues</code>: v.optional(v.array(v.string()))<br><code>model</code>: v.optional(v.string())<br><code>durationMs</code>: v.optional(v.number())<br><code>error</code>: v.optional(v.string())<br><code>testedAt</code>: v.number()</td><td><code>by_lang</code> ("langCode")</td></tr>
 </table>
 
 <h2>2. Session Isolation Model</h2>

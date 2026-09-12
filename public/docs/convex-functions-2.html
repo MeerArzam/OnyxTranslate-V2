@@ -24,7 +24,7 @@ td code{color:#00e5ff}
 <body>
 <p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
 <h1>Convex Functions — translateContent.ts (Unified Translation Action)</h1>
-<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-06 17:06 UTC</p>
+<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-12 16:38 UTC</p>
 <p>Files on this page: <code>convex/translateContent.ts</code></p><h2>convex/translateContent.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>translateLanguage</code> — action</li></ul></p><pre><code>"use node";
 /**
  * convex/translateContent.ts — Unified translation action.
@@ -249,6 +249,12 @@ function buildSystemPrompt(langCode: string, marketContext = "standard"): string
     "# NAME MAP (same name = same spelling, always)",
     buildNameMap(langCode),
     "",
+    "# PLACEHOLDER PROTOCOL (CRITICAL — Bible Pass is active)",
+    "Some terms in the source text are hidden behind placeholder tokens like __PH0__, __PH1__, __PH2__.",
+    "1. Copy EVERY __PHn__ token into your output EXACTLY as written — never translate, transliterate, rename, reorder, merge, split or drop them.",
+    "2. NEVER substitute a placeholder with any other name or term from this prompt (for example never replace a placeholder with 'Basgiath' or 'Navarre'). Each token stands for exactly the term it replaced.",
+    "3. Treat a placeholder as one indestructible word: local grammar/case endings go OUTSIDE the token (e.g. Turkish __PH2__'da, Japanese __PH2__で), and punctuation stays natural around it.",
+    "",
     "# CHARACTER VOICE MATRIX",
     voices,
     "",
@@ -370,11 +376,43 @@ function applyBiblePassServer(text: string, targetLanguage: string): BiblePassRe
   return { lockedText: result, placeholders };
 }
 
+/**
+ * Restore Bible-Pass placeholder tokens back to their locked target-language
+ * values. HARDENED (Phase D2): Gemini occasionally mangles a token —
+ * "__PH2__" → "PH2", "__ PH2 __", "__PHO__", or substitutes a different
+ * known name. After exact restore, any残 leftover token-ish artifact is
+ * repaired by index (insertion order of the placeholders map IS the token
+ * numbering), so a locked name can never vanish from the output.
+ */
 function restorePlaceholdersServer(text: string, placeholders: Map&lt;string, string&gt;): string {
   let result = text;
   for (const [ph, value] of placeholders) {
     result = result.split(ph).join(value);
   }
+  if (placeholders.size === 0) return result;
+
+  const entries = [...placeholders.entries()];
+
+  // Repair mangled underscore forms: "__PH2__", "__ PH2 __", "PH2__", "__PHO" (O/0 confusion is fixed by index lookup)
+  result = result.replace(/_{0,4}\s*PH\s*([0-9OQoIl]{1,3})\s*_{0,4}/gi, (m, digits: string) =&gt; {
+    const normalized = digits.replace(/[OQoIl]/g, (c) =&gt; (c.toLowerCase() === "l" ? "1" : "0"));
+    const idx = parseInt(normalized, 10);
+    if (Number.isInteger(idx) &amp;&amp; idx &gt;= 0 &amp;&amp; idx &lt; entries.length) {
+      return entries[idx][1];
+    }
+    return m;
+  });
+
+  // Repair fully bare tokens: "PH2" (model stripped the underscores)
+  result = result.replace(/(^|[^A-Za-z0-9])PH\s*([0-9OQoIl]{1,3})(?![A-Za-z0-9])/g, (m, pre: string, digits: string) =&gt; {
+    const normalized = digits.replace(/[OQoIl]/g, (c) =&gt; (c.toLowerCase() === "l" ? "1" : "0"));
+    const idx = parseInt(normalized, 10);
+    if (Number.isInteger(idx) &amp;&amp; idx &gt;= 0 &amp;&amp; idx &lt; entries.length) {
+      return `${pre}${entries[idx][1]}`;
+    }
+    return m;
+  });
+
   return result;
 }
 
@@ -583,6 +621,42 @@ async function callGemini(
 // No scheduler chain between chunks. No fragile multi-action pipeline.
 // ════════════════════════════════════════════════════════════
 
+// ════════════════════════════════════════════════════════════
+// LIVE TEST EXPORTS (used by convex/liveTest.ts)
+// Additive: nothing existing is renamed or removed.
+// ════════════════════════════════════════════════════════════
+
+/** The single locked baseline sentence every market must reproduce. */
+export const LIVE_TEST_SOURCE =
+  `Violet wakes up in Aretia confused, with a ring and a note from Xaden: "Don't look for me." ` +
+  `She realizes she is married, but her husband is lost in the dark.`;
+
+export const buildSystemPromptForTest = buildSystemPrompt;
+export const applyBiblePassForTest = applyBiblePassServer;
+export const restorePlaceholdersForTest = restorePlaceholdersServer;
+export const callGeminiForTest = callGemini;
+
+export const postProcessTranslationForTest = (
+  raw: string,
+  langCode: string,
+  marketContext: string,
+  placeholders: Map&lt;string, string&gt;,
+): string =&gt; {
+  let out = restorePlaceholdersServer(raw, placeholders);
+  out = normalizeDictionaryFormat(out);
+  out = stripMetaCommentary(out, langCode);
+  out = out.replace(/\s*[\u3010\[](?:\s*)Paragraph(?:\s*#?\s*\d+)?[\u3011\]]\s*/gi, "\n");
+  out = out.replace(/\s*\u3010\s*\d+\s*\u3011\s*/g, "\n");
+  out = applyCulturalFilters(out, langCode, marketContext);
+  out = out.replace(/\*([^*]+)\*/g, (_: string, thought: string) =&gt;
+    formatDragonTelepathy(thought, langCode)
+  );
+  if (isRTLLang(langCode) &amp;&amp; !out.startsWith("\u200F")) {
+    out = `\u200F${out}`;
+  }
+  return out.trim();
+};
+
 export const translateLanguage = action({
   args: {
     projectId: v.id("projects"),
@@ -606,6 +680,12 @@ export const translateLanguage = action({
     const project = await ctx.runQuery(api.queries.getProjectRaw, { projectId: args.projectId });
     if (!project) return { ok: false, langCode: args.langCode, chunksProcessed: 0, totalChunks: 0, error: "Project not found" };
     if (project.status === "cancelled") return { ok: false, langCode: args.langCode, chunksProcessed: 0, totalChunks: 0, error: "Cancelled" };
+
+    // Guard against empty/invalid langCode — a scheduler bug elsewhere must
+    // never cause an infinite chain loop.
+    if (!args.langCode || !args.langCode.trim()) {
+      return { ok: false, langCode: args.langCode, chunksProcessed: 0, totalChunks: 0, error: "Empty langCode — chain loop prevented" };
+    }
 
     const keys = [
       process.env.Gemini_API_Key_1,
@@ -747,7 +827,7 @@ export const translateLanguage = action({
         userContent = `# TRANSLATION MEMORY (mandatory — reuse these exact translations for consistency)\n${memoryLines.join("\n")}\n\n${userContent}`;
       }
       // Anti-leak instruction: reply must START with the first translated word
-      userContent = `${userContent}\n\nTranslate ALL of the text above as one continuous piece of prose in ${args.langCode}. Begin your reply with the first translated word — no preamble, no self-checks, no notes. NEVER output a numbered list, NEVER output "English:"/"Urdu:" (or any language-label) pairs, NEVER a dictionary/line-by-line format — only the running translated story.`;
+      userContent = `${userContent}\n\nTranslate ALL of the text above as one continuous piece of prose in ${args.langCode}. Begin your reply with the first translated word — no preamble, no self-checks, no notes. NEVER output a numbered list, NEVER output "English:"/"Urdu:" (or any language-label) pairs, NEVER a dictionary/line-by-line format — only the running translated story. Preserve every __PHn__ placeholder token EXACTLY as written — never translate, rename or substitute them.`;
 
       // FIX 1c: Call Gemini + QA retry loop (max 2 attempts)
       let geminiResult: { text: string; model: string; usage: unknown; finishReason: string } | null = null;

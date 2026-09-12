@@ -241,6 +241,7 @@ async function assertNoOverflow({ srcBytes, pageData, mergedText, langCode }) {
   // Then verify line geometry against the same planner the render used
   let font;
   const tmpDoc = await PDFDocument.create();
+  tmpDoc.registerFontkit(fontkit); // Noto fonts are custom fonts
   const fontUrl = core.RENDER_FONT_URLS[langCode];
   if (fontUrl) font = await tmpDoc.embedFont(await getFontBytes(fontUrl));
   else font = await tmpDoc.embedFont(StandardFonts.Helvetica);
@@ -345,6 +346,21 @@ async function main() {
   // language chain keeps running after the client exits. `kick` fires a
   // language (~15s); `assert` polls, repairs a stalled PDF gen with the real
   // merged text, and runs the 5 assertions.
+  // Build a kick file from an EXISTING fully-translated project (avoids a
+  // redundant Gemini run when the project predates the kick/assert split).
+  if (onlyPhase === "kickfromproject") {
+    const langCode = process.argv[3];
+    const pid = process.argv[4];
+    const project = await post("queries:getProjectRaw", { projectId: pid }, "query");
+    const srcBytes = await buildFidelityPdf();
+    fs.writeFileSync("/tmp/onyx-fidelity-src.pdf", srcBytes);
+    const srcCounts = await pdfjsCounts(srcBytes);
+    const parsed = { pageCount: project.pageCount, wordCount: project.wordCount, pageData: project.pageData, fullText: project.fullText };
+    fs.writeFileSync(`/tmp/fidelity-kick-${langCode}.json`, JSON.stringify({ pid, sessionId: project.sessionId, storageId: project.pdfStorageId, parsed, srcCounts }));
+    console.log(`KICKFILE ${langCode}: pid=${pid} blocks=${parsed.pageData.reduce((s, p) => s + (p.blocks || []).length, 0)}`);
+    return;
+  }
+
   if (onlyPhase === "kick") {
     const langCode = process.argv[3];
     const srcBytes = await buildFidelityPdf();

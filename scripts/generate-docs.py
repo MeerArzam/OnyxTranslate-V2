@@ -770,6 +770,26 @@ controls to Images.</li>
 <li><strong>TDZ fix</strong>: <code>handleDrop</code> moved below <code>handleDocumentSelect</code>
 (it appeared in the dependency array before declaration).</li>
 </ul>
+
+<h2>Phase 11 — C3 true bidi/shaping, fidelity suite green, D3 re-test (2026-09-13)</h2>
+<ul>
+<li><strong>C3 verified on Convex</strong>: added <code>bidi-js</code> (UAX #9) and
+<code>arabic-reshaper</code> (presentation forms) — pure JS, both run inside node actions.
+<code>renderPdfCore.toVisualBidi()</code> reshapes + reorders Arabic to visual order;
+<code>useBidiShaping</code> is enabled only where the embedded font carries the glyphs.</li>
+<li><strong>Font swap ar/ks → Amiri</strong>: the variable Noto Sans Arabic crashed fontkit’s GPOS
+anchor parser on real shaped text (<code>Cannot destructure 'xCoordinate' from null</code>). Static
+Amiri-Regular embeds and draws the full production translation cleanly and has complete
+presentation-form coverage.</li>
+<li><strong>Evidence</strong>: regenerated ar PDF contains 373 Unicode presentation-form glyphs of
+469 Arabic codepoints; the 15-assertion fidelity suite passes for ar/ja/de (page count, image/vector
+preservation, whiteout coverage, script presence, ≤2px overflow) with ZIPs assembled; extraction
+self-test passes (OnyxStorm/fluxcapacitor/hyperdrive merged, hyphen rejoin, 5 paragraph blocks).</li>
+<li><strong>D3 re-test</strong>: tr 91→99, ks 91→99, bn 91→99 after the placename lock — zero missing
+names. Suite aggregate 99.3/100, 0 failures.</li>
+<li><strong>Documented limitation (ur)</strong>: Noto Nastaliq Urdu has no presentation-form glyphs;
+Urdu keeps word-reversal rendering (right-aligned, correct word order) instead of glyph shaping.</li>
+</ul>
 """
 
     write("history.html", page("Change Log", "Reconstructed from verifiable code evidence", body, "history.html"))

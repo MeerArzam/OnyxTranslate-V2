@@ -201,11 +201,13 @@ async function pdfjsCounts(bytes) {
     const tc = await page.getTextContent();
     const text = tc.items.map((it) => it.str).join("\n");
     const ops = await page.getOperatorList();
+    // pdfjs-dist v6 emits constructPath (path construction incl. rects) +
+    // paintImageXObject — raw `fill` ops no longer appear in fnArray.
     let images = 0, fills = 0;
     for (let k = 0; k < ops.fnArray.length; k++) {
       const fn = ops.fnArray[k];
       if (fn === pdfjs.OPS.paintImageXObject || fn === pdfjs.OPS.paintJpegXObject) images++;
-      if (fn === pdfjs.OPS.fill || fn === pdfjs.OPS.eoFill || fn === pdfjs.OPS.fillStroke) fills++;
+      if (fn === pdfjs.OPS.constructPath) fills++;
     }
     pages.push({ num: i, text, images, fills });
   }
@@ -392,7 +394,9 @@ async function main() {
       if (t && t.status === "complete" && t.pdfUrl && !t.pdfGenerating) { translation = t; break; }
       // Repair: text finished but the chained PDF gen stalled (e.g. crashed
       // action before a fix) — re-fire it with the REAL merged text.
-      if (t && t.status === "complete" && !t.pdfUrl) {
+      // REFORCE_PDF=1 also re-fires when a pdfUrl already exists (used to
+      // regenerate with a newly-deployed render pipeline, e.g. C3 bidi).
+      if (t && t.status === "complete" && (!t.pdfUrl || process.env.REFORCE_PDF === "1")) {
         const mergedNow = (await post("queries:getChunksForLang", { projectId: pid, langCode }, "query"))
           .sort((a, b) => a.chunkIndex - b.chunkIndex).map((c) => c.translatedText || "").filter(Boolean).join("\n\n");
         if (mergedNow.trim()) {
@@ -420,8 +424,12 @@ async function main() {
     const allText = outCounts.pages.map((p) => p.text).join("\n");
     let a4 = false, scriptCheck = "";
     if (langCode === "ar") {
-      const arabic = (allText.match(/[\u0600-\u06FF]/g) || []).length;
-      scriptCheck = `arabic chars: ${arabic}`;
+      // C3: count Arabic-script codepoints INCLUDING Unicode presentation
+      // forms (U+FB50–U+FDFF, U+FE70–U+FEFF) — their presence proves the
+      // bidi+reshape pipeline actually shaped the text.
+      const arabic = (allText.match(/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g) || []).length;
+      const presForms = (allText.match(/[\uFB50-\uFDFF\uFE70-\uFEFF]/g) || []).length;
+      scriptCheck = `arabic chars: ${arabic} (presentation forms: ${presForms})`;
       a4 = arabic > 100;
     } else if (langCode === "ja") {
       const cjk = (allText.match(/[\u3040-\u30FF\u4E00-\u9FFF]/g) || []).length;
@@ -511,10 +519,11 @@ async function main() {
       // Assert 4: translated script present
       const allText = outCounts.pages.map((p) => p.text).join("\n");
       let a4 = false, scriptCheck = "";
-      if (langCode === "ar") {
-        const arabic = (allText.match(/[\u0600-\u06FF]/g) || []).length;
-        scriptCheck = `arabic chars: ${arabic}`;
-        a4 = arabic > 100;
+    if (langCode === "ar") {
+      const arabic = (allText.match(/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g) || []).length;
+      const presForms = (allText.match(/[\uFB50-\uFDFF\uFE70-\uFEFF]/g) || []).length;
+      scriptCheck = `arabic chars: ${arabic} (presentation forms: ${presForms})`;
+      a4 = arabic > 100;
       } else if (langCode === "ja") {
         const cjk = (allText.match(/[\u3040-\u30FF\u4E00-\u9FFF]/g) || []).length;
         scriptCheck = `cjk chars: ${cjk}`;

@@ -24,7 +24,7 @@ td code{color:#00e5ff}
 <body>
 <p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
 <h1>Change Log</h1>
-<p class="meta">Reconstructed from verifiable code evidence &middot; generated 2026-09-12 16:38 UTC</p>
+<p class="meta">Reconstructed from verifiable code evidence &middot; generated 2026-09-13 07:29 UTC</p>
 
 <p class="note">Provenance: the original audit/report .md files (AUDIT_REPORT,
 EXHAUSTIVE_AUDIT_REPORT, VERIFICATION_REPORT, MIGRATION_REGRESSION_REPORT, …) were removed
@@ -147,6 +147,26 @@ meta-commentary stripping.</li>
 <li><strong>Docs</strong>: generator extended with <code>convex-functions-5.html</code>
 (pdfLayout + renderPdfCore full source); all source-derived pages regenerated from current
 code.</li>
+</ul>
+<h2>Phase 10 — Phase E/F/G completion (job-centric UX, unified input tabs, crash recovery)</h2>
+<ul>
+<li><strong>Interrupted-session repair</strong>: the previous session died mid-edit leaving
+<code>Translator.tsx</code> with an unclosed JSX ternary (uncompilable). Repaired and completed:</li>
+<li><strong>Phase E1 — Documents auto-start</strong>: <code>handleDocumentSelect</code> guardrails
+(&lt;10 MB, &lt;300 pages, pre-parse rejection with toasts) plus auto-start of the full 20-language
+chain after upload via ref handoff (<code>newProjectIdRef</code>,
+<code>serverFullTextRef</code>).</li>
+<li><strong>Phase E2 — State-driven job view</strong>: <code>isJobView</code> gates on Convex
+project/translation state, never on local <code>flowPhase</code>; job header card, overall
+progress, per-language rows, server-driven ZIP card, session-scoped recent-jobs list;
+<code>Toaster</code> viewport mounted so toasts render.</li>
+<li><strong>Phase E3 — Recent jobs</strong>: <code>queries.getSessionProjects</code> (last 10,
+session-indexed) feeds compact resume cards.</li>
+<li><strong>Google-style segmented input tabs</strong>: Documents | Paste Text | Image/Camera
+tab bar in the upload card; dropzone gated to Documents, paste block to Text, image/camera
+controls to Images.</li>
+<li><strong>TDZ fix</strong>: <code>handleDrop</code> moved below <code>handleDocumentSelect</code>
+(it appeared in the dependency array before declaration).</li>
 </ul>
 
 <hr>

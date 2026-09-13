@@ -48,6 +48,7 @@ import { LanguageAccordion } from "@/components/LanguageAccordion";
 import RoyalProgressPanel from "@/components/RoyalProgressPanel";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { Toaster } from "@/components/ui/sonner";
 // Convex hooks imported below with storage replacement
 import {
   generateSampleText,
@@ -547,14 +548,6 @@ export default function Translator() {
     }
   }, [projectId, sessionId, deleteProjectMutation, storePdfAction, createProjectMutation, parsePdfAction]);
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setIsDragOver(false);
-      handleDocumentSelect(e.dataTransfer.files[0]);
-    },
-    [handleDocumentSelect]
-  );
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -931,6 +924,15 @@ export default function Translator() {
       });
     },
     [handleFileSelect, startTranslationCore],
+  );
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(false);
+      handleDocumentSelect(e.dataTransfer.files[0]);
+    },
+    [handleDocumentSelect]
   );
 
   // ─── Retranslate: cancel queue, delete language chunks, restart queue ───
@@ -1485,6 +1487,27 @@ export default function Translator() {
                 </div>
               </div>
               <div className="p-3 space-y-3">
+                {/* Phase E: Google-style segmented input tabs */}
+                <div className="flex gap-1 p-1 rounded-lg" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                  {(["documents", "text", "images"] as const).map((tab) => {
+                    const active = inputTab === tab;
+                    return (
+                      <button
+                        key={tab}
+                        onClick={() => setInputTab(tab)}
+                        className="flex-1 py-1.5 rounded-md text-[10px] font-medium transition-all duration-150"
+                        style={{
+                          background: active ? 'rgba(0,229,255,0.15)' : 'transparent',
+                          color: active ? '#00e5ff' : 'rgba(255,255,255,0.45)',
+                          border: `1px solid ${active ? 'rgba(0,229,255,0.4)' : 'transparent'}`,
+                        }}
+                      >
+                        {tab === "documents" ? "PDF Document" : tab === "text" ? "Paste Text" : "Image / Camera"}
+                      </button>
+                    );
+                  })}
+                </div>
+                {inputTab === "documents" && (<>
                 <div
                   onDrop={handleDrop}
                   onDragOver={handleDragOver}
@@ -1578,8 +1601,10 @@ export default function Translator() {
                   </div>
                 )}
 
+                </>
+                )}
                 {/* ─── Image / Camera Translation ─── */}
-                {!isUploading && !pdfFileName && (
+                {inputTab === "images" && (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
@@ -1748,6 +1773,7 @@ export default function Translator() {
                   </div>
                 )}
 
+                {inputTab === "text" && (
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
@@ -1861,6 +1887,7 @@ export default function Translator() {
                     <span>{sourceText.length.toLocaleString()} chars</span>
                   </div>
                 </div>
+                )}
 
                 {sourceText.trim() && flowPhase === "idle" && (
                   <div className="space-y-2">
@@ -2103,6 +2130,7 @@ export default function Translator() {
           </div>
 
         </div>
+        )}
       </div>
       {/* History Panel */}
       <HistoryPanel

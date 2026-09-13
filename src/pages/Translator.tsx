@@ -35,6 +35,13 @@ import {
   Clock,
   Zap,
   Circle,
+  FileText,
+  CloudUpload,
+  Type,
+  FolderOpen,
+  Plus,
+  DatabaseBackup,
+  Download,
 } from "lucide-react";
 import { HistoryPanel } from "@/components/HistoryPanel";
 import { LanguageAccordion } from "@/components/LanguageAccordion";
@@ -135,6 +142,8 @@ export default function Translator() {
 
   // ─── Convex reactive subscriptions ───
   const latestProject = useQuery(api.queries.getLatestProject, { sessionId });
+  // Phase E3: recent jobs for this session (compact cards)
+  const sessionProjects = useQuery(api.queries.getSessionProjects, { sessionId });
   const convexProject = useQuery(
     api.queries.getProject,
     projectId ? { projectId, sessionId } : "skip"
@@ -160,6 +169,14 @@ export default function Translator() {
   const [parseProgress, setParseProgress] = useState<{ current: number; total: number } | null>(null);
   const [parsePhase, setParsePhase] = useState<"idle" | "loading" | "parsing" | "done">("idle");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Phase E1: cross-callback handoff from the upload pipeline to auto-start
+  // (state setters would still be stale when auto-start runs).
+  const newProjectIdRef = useRef<Id<"projects"> | null>(null);
+  const serverFullTextRef = useRef<string>("");
+
+  // ─── Phase E: Google-style segmented tabs (Documents | Text | Images) ───
+  const [inputTab, setInputTab] = useState<"documents" | "text" | "images">("documents");
+  const [view, setView] = useState<"input" | "job">("input");
 
   // ─── Translation flow (autonomous queue) ───
   const [isTranslating, setIsTranslating] = useState(false);
@@ -226,6 +243,9 @@ export default function Translator() {
     const completed = languageStatuses.filter((l) => l.status === "complete").length;
     return Math.round((completed / languageStatuses.length) * 100);
   }, [languageStatuses]);
+
+  // Phase E2: job view is state-driven (never gates on local flowPhase)
+  const isJobView = view === "job" && (flowPhase !== "idle" || (convexTranslations?.length ?? 0) > 0);
 
   // Derive completedLanguages for display from Convex
   const completedLanguages: CompletedLanguage[] = activeTranslations
@@ -315,6 +335,14 @@ export default function Translator() {
     setPageData(latestProject.pageData);
     setOriginalPageTexts(latestProject.pageData.map((p: any) => p.text));
     setParsePhase("done");
+  }, [latestProject]);
+
+  // Phase E2: land on the Job view whenever this session has a job running
+  // or finished (not a fresh "ready" upload the user hasn't started yet).
+  useEffect(() => {
+    if (latestProject && latestProject.status !== "ready") {
+      setView("job");
+    }
   }, [latestProject]);
 
   // C6: Auto-sync isTranslating with Convex DB state
@@ -498,6 +526,9 @@ export default function Translator() {
       });
 
       setProjectId(newProjectId);
+      // Phase E1: publish for the auto-start handoff
+      newProjectIdRef.current = newProjectId;
+      serverFullTextRef.current = serverFullText;
 
       const validation = validateTextForTranslation(fullText);
       if (!validation.valid) {
@@ -520,9 +551,9 @@ export default function Translator() {
     (e: React.DragEvent) => {
       e.preventDefault();
       setIsDragOver(false);
-      handleFileSelect(e.dataTransfer.files[0]);
+      handleDocumentSelect(e.dataTransfer.files[0]);
     },
-    [handleFileSelect]
+    [handleDocumentSelect]
   );
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -537,7 +568,11 @@ export default function Translator() {
 
   // ─── Export / Import Progress ───
   const handleExportProgress = useCallback(async () => {
-    if (!convexProject) return;
+    if (!convexProject || activeTranslations.length === 0) {
+      // Phase E2: never a silent no-op
+      toast.info("Nothing to export yet — start a translation first.");
+      return;
+    }
     // FIX 6: Complete export — includes sessionId, projectId mapping,
     // parsedPages/pageData for PDF regeneration, and per-translation PDF
     // fields so an import restores everything the UI needs.
@@ -576,7 +611,8 @@ export default function Translator() {
     a.download = `onyx-translate-${convexProject.fileName.replace(/\.pdf$/i, "")}-backup.json`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [convexProject, activeTranslations]);
+    toast.success("Backup downloaded.");
+  }, [convexProject, activeTranslations, sessionId]);
 
   const importProjectAction = useAction(api.importProject.importProject);
   const handleImportProgress = useCallback(async () => {
@@ -618,6 +654,8 @@ export default function Translator() {
     if (projectId) {
       await deleteProjectMutation({ projectId }).catch(() => {});
     }
+    newProjectIdRef.current = null;
+    serverFullTextRef.current = "";
     setProjectId(null);
     setSourceText("");
     setPdfFileName(null);
@@ -772,8 +810,21 @@ export default function Translator() {
 
   // ─── Autonomous Translation Queue ───
 
-  const startTranslation = useCallback(async () => {
-    if (!sourceText.trim()) {
+  // Core start routine. Overridable params let PDF auto-start (which fires
+  // immediately after createProjectMutation, before state setters repaint)
+  // pass explicit values instead of reading stale closures.
+  const startTranslationCore = useCallback(
+    async (overrides?: {
+      text?: string;
+      langs?: string[];
+      existingProjectId?: Id<"projects"> | null;
+    }) => {
+    const text = overrides?.text ?? sourceText;
+    const langs = overrides?.langs ?? (selectedLangCodes.length > 0 ? selectedLangCodes : targetLanguages.map((l) => l.code));
+    const existingProjectId = overrides?.existingProjectId !== undefined
+      ? overrides.existingProjectId
+      : projectId;
+    if (!text.trim()) {
       setTranslationError("No text to translate — upload a PDF or paste text first");
       return;
     }
@@ -787,16 +838,16 @@ export default function Translator() {
       setTranslationError(null);
 
       // If no project exists (pasted text, not PDF), create one now
-      let activeProjectId = projectId;
+      let activeProjectId = existingProjectId;
       if (!activeProjectId) {
 
         activeProjectId = await createProjectMutation({
           sessionId,
           fileName: "Pasted Text",
           pageCount: 1,
-          wordCount: sourceText.split(/\s+/).filter(Boolean).length,
+          wordCount: text.split(/\s+/).filter(Boolean).length,
           pageData: [],
-          fullText: sourceText,
+          fullText: text,
           parsedPages: 1,
           status: "ready",
         });
@@ -804,7 +855,6 @@ export default function Translator() {
 
       }
 
-      const langs = selectedLangCodes.length > 0 ? selectedLangCodes : targetLanguages.map((l) => l.code);
       if (langs.length === 0) {
         setTranslationError("Select at least one language");
         setIsTranslating(false);
@@ -821,13 +871,16 @@ export default function Translator() {
         remainingLangs: langs.length > 2 ? langs.slice(2) : undefined,
       });
 
+      // Phase E2: job starts → land on the Job view
+      setView("job");
+
       // Save to history
       saveHistoryMutation({
         sessionId,
         projectId: activeProjectId,
         fileName: pdfFileName || "Pasted Text",
         pageCount: pdfPageCount || 1,
-        wordCount: sourceText.split(/\s+/).filter(Boolean).length,
+        wordCount: text.split(/\s+/).filter(Boolean).length,
         status: "in_progress",
         languagesCompleted: 0,
       });
@@ -838,7 +891,47 @@ export default function Translator() {
       );
       setIsTranslating(false);
     }
-  }, [sourceText, projectId, sessionId, selectedLangCodes, translateLanguageAction, createProjectMutation, marketContext, isTranslating, flowPhase]);
+  }, [sourceText, projectId, sessionId, selectedLangCodes, translateLanguageAction, createProjectMutation, marketContext, isTranslating, flowPhase, pdfFileName, pdfPageCount, saveHistoryMutation]);
+
+  const startTranslation = useCallback(
+    () => startTranslationCore(),
+    [startTranslationCore],
+  );
+
+  // Phase E1: Documents tab — guardrails + auto-start after upload.
+  // Rejects >10MB / >300 pages with a toast BEFORE any parsing work.
+  const handleDocumentSelect = useCallback(
+    async (file: File | null) => {
+      if (!file) return;
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error("PDF must be under 10MB");
+        return;
+      }
+      try {
+        const header = await parsePDFHeader(file);
+        if (header.totalPages > 300) {
+          toast.error("PDF must be 300 pages or fewer");
+          return;
+        }
+      } catch {
+        // Header parse failed — let handleFileSelect surface the real error.
+      }
+      // Valid — proceed through the normal upload pipeline.
+      await handleFileSelect(file);
+      // Upload failed (empty/scanned PDF, parse error) — error already shown.
+      if (!newProjectIdRef.current) return;
+      // Auto-start translation of ALL languages the moment the project
+      // exists. Explicit overrides avoid the stale-closure window between
+      // createProjectMutation and the state setters repainting.
+      const langs = targetLanguages.map((l) => l.code);
+      await startTranslationCore({
+        existingProjectId: newProjectIdRef.current,
+        text: serverFullTextRef.current,
+        langs,
+      });
+    },
+    [handleFileSelect, startTranslationCore],
+  );
 
   // ─── Retranslate: cancel queue, delete language chunks, restart queue ───
 
@@ -1126,12 +1219,24 @@ export default function Translator() {
 
   return (
     <div className="min-h-screen bg-background text-foreground app-bg-pattern safe-pad">
+      {/* Sonner toast viewport — toasts were previously invisible (never mounted) */}
+      <Toaster
+        position="top-center"
+        theme="dark"
+        toastOptions={{
+          style: {
+            background: "rgba(12,12,24,0.95)",
+            border: "1px solid rgba(0,229,255,0.25)",
+            color: "#e8e8f0",
+          },
+        }}
+      />
       <input
         ref={fileInputRef}
         type="file"
         accept=".pdf,application/pdf"
         className="hidden"
-        onChange={(e) => handleFileSelect(e.target.files?.[0] || null)}
+        onChange={(e) => handleDocumentSelect(e.target.files?.[0] || null)}
       />
 
       {/* Header */}
@@ -1218,6 +1323,151 @@ export default function Translator() {
 
       <div className="w-full max-w-[1100px] mx-auto px-4 md:px-6 py-4 md:py-6">
 
+        {/* ═══ PHASE E: JOB-CENTRIC HOME VIEW ═══ */}
+        {isJobView && convexProject ? (
+          <div className="space-y-4">
+            {/* Job header card */}
+            <div className="rounded-xl royal-card overflow-hidden">
+              <div className="px-4 py-3.5 flex flex-wrap items-center gap-3">
+                <div className="size-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(0,229,255,0.08)' }}>
+                  <FileText className="size-5" style={{ color: '#00e5ff' }} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold truncate">{convexProject.fileName}</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {convexProject.pageCount} pages • {convexProject.wordCount.toLocaleString()} words
+                  </p>
+                </div>
+                {/* OnyxTranslate's server-side strength, made visible */}
+                <Badge variant="outline" className="text-[10px]" style={{ borderColor: 'rgba(52,211,153,0.4)', color: '#34d399' }}>
+                  <CloudUpload className="size-2.5 mr-1" /> Continues even if you close this page — reopen anytime
+                </Badge>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-[11px]"
+                  onClick={() => {
+                    clearSource();
+                    setView("input");
+                  }}
+                >
+                  <Plus className="size-3 mr-1" /> New Translation
+                </Button>
+              </div>
+              {/* Overall progress bar */}
+              <div className="px-4 pb-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                    Overall progress — {completedCount}/{targetLanguages.length} languages
+                  </span>
+                  <span className="text-[10px] font-mono" style={{ color: '#00e5ff' }}>{overallProgress}%</span>
+                </div>
+                <div className="h-2 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full rounded-full royal-shimmer transition-all duration-500"
+                    style={{ width: `${overallProgress}%`, background: 'linear-gradient(90deg, #00e5ff, #a78bfa)' }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Per-language job rows */}
+            <div className="rounded-xl royal-card overflow-hidden">
+              <div className="px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ borderBottom: '1px solid rgba(0,229,255,0.08)' }}>
+                Languages
+              </div>
+              <div className="divide-y" style={{ borderColor: 'rgba(0,229,255,0.05)' }}>
+                {languageStatuses.map((lang) => {
+                  const t = activeTranslations.find((tr) => tr.langCode === lang.code);
+                  const isDone = lang.status === "complete";
+                  const statusColor =
+                    lang.status === "complete" ? '#34d399' :
+                    lang.status === "generating_pdf" ? '#fbbf24' :
+                    lang.status === "translating" ? '#00e5ff' : 'rgba(255,255,255,0.25)';
+                  return (
+                    <div key={lang.code} className="px-4 py-2.5 flex items-center gap-3">
+                      {isDone ? (
+                        <CheckCircle2 className="size-3.5 shrink-0" style={{ color: statusColor }} />
+                      ) : lang.status === "translating" ? (
+                        <Loader2 className="size-3.5 shrink-0 animate-spin" style={{ color: statusColor }} />
+                      ) : (
+                        <Circle className="size-3.5 shrink-0" style={{ color: statusColor }} />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium truncate">{lang.name} <span className="text-muted-foreground font-normal">{lang.nativeName}</span></p>
+                        {lang.chunksTotal > 0 && (
+                          <p className="text-[10px] text-muted-foreground">
+                            {lang.chunksDone}/{lang.chunksTotal} chunks • {lang.wordCount.toLocaleString()} words
+                          </p>
+                        )}
+                      </div>
+                      {isDone && (t as { pdfUrl?: string | null } | undefined)?.pdfUrl && (
+                        <a
+                          href={(t as { pdfUrl?: string | null }).pdfUrl!}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[10px] px-2 py-1 rounded border transition-colors hover:bg-muted/30"
+                          style={{ borderColor: 'rgba(52,211,153,0.35)', color: '#34d399' }}
+                        >
+                          <Download className="size-2.5 inline mr-1" /> PDF
+                        </a>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* ZIP — driven purely from Convex state, never flowPhase */}
+            <div className="rounded-xl royal-card p-4 flex flex-wrap items-center gap-3">
+              <Button
+                onClick={handleDownloadAllZIP}
+                disabled={!convexProject.zipUrl || isDownloadingZip}
+                className="flex-1 h-9 btn-royal-hover"
+              >
+                <Package className="size-3.5 mr-2" />
+                {convexProject.zipUrl ? "Download ZIP" : "ZIP ready when all languages finish"}
+              </Button>
+              {translationError && (
+                <span className="text-[10px] text-red-400">{translationError}</span>
+              )}
+            </div>
+
+            {/* Recent jobs (this session) */}
+            {(sessionProjects?.length ?? 0) > 1 && (
+              <div className="rounded-xl royal-card overflow-hidden">
+                <div className="px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ borderBottom: '1px solid rgba(0,229,255,0.08)' }}>
+                  Recent jobs
+                </div>
+                <div className="divide-y" style={{ borderColor: 'rgba(0,229,255,0.05)' }}>
+                  {sessionProjects!.filter((p) => p._id !== convexProject._id).slice(0, 5).map((p) => (
+                    <button
+                      key={p._id}
+                      onClick={() => {
+                        setProjectId(p._id);
+                        setView("job");
+                      }}
+                      className="w-full px-4 py-2.5 flex items-center gap-3 text-left hover:bg-muted/20 transition-colors"
+                    >
+                      <FileText className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="text-xs font-medium truncate flex-1">{p.fileName}</span>
+                      <span
+                        className="text-[9px] px-1.5 py-0.5 rounded-full border shrink-0"
+                        style={{
+                          color: p.status === "all_translated" ? '#34d399' : p.status === "translating" ? '#00e5ff' : 'rgba(255,255,255,0.4)',
+                          borderColor: p.status === "all_translated" ? 'rgba(52,211,153,0.4)' : 'rgba(255,255,255,0.12)',
+                        }}
+                      >
+                        {p.status === "all_translated" ? "complete" : p.status}
+                      </span>
+                      <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
         <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-4 md:gap-6">
           {/* Left Panel */}
           <div className="space-y-4 min-w-0">

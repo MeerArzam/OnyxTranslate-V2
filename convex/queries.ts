@@ -24,6 +24,18 @@ export const getLatestProject = query({
   },
 });
 
+// Phase E3: Recent jobs — compact session-scoped project cards.
+export const getSessionProjects = query({
+  args: { sessionId: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("projects")
+      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+      .order("desc")
+      .take(10);
+  },
+});
+
 export const getProjectTranslations = query({
   args: { projectId: v.id("projects"), sessionId: v.string() },
   handler: async (ctx, args) => {

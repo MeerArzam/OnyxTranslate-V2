@@ -103,6 +103,7 @@ SRC = {
     "pdfLayout": read("convex/pdfLayout.ts"),
     "renderPdfCore": read("convex/renderPdfCore.ts"),
     "translator": read("src/pages/Translator.tsx"),
+    "fixPassReport": read("src/components/FixPassReport.tsx"),
     "dragonIntro": read("src/components/DragonIntro.tsx"),
     "progressPanel": read("src/components/RoyalProgressPanel.tsx"),
     "accordion": read("src/components/LanguageAccordion.tsx"),
@@ -593,20 +594,25 @@ preview, QA panel, history, export/import. Line count: {SRC['translator'].count(
 
 <h2>3. Components</h2>
 
-<h3>3.1 src/components/DragonIntro.tsx (intro overlay)</h3>
+<h3>3.1 src/components/FixPassReport.tsx (A–G fix-pass report panel)</h3>
+<p>Deep static report rendered at <code>/#/overview</code> (Docs → ⚡ Live Tests → 📋 Fix Report):
+phase A–G table, 12-item verification checklist, extraction self-test output, ar/ja/de fidelity
+assertions, C3 bidi/shaping deep dive, D3 score table, deviations. All data from the real runs.</p>
+
+<h3>3.2 src/components/DragonIntro.tsx (intro overlay)</h3>
 {code_block(SRC["dragonIntro"])}
 
-<h3>3.2 src/components/RoyalProgressPanel.tsx (progress dashboard)</h3>
+<h3>3.3 src/components/RoyalProgressPanel.tsx (progress dashboard)</h3>
 <p><strong>Props</strong> (from the real interface):</p>
 {code_block(extract_fn(SRC["progressPanel"], "RoyalProgressPanelProps"))}
 {code_block(extract_fn(SRC["progressPanel"], "LanguageStatus"))}
 
-<h3>3.3 src/components/LanguageAccordion.tsx (per-language preview accordion)</h3>
+<h3>3.4 src/components/LanguageAccordion.tsx (per-language preview accordion)</h3>
 <p>Uses <code>useQuery(api.queries.getLivePreviewText, {{ projectId, langCode }})</code> for the
 expanded language, with RTL support for <code>ar/ur/ks</code>. Props:</p>
 {code_block(extract_fn(SRC["accordion"], "LanguageAccordionProps"))}
 
-<h3>3.4 src/components/HistoryPanel.tsx (slide-in history)</h3>
+<h3>3.5 src/components/HistoryPanel.tsx (slide-in history)</h3>
 <p>Reactive query <code>api.queries.getHistory</code> filtered by sessionId; delete via
 <code>api.history.deleteHistory</code>.</p>
 

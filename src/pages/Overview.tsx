@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useMemo } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import rawDoc from "../docs/PROJECT_DOCUMENTATION.json";
 import LiveTestPanel from "@/components/LiveTestPanel";
+import FixPassReport from "@/components/FixPassReport";
 
 // ─── Types (loosely cast — the JSON is generated) ───
 
@@ -274,8 +275,9 @@ export default function Overview() {
   const [selected, setSelected] = useState<string | null>(null);
   const [isNarrow, setIsNarrow] = useState(() => window.innerWidth < 860);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  // View switch: codebase docs ↔ live per-language Gemini test results
-  const [view, setView] = useState<"docs" | "livetest">("docs");
+  // View switch: codebase docs ↔ live per-language Gemini test results ↔ fix-pass report
+  const [view, setView] = useState<"docs" | "livetest" | "report">("docs");
+  const NEXT_VIEW: Record<typeof view, typeof view> = { docs: "livetest", livetest: "report", report: "docs" };
 
   // Debounce search 300ms
   useEffect(() => {
@@ -501,9 +503,9 @@ export default function Overview() {
             cursor: "pointer",
             whiteSpace: "nowrap",
           }}
-          title="Run / view REAL Gemini round-trip tests for all 20 languages"
+          title="Cycle: docs → live tests → fix-pass report"
         >
-          {view === "docs" ? "⚡ Live Tests" : "📄 Docs"}
+          {view === "docs" ? "⚡ Live Tests" : view === "livetest" ? "📋 Fix Report" : "📄 Docs"}
         </button>
         <input
           value={searchInput}
@@ -543,6 +545,8 @@ export default function Overview() {
         <div style={{ flex: 1, overflowY: "auto", padding: 20, minWidth: 0 }}>
           {view === "livetest" ? (
             <LiveTestPanel />
+          ) : view === "report" ? (
+            <FixPassReport />
           ) : !selectedFile ? (
             <ProjectOverview onOpenFile={selectFile} />
           ) : (

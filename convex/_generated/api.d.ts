@@ -9,6 +9,7 @@
  */
 
 import type * as artifactMutations from "../artifactMutations.js";
+import type * as crons from "../crons.js";
 import type * as exportProject from "../exportProject.js";
 import type * as generatePdf from "../generatePdf.js";
 import type * as history from "../history.js";
@@ -38,6 +39,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   artifactMutations: typeof artifactMutations;
+  crons: typeof crons;
   exportProject: typeof exportProject;
   generatePdf: typeof generatePdf;
   history: typeof history;

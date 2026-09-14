@@ -24,7 +24,7 @@ td code{color:#00e5ff}
 <body>
 <p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
 <h1>Change Log</h1>
-<p class="meta">Reconstructed from verifiable code evidence &middot; generated 2026-09-14 10:50 UTC</p>
+<p class="meta">Reconstructed from verifiable code evidence &middot; generated 2026-09-14 17:32 UTC</p>
 
 <p class="note">Provenance: the original audit/report .md files (AUDIT_REPORT,
 EXHAUSTIVE_AUDIT_REPORT, VERIFICATION_REPORT, MIGRATION_REGRESSION_REPORT, …) were removed
@@ -221,6 +221,41 @@ upload (project row created, no auto-start, chip, Begin gating, Gemini round-tri
 large file (10.6MB/310p processed with info toast, no rejection), export (downloaded JSON keys:
 type/version/exportedAt/langCodes/project/chunks/translations), import (fresh session: success toast,
 la:complete restored, Begin visible). Zero uncaught page errors in every stage.</li>
+</ul>
+
+<h2>Phase 13 — Server-first Phase 2: identity, hybrid upload, server import/export (2026-09-14)</h2>
+<ul>
+<li><strong>Identity scheme</strong>: durable per-device <code>onyx-client-id</code> (localStorage) + per-tab
+<code>onyx-tab-session-id</code> (sessionStorage); every project/job row stores BOTH. Live queries filter by
+clientId+tabSessionId (two tabs stay isolated — C1 preserved); <code>getResumableJobs({clientId})</code> powers the
+"Your jobs" list on reopen, and opening one ADOPTS it (<code>adoptJob</code> rebinds tabSessionId). Never shows
+another device's jobs.</li>
+<li><strong>Hybrid PDF upload (no artificial limits)</strong>: Path 1 (≤19MB) = ONE request to the new HTTP action
+<code>uploadAndCreateJob</code> (convex/http.ts) — raw multipart POST → ctx.storage.store → uploadJob →
+scheduled processing. Path 2 (&gt;19MB) = <code>createPendingUploadWithPath</code> → raw XHR POST to Storage
+(progress %, cancel) → <code>finalizeUploadedPdf</code> → <code>beginProcessing</code>. Staging records
+(IndexedDB) persisted BEFORE any network work → "Resume upload / Discard" on reopen; hourly cron sweeps orphans
+(&gt;24h). Banned and absent: base64 file args, sendBeacon/keepalive for large files.</li>
+<li><strong>Idempotent processing</strong>: <code>jobProcessing.processUploadedPdf</code> walks
+uploaded → processing → parsed → ready → translating with a monotonic stageSeq gate (superseded retries no-op)
+and heartbeats; reuses the production parser (x-gap merge + paragraph clustering) and the UNCHANGED translation
+chain (translateContent → generatePdf → zipAssembly). Client-only work: file pick → raw POST → finalize
+handshake. UploadJobCard shows % progress, per-stage chips, honest physics ("Safe to close" ONLY after the
+server ACK; ~2-min POST timeout stated), and real errors verbatim with the job ID.</li>
+<li><strong>Import</strong>: ONE POST to <code>uploadAndImport</code>; server validates
+{type:"onyx-translate-project"} BEFORE any write (malformed/corrupt/incompatible → visible 400, zero partial
+writes), restores project+fullText+pageData+chunks+translations, assigns current clientId with a NEW session,
+returns jobId. Browser may close; the job appears in getResumableJobs.</li>
+<li><strong>Export</strong>: <code>exportProject.buildExportArtifact</code> assembles the FULL JSON backup
+server-side (metadata, fullText, pageData coordinates, parsedPages, chunks, translations incl. mergedText +
+statuses, langCodes) → Convex Storage → URL; browser only anchor-clicks the download. Unconditional — works
+idle, paused, mid-translation, complete. ZIP stays a separate flow, plus a new on-demand
+<code>buildZipNow</code> for mid-flight ZIP assembly.</li>
+<li><strong>Verification (deployed Convex, no mocks)</strong>: <code>scripts/phase2ServerTest.mjs</code> —
+17/17 PASS: Path-1 upload of a real 5-page PDF → uploadJob → auto-parse → project row (711 words, 5 pageData
+blocks, clientId+tabSessionId bound, chain auto-started server-side); duplicate submit with the same
+idempotency key returns the SAME job; malformed import → 400 with zero partial writes; wrong-type import →
+400; valid import → full restoration (fullText/chunks/translations/identity).</li>
 </ul>
 
 <hr>

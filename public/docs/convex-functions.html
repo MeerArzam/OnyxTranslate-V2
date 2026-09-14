@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Convex Functions — Mutations, Queries, History, Import, Upload — OnyxTranslate Docs</title>
+<title>Convex Functions — Mutations, Queries, History, Upload, Identity, HTTP — OnyxTranslate Docs</title>
 <style>
 body{background:#0a0a0f;color:#e0e0e0;font-family:Georgia,'Times New Roman',serif;max-width:960px;margin:0 auto;padding:24px;line-height:1.6}
 h1{color:#8B5CF6;border-bottom:2px solid rgba(139,92,246,.3);padding-bottom:8px}
@@ -23,9 +23,9 @@ td code{color:#00e5ff}
 </head>
 <body>
 <p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
-<h1>Convex Functions — Mutations, Queries, History, Import, Upload</h1>
-<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-14 10:50 UTC</p>
-<p>Files on this page: <code>convex/mutations.ts</code>, <code>convex/queries.ts</code>, <code>convex/history.ts</code>, <code>convex/importProject.ts</code>, <code>convex/upload.ts</code></p><h2>convex/mutations.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>createProject</code> — mutation</li><li><code>updateProject</code> — mutation</li><li><code>deleteProject</code> — mutation</li><li><code>upsertChunk</code> — mutation</li><li><code>updateChunk</code> — mutation</li><li><code>upsertTranslation</code> — mutation</li><li><code>updateTranslation</code> — mutation</li><li><code>deleteChunksForLang</code> — mutation</li><li><code>createJob</code> — mutation</li><li><code>saveImageTranslation</code> — mutation</li></ul></p><pre><code>import { v } from "convex/values";
+<h1>Convex Functions — Mutations, Queries, History, Upload, Identity, HTTP</h1>
+<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-14 17:32 UTC</p>
+<p>Files on this page: <code>convex/mutations.ts</code>, <code>convex/queries.ts</code>, <code>convex/history.ts</code>, <code>convex/upload.ts</code>, <code>convex/identity.ts</code>, <code>convex/jobMutations.ts</code>, <code>convex/importJob.ts</code>, <code>convex/exportProject.ts</code>, <code>convex/artifactMutations.ts</code>, <code>convex/http.ts</code>, <code>convex/crons.ts</code></p><h2>convex/mutations.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>createProject</code> — mutation</li><li><code>updateProject</code> — mutation</li><li><code>deleteProject</code> — mutation</li><li><code>upsertChunk</code> — mutation</li><li><code>updateChunk</code> — mutation</li><li><code>upsertTranslation</code> — mutation</li><li><code>updateTranslation</code> — mutation</li><li><code>deleteChunksForLang</code> — mutation</li><li><code>createJob</code> — mutation</li><li><code>saveImageTranslation</code> — mutation</li></ul></p><pre><code>import { v } from "convex/values";
 import { mutation } from "./_generated/server";
 
 export const createProject = mutation({
@@ -258,7 +258,7 @@ export const saveImageTranslation = mutation({
     });
   },
 });
-</code></pre><h2>convex/queries.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>getProject</code> — query</li><li><code>getLatestProject</code> — query</li><li><code>getSessionProjects</code> — query</li><li><code>getProjectTranslations</code> — query</li><li><code>getProjectRaw</code> — query</li><li><code>getTranslationsRaw</code> — query</li><li><code>getChunkProgress</code> — query</li><li><code>getChunksForLang</code> — query</li><li><code>getAllJobs</code> — query</li><li><code>getHistory</code> — query</li><li><code>getStalledLanguages</code> — query</li><li><code>getTranslationProgress</code> — query</li><li><code>getAllProjectsForWatchdog</code> — query</li><li><code>getLivePreviewText</code> — query</li></ul></p><pre><code>import { v } from "convex/values";
+</code></pre><h2>convex/queries.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>getProject</code> — query</li><li><code>getLatestProject</code> — query</li><li><code>getSessionProjects</code> — query</li><li><code>getProjectTranslations</code> — query</li><li><code>getProjectRaw</code> — query</li><li><code>getTranslationsRaw</code> — query</li><li><code>getChunkProgress</code> — query</li><li><code>getChunksForLang</code> — query</li><li><code>getAllJobs</code> — query</li><li><code>getChunksForProjectRaw</code> — query</li><li><code>getUploadJobRaw</code> — query</li><li><code>getExportArtifactsRaw</code> — query</li><li><code>getHistory</code> — query</li><li><code>getStalledLanguages</code> — query</li><li><code>getTranslationProgress</code> — query</li><li><code>getAllProjectsForWatchdog</code> — query</li><li><code>getLivePreviewText</code> — query</li></ul></p><pre><code>import { v } from "convex/values";
 import { query } from "./_generated/server";
 
 // ─── Client-facing queries (require sessionId) ───
@@ -360,6 +360,37 @@ export const getAllJobs = query({
   handler: async (ctx, args) =&gt; {
     return await ctx.db
       .query("jobs")
+      .withIndex("by_project", (q) =&gt; q.eq("projectId", args.projectId))
+      .collect();
+  },
+});
+
+// PHASE 2: server-side export needs every chunk for a project (all languages).
+export const getChunksForProjectRaw = query({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) =&gt; {
+    return await ctx.db
+      .query("chunks")
+      .withIndex("by_project_status", (q) =&gt; q.eq("projectId", args.projectId))
+      .collect();
+  },
+});
+
+// PHASE 2: raw upload-job lookup for actions (no ownership filter — callers
+// gate internally by stage/seq, mirroring getProjectRaw usage).
+export const getUploadJobRaw = query({
+  args: { uploadJobId: v.id("uploadJobs") },
+  handler: async (ctx, args) =&gt; {
+    return await ctx.db.get(args.uploadJobId);
+  },
+});
+
+// PHASE 2: export artifact rows for a project (used by the export action).
+export const getExportArtifactsRaw = query({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) =&gt; {
+    return await ctx.db
+      .query("exportArtifacts")
       .withIndex("by_project", (q) =&gt; q.eq("projectId", args.projectId))
       .collect();
   },
@@ -499,98 +530,9 @@ export const deleteHistory = mutation({
     await ctx.db.delete(args.historyId);
   },
 });
-</code></pre><h2>convex/importProject.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>importProject</code> — action</li></ul></p><pre><code>"use node";
-
-import { v } from "convex/values";
-import { action } from "./_generated/server";
-import { api } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
-
-export const importProject = action({
-  args: {
-    sessionId: v.string(),
-    exportJson: v.string(),
-  },
-  handler: async (
-    ctx,
-    args
-  ): Promise&lt;{ success: boolean; projectId: Id&lt;"projects"&gt;; importedLangCodes: string[]; fileName: string }&gt; =&gt; {
-    let data: {
-      type: string;
-      version: number;
-      project: {
-        fileName: string;
-        pageCount: number;
-        wordCount: number;
-        fullText: string;
-        parsedPages?: number;
-        pageData?: unknown[];
-      };
-      translations: Array&lt;{
-        langCode: string;
-        totalChunks: number;
-        completedChunks: number;
-        mergedText?: string;
-        status: string;
-        pdfUrl?: string;
-      }&gt;;
-    };
-
-    try {
-      data = JSON.parse(args.exportJson);
-    } catch {
-      throw new Error("Invalid JSON file");
-    }
-
-    if (data.type !== "onyx-translate-project" || data.version !== 1) {
-      throw new Error(
-        "Invalid export file format — expected Onyx Translate JSON export"
-      );
-    }
-    if (!data.project || !Array.isArray(data.translations)) {
-      throw new Error(
-        "Invalid export file structure — missing project or translations"
-      );
-    }
-
-    // Create project — restore pageData/parsedPages so PDF regeneration
-    // coordinates survive an import round-trip (FIX 6).
-    const projectId: Id&lt;"projects"&gt; = await ctx.runMutation(
-      api.mutations.createProject,
-      {
-        sessionId: args.sessionId,
-        fileName: data.project.fileName,
-        pageCount: data.project.pageCount,
-        wordCount: data.project.wordCount,
-        pageData: (data.project.pageData ?? []) as object[],
-        fullText: data.project.fullText,
-        parsedPages: data.project.parsedPages ?? data.project.pageCount,
-        status: "ready",
-      }
-    );
-
-    // Create translation records for each language
-    for (const t of data.translations) {
-      await ctx.runMutation(api.mutations.upsertTranslation, {
-        projectId,
-        langCode: t.langCode,
-        totalChunks: t.totalChunks || 1,
-        status: t.status === "complete" ? "complete" : "pending",
-        completedChunks: t.completedChunks || 0,
-        mergedText: t.mergedText || "",
-      });
-    }
-
-    return {
-      success: true,
-      projectId,
-      importedLangCodes: data.translations?.map((t) =&gt; t.langCode) || [],
-      fileName: data.project.fileName,
-    };
-  },
-});
-</code></pre><h2>convex/upload.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>storePdf</code> — action</li><li><code>generatePdfUploadUrl</code> — mutation</li><li><code>finalizePdfUpload</code> — mutation</li></ul></p><pre><code>import { v } from "convex/values";
+</code></pre><h2>convex/upload.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>storePdf</code> — action</li><li><code>generatePdfUploadUrl</code> — mutation</li><li><code>finalizePdfUpload</code> — mutation</li><li><code>finalizeUploadedPdf</code> — mutation</li><li><code>beginProcessing</code> — mutation</li></ul></p><pre><code>import { v } from "convex/values";
 import { action, mutation } from "./_generated/server";
+import { api } from "./_generated/api";
 
 /**
  * convex/upload.ts — PDF storage.
@@ -640,6 +582,993 @@ export const finalizePdfUpload = mutation({
     };
   },
 });
+
+// ══ PHASE 2: Path 2 finalize handshake ══
+// The browser POSTed the raw file to Storage (storageId in hand). This mutation
+// attaches it to the uploadJob, marks the pendingUpload uploaded, schedules the
+// idempotent processUploadedPdf action, and returns the job id — the client's
+// cue to show "Safe to close — server is working".
+
+/** Step 3a: attach the uploaded bytes to the job (no scheduling yet). */
+export const finalizeUploadedPdf = mutation({
+  args: {
+    uploadJobId: v.id("uploadJobs"),
+    storageId: v.id("_storage"),
+  },
+  handler: async (ctx, args) =&gt; {
+    const job = await ctx.db.get(args.uploadJobId);
+    if (!job) throw new Error("Upload job not found");
+
+    await ctx.db.patch(args.uploadJobId, {
+      storageId: args.storageId,
+      heartbeatAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    // Mark the pending staging row (if any) as uploaded.
+    const pendings = await ctx.db
+      .query("pendingUploads")
+      .withIndex("by_client", (q) =&gt; q.eq("clientId", job.clientId))
+      .collect();
+    for (const p of pendings) {
+      if (p.uploadJobId === args.uploadJobId &amp;&amp; p.status === "staging") {
+        await ctx.db.patch(p._id, { status: "uploaded", storageId: args.storageId });
+      }
+    }
+
+    return { ok: true as const };
+  },
+});
+
+/**
+ * Step 3b: the explicit handoff — schedule processing and return the job id.
+ * Split from finalizeUploadedPdf so a client that dies between 3a and 3b can
+ * be recovered by the sweep without double-scheduling.
+ */
+export const beginProcessing = mutation({
+  args: { uploadJobId: v.id("uploadJobs") },
+  handler: async (ctx, args) =&gt; {
+    const job = await ctx.db.get(args.uploadJobId);
+    if (!job) throw new Error("Upload job not found");
+    if (job.status === "processing" || job.projectId) {
+      // Already handed off (idempotent re-click).
+      return { ok: true as const, alreadyScheduled: true as const };
+    }
+    await ctx.scheduler.runAfter(0, api.jobProcessing.processUploadedPdf, {
+      uploadJobId: args.uploadJobId,
+    });
+    await ctx.db.patch(args.uploadJobId, {
+      status: "processing",
+      processStage: "processing",
+      heartbeatAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    return { ok: true as const, alreadyScheduled: false as const };
+  },
+});
+</code></pre><h2>convex/identity.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>getResumableJobs</code> — query</li><li><code>getUploadJobs</code> — query</li><li><code>getUploadJobByIdempotencyKey</code> — query</li><li><code>createUploadJob</code> — mutation</li><li><code>attachProjectToUploadJob</code> — mutation</li><li><code>createPendingUploadWithPath</code> — mutation</li><li><code>getUploadJob</code> — query</li><li><code>getPendingUploads</code> — query</li><li><code>adoptJob</code> — mutation</li><li><code>updateUploadJobStage</code> — mutation</li><li><code>heartbeatUploadJob</code> — mutation</li><li><code>failUploadJob</code> — mutation</li><li><code>cancelUploadJob</code> — mutation</li><li><code>createPendingUpload</code> — mutation</li><li><code>discardPendingUpload</code> — mutation</li><li><code>sweepStaleUploads</code> — mutation</li></ul></p><pre><code>import { v } from "convex/values";
+import { mutation, query } from "./_generated/server";
+import { api } from "./_generated/api";
+
+/**
+ * convex/identity.ts — PHASE 2 identity scheme.
+ *
+ * - localStorage `onyx-client-id`       = durable per-device UUID → projects.clientId
+ * - sessionStorage `onyx-tab-session-id` = per-tab UUID           → projects.tabSessionId
+ *
+ * Live "current work" queries stay filtered by clientId + tabSessionId (two
+ * tabs never see each other's in-flight job — the C1 rule). On reopen in a NEW
+ * tab, getResumableJobs shows the device's own past/active jobs; adoptJob
+ * rebinds the job to this tab. Jobs from OTHER devices are never returned.
+ */
+
+// ─── Queries ────────────────────────────────────────────────────────────────
+
+/** All projects this DEVICE has ever created (newest first). Never other devices'. */
+export const getResumableJobs = query({
+  args: { clientId: v.string(), limit: v.optional(v.number()) },
+  handler: async (ctx, args) =&gt; {
+    return await ctx.db
+      .query("projects")
+      .withIndex("by_client", (q) =&gt; q.eq("clientId", args.clientId))
+      .order("desc")
+      .take(Math.min(args.limit ?? 20, 50));
+  },
+});
+
+/** Upload jobs for this device — powers the upload progress card. */
+export const getUploadJobs = query({
+  args: { clientId: v.string(), limit: v.optional(v.number()) },
+  handler: async (ctx, args) =&gt; {
+    return await ctx.db
+      .query("uploadJobs")
+      .withIndex("by_client", (q) =&gt; q.eq("clientId", args.clientId))
+      .order("desc")
+      .take(Math.min(args.limit ?? 5, 20));
+  },
+});
+
+/** PHASE 2: idempotency lookup — Path 1 double-submits return the same job. */
+export const getUploadJobByIdempotencyKey = query({
+  args: { idempotencyKey: v.string() },
+  handler: async (ctx, args) =&gt; {
+    return await ctx.db
+      .query("uploadJobs")
+      .withIndex("by_idempotency", (q) =&gt; q.eq("idempotencyKey", args.idempotencyKey))
+      .first();
+  },
+});
+
+/** PHASE 2: create the uploadJob row (Path 1 and Path 2 both start here). */
+export const createUploadJob = mutation({
+  args: {
+    clientId: v.string(),
+    tabSessionId: v.optional(v.string()),
+    fileName: v.string(),
+    fileSize: v.number(),
+    storageId: v.optional(v.id("_storage")),
+    idempotencyKey: v.optional(v.string()),
+    langCodes: v.optional(v.array(v.string())),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  },
+  handler: async (ctx, args) =&gt; {
+    if (args.idempotencyKey) {
+      const existing = await ctx.db
+        .query("uploadJobs")
+        .withIndex("by_idempotency", (q) =&gt; q.eq("idempotencyKey", args.idempotencyKey!))
+        .first();
+      if (existing) return existing._id;
+    }
+    return await ctx.db.insert("uploadJobs", {
+      clientId: args.clientId,
+      tabSessionId: args.tabSessionId,
+      fileName: args.fileName,
+      fileSize: args.fileSize,
+      storageId: args.storageId,
+      idempotencyKey: args.idempotencyKey,
+      langCodes: args.langCodes,
+      status: "uploaded",
+      stageSeq: 0,
+      heartbeatAt: Date.now(),
+      createdAt: args.createdAt,
+      updatedAt: args.updatedAt,
+    });
+  },
+});
+
+/** PHASE 2: link the created project back onto its uploadJob (idempotent). */
+export const attachProjectToUploadJob = mutation({
+  args: { uploadJobId: v.id("uploadJobs"), projectId: v.id("projects") },
+  handler: async (ctx, args) =&gt; {
+    const job = await ctx.db.get(args.uploadJobId);
+    if (!job) return;
+    if (job.projectId === args.projectId) return;
+    await ctx.db.patch(args.uploadJobId, { projectId: args.projectId });
+  },
+});
+
+/**
+ * PHASE 2 Path 2, step 1: create the uploadJob + pendingUpload staging row and
+ * mint the Storage upload URL — all BEFORE the browser POSTs a single byte.
+ */
+export const createPendingUploadWithPath = mutation({
+  args: {
+    clientId: v.string(),
+    tabSessionId: v.optional(v.string()),
+    fileName: v.string(),
+    fileSize: v.number(),
+    langCodes: v.optional(v.array(v.string())),
+    idempotencyKey: v.optional(v.string()),
+  },
+  handler: async (ctx, args) =&gt; {
+    // Idempotency: a retry of the same staging record reuses its uploadJob.
+    if (args.idempotencyKey) {
+      const existing = await ctx.db
+        .query("uploadJobs")
+        .withIndex("by_idempotency", (q) =&gt; q.eq("idempotencyKey", args.idempotencyKey!))
+        .first();
+      if (existing) {
+        if (existing.status === "uploaded") {
+          const url = await ctx.storage.generateUploadUrl();
+          return { uploadJobId: existing._id, uploadUrl: url, reused: true as const };
+        }
+        return { uploadJobId: existing._id, uploadUrl: "", reused: true as const };
+      }
+    }
+    const now = Date.now();
+    const uploadJobId = await ctx.db.insert("uploadJobs", {
+      clientId: args.clientId,
+      tabSessionId: args.tabSessionId,
+      fileName: args.fileName,
+      fileSize: args.fileSize,
+      langCodes: args.langCodes,
+      idempotencyKey: args.idempotencyKey,
+      status: "uploaded",
+      stageSeq: 0,
+      heartbeatAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await ctx.db.insert("pendingUploads", {
+      clientId: args.clientId,
+      tabSessionId: args.tabSessionId,
+      uploadJobId,
+      fileName: args.fileName,
+      fileSize: args.fileSize,
+      langCodes: args.langCodes,
+      status: "staging",
+      createdAt: now,
+    });
+    const uploadUrl = await ctx.storage.generateUploadUrl();
+    return { uploadJobId, uploadUrl, reused: false as const };
+  },
+});
+
+/** Live upload-job card, scoped to this tab (used while a POST is in flight). */
+export const getUploadJob = query({
+  args: { uploadJobId: v.id("uploadJobs"), clientId: v.string() },
+  handler: async (ctx, args) =&gt; {
+    const job = await ctx.db.get(args.uploadJobId);
+    if (!job || job.clientId !== args.clientId) return null;
+    return job;
+  },
+});
+
+/**
+ * Staging records for interrupted Path-2 uploads on THIS device.
+ * The client offers "Resume upload" (re-pick file) or "Discard".
+ */
+export const getPendingUploads = query({
+  args: { clientId: v.string() },
+  handler: async (ctx, args) =&gt; {
+    const rows = await ctx.db
+      .query("pendingUploads")
+      .withIndex("by_client", (q) =&gt; q.eq("clientId", args.clientId))
+      .order("desc")
+      .take(10);
+    return rows.filter((r) =&gt; r.status === "staging");
+  },
+});
+
+// ─── Mutations ──────────────────────────────────────────────────────────────
+
+/**
+ * Adopt a job from a previous tab/session: rebind the project to this tab.
+ * Ownership is still checked (only the owning device may adopt its own job).
+ */
+export const adoptJob = mutation({
+  args: {
+    projectId: v.id("projects"),
+    clientId: v.string(),
+    tabSessionId: v.string(),
+    sessionId: v.string(),
+  },
+  handler: async (ctx, args) =&gt; {
+    const project = await ctx.db.get(args.projectId);
+    if (!project) throw new Error(`Project ${args.projectId} not found`);
+    if (project.clientId &amp;&amp; project.clientId !== args.clientId) {
+      throw new Error("Not your job");
+    }
+    await ctx.db.patch(args.projectId, {
+      tabSessionId: args.tabSessionId,
+      sessionId: args.sessionId,
+    });
+    return { ok: true as const, projectId: args.projectId };
+  },
+});
+
+/**
+ * Stage-transition helper used by the processing action. Guarded by stageSeq
+ * so an outdated scheduled run (already superseded by a retry) cannot regress
+ * a job's status — this is what makes retries safe.
+ */
+export const updateUploadJobStage = mutation({
+  args: {
+    uploadJobId: v.id("uploadJobs"),
+    stage: v.string(),
+    expectedSeq: v.number(),
+    error: v.optional(v.string()),
+  },
+  handler: async (ctx, args) =&gt; {
+    const job = await ctx.db.get(args.uploadJobId);
+    if (!job) return { ok: false as const, reason: "not_found" };
+    if ((job.stageSeq ?? 0) !== args.expectedSeq) {
+      return { ok: false as const, reason: "stale_run" };
+    }
+    await ctx.db.patch(args.uploadJobId, {
+      status: args.stage,
+      processStage: args.stage,
+      stageSeq: args.expectedSeq + 1,
+      heartbeatAt: Date.now(),
+      updatedAt: Date.now(),
+      ...(args.error !== undefined ? { error: args.error } : {}),
+    });
+    return { ok: true as const };
+  },
+});
+
+/** Heartbeat: keep the job visibly alive during long stages. */
+export const heartbeatUploadJob = mutation({
+  args: { uploadJobId: v.id("uploadJobs") },
+  handler: async (ctx, args) =&gt; {
+    await ctx.db.patch(args.uploadJobId, { heartbeatAt: Date.now(), updatedAt: Date.now() });
+  },
+});
+
+/** Failure path: persist the real error (never swallowed). */
+export const failUploadJob = mutation({
+  args: {
+    uploadJobId: v.id("uploadJobs"),
+    error: v.string(),
+    expectedSeq: v.optional(v.number()),
+  },
+  handler: async (ctx, args) =&gt; {
+    const job = await ctx.db.get(args.uploadJobId);
+    if (!job) return;
+    if (args.expectedSeq !== undefined &amp;&amp; (job.stageSeq ?? 0) !== args.expectedSeq) return;
+    if (job.status === "cancelled") return;
+    await ctx.db.patch(args.uploadJobId, {
+      status: "error",
+      error: args.error,
+      heartbeatAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const cancelUploadJob = mutation({
+  args: { uploadJobId: v.id("uploadJobs"), clientId: v.string() },
+  handler: async (ctx, args) =&gt; {
+    const job = await ctx.db.get(args.uploadJobId);
+    if (!job || job.clientId !== args.clientId) return { ok: false as const };
+    if (job.projectId) {
+      await ctx.runMutation(api.mutations.updateProject, {
+        projectId: job.projectId,
+        status: "cancelled",
+      });
+    }
+    await ctx.db.patch(args.uploadJobId, {
+      status: "cancelled",
+      updatedAt: Date.now(),
+    });
+    return { ok: true as const };
+  },
+});
+
+/** Create a Path-2 staging record BEFORE the big POST. */
+export const createPendingUpload = mutation({
+  args: {
+    clientId: v.string(),
+    tabSessionId: v.optional(v.string()),
+    uploadJobId: v.id("uploadJobs"),
+    fileName: v.string(),
+    fileSize: v.number(),
+    langCodes: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) =&gt; {
+    const id = await ctx.db.insert("pendingUploads", {
+      clientId: args.clientId,
+      tabSessionId: args.tabSessionId,
+      uploadJobId: args.uploadJobId,
+      fileName: args.fileName,
+      fileSize: args.fileSize,
+      langCodes: args.langCodes,
+      status: "staging",
+      createdAt: Date.now(),
+    });
+    return { pendingUploadId: id };
+  },
+});
+
+export const discardPendingUpload = mutation({
+  args: { pendingUploadId: v.id("pendingUploads"), clientId: v.string() },
+  handler: async (ctx, args) =&gt; {
+    const row = await ctx.db.get(args.pendingUploadId);
+    if (!row || row.clientId !== args.clientId) return { ok: false as const };
+    await ctx.db.patch(args.pendingUploadId, { status: "abandoned" });
+    await ctx.db.patch(row.uploadJobId, { status: "cancelled", updatedAt: Date.now() });
+    return { ok: true as const };
+  },
+});
+
+/**
+ * Housekeeping: sweep stale rows.
+ * - pendingUploads stuck "staging" &gt; 24h → abandoned (orphan sweep per spec)
+ * - uploadJobs with no heartbeat for 24h and no project → error'd out
+ * Scheduled hourly by convex/crons.ts.
+ */
+export const sweepStaleUploads = mutation({
+  args: {},
+  handler: async (ctx) =&gt; {
+    const now = Date.now();
+    const DAY = 24 * 60 * 60 * 1000;
+    let pendingSwept = 0;
+    let jobsSwept = 0;
+
+    const pendings = await ctx.db
+      .query("pendingUploads")
+      .withIndex("by_status", (q) =&gt; q.eq("status", "staging"))
+      .collect();
+    for (const p of pendings) {
+      if (now - p.createdAt &gt; DAY) {
+        await ctx.db.patch(p._id, { status: "abandoned" });
+        pendingSwept++;
+      }
+    }
+
+    const jobs = await ctx.db
+      .query("uploadJobs")
+      .withIndex("by_status", (q) =&gt; q.eq("status", "uploaded"))
+      .collect();
+    for (const j of jobs) {
+      if (!j.projectId &amp;&amp; now - (j.heartbeatAt ?? j.createdAt) &gt; DAY) {
+        await ctx.db.patch(j._id, {
+          status: "error",
+          error: "Upload never completed (24h timeout)",
+          updatedAt: now,
+        });
+        jobsSwept++;
+      }
+    }
+    return { pendingSwept, jobsSwept };
+  },
+});
+</code></pre><h2>convex/jobMutations.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>setProjectIdentity</code> — mutation</li><li><code>setProjectStatus</code> — mutation</li></ul></p><pre><code>import { v } from "convex/values";
+import { mutation } from "./_generated/server";
+
+/**
+ * convex/jobMutations.ts — PHASE 2: small server-side mutations used by the
+ * processing pipeline and the client identity layer. Kept separate from
+ * mutations.ts (whose surface the frozen baseline documents) to avoid any
+ * accidental contract change there.
+ */
+
+/** PHASE 2: bind durable identity to a project (set or adopt). */
+export const setProjectIdentity = mutation({
+  args: {
+    projectId: v.id("projects"),
+    clientId: v.optional(v.string()),
+    tabSessionId: v.optional(v.string()),
+    sessionId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) =&gt; {
+    const { projectId, ...updates } = args;
+    const filtered: Record&lt;string, unknown&gt; = {};
+    for (const [k, val] of Object.entries(updates)) {
+      if (val !== undefined) filtered[k] = val;
+    }
+    await ctx.db.patch(projectId, filtered);
+    return { ok: true as const };
+  },
+});
+
+/**
+ * PHASE 2: overwrite-safe project updater for server processing stages
+ * (parsed → ready → translating → generating_pdf → assembling_zip → complete).
+ * Also mirrors status transitions onto the owning uploadJob.
+ */
+export const setProjectStatus = mutation({
+  args: {
+    projectId: v.id("projects"),
+    status: v.string(),
+    uploadJobId: v.optional(v.id("uploadJobs")),
+  },
+  handler: async (ctx, args) =&gt; {
+    await ctx.db.patch(args.projectId, { status: args.status });
+    if (args.uploadJobId) {
+      const job = await ctx.db.get(args.uploadJobId);
+      if (job &amp;&amp; job.status !== "cancelled" &amp;&amp; job.status !== "error") {
+        await ctx.db.patch(args.uploadJobId, {
+          status: args.status,
+          processStage: args.status,
+          heartbeatAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+      }
+    }
+    return { ok: true as const };
+  },
+});
+</code></pre><h2>convex/importJob.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>uploadAndImportFromData</code> — action</li></ul></p><pre><code>"use node";
+import { v } from "convex/values";
+import { action } from "./_generated/server";
+import { api } from "./_generated/api";
+
+/**
+ * convex/importJob.ts — PHASE 2 server-side import.
+ *
+ * Called by the /uploadAndImport HTTP endpoint with ALREADY-VALIDATED data.
+ * Restores the full project server-side: project row (identity = current
+ * device, fresh tab session), fullText, pageData (coordinates), parsedPages,
+ * chunks, translations (mergedText + statuses), langCodes — then returns a
+ * jobId. The browser may close immediately; the imported job shows up in
+ * getResumableJobs and in any open tab's "Your jobs" list.
+ */
+
+const IMPORTED_STATUSES = new Set([
+  "pending",
+  "in_progress",
+  "complete",
+  "generating_pdf",
+]);
+
+interface ImportPayload {
+  langCodes?: string[];
+  project: {
+    fileName?: string;
+    pageCount?: number;
+    wordCount?: number;
+    fullText: string;
+    parsedPages?: number;
+    status?: string;
+    pageData?: unknown;
+  };
+  chunks?: Array&lt;{
+    langCode: string;
+    chunkIndex: number;
+    sourceText: string;
+    translatedText?: string | null;
+    status?: string;
+  }&gt;;
+  translations?: Array&lt;{
+    langCode: string;
+    status?: string;
+    totalChunks?: number;
+    completedChunks?: number;
+    mergedText?: string | null;
+  }&gt;;
+}
+
+export const uploadAndImportFromData = action({
+  args: {
+    clientId: v.string(),
+    sessionId: v.string(),
+    data: v.any(),
+  },
+  handler: async (ctx, args) =&gt; {
+    const d = args.data as ImportPayload;
+    const p = d.project;
+
+    // ── Validation (defense in depth — HTTP layer already checked the basics).
+    // Any failure here throws BEFORE the first write, so a bad file can never
+    // produce a partial import.
+    if (!p || typeof p.fullText !== "string" || p.fullText.length === 0) {
+      throw new Error("Import failed: project payload missing or has no fullText");
+    }
+    if (p.pageData !== undefined &amp;&amp; !Array.isArray(p.pageData)) {
+      throw new Error("Import failed: pageData must be an array");
+    }
+    const translations = Array.isArray(d.translations) ? d.translations : [];
+    const chunks = Array.isArray(d.chunks) ? d.chunks : [];
+    for (const t of translations) {
+      if (!t || typeof t.langCode !== "string") {
+        throw new Error("Import failed: malformed translations[] entry");
+      }
+    }
+    for (const c of chunks) {
+      if (!c || typeof c.langCode !== "string" || typeof c.chunkIndex !== "number" || typeof c.sourceText !== "string") {
+        throw new Error("Import failed: malformed chunks[] entry");
+      }
+    }
+
+    // ── Project row (identity = current device + NEW tab session) ──
+    const projectId = await ctx.runMutation(api.mutations.createProject, {
+      sessionId: args.sessionId,
+      fileName: typeof p.fileName === "string" &amp;&amp; p.fileName ? p.fileName : "Imported project",
+      pageCount: typeof p.pageCount === "number" ? p.pageCount : 1,
+      wordCount:
+        typeof p.wordCount === "number"
+          ? p.wordCount
+          : p.fullText.split(/\s+/).filter(Boolean).length,
+      pageData: (p.pageData as never) ?? [],
+      fullText: p.fullText,
+      parsedPages: typeof p.parsedPages === "number" ? p.parsedPages : 1,
+      // Preserve the exported pipeline state; "ready" for untouched exports.
+      status:
+        typeof p.status === "string" &amp;&amp; p.status.length &gt; 0
+          ? p.status === "complete"
+            ? "all_translated"
+            : p.status
+          : "ready",
+    });
+
+    await ctx.runMutation(api.jobMutations.setProjectIdentity, {
+      projectId,
+      clientId: args.clientId,
+      tabSessionId: args.sessionId,
+      sessionId: args.sessionId,
+    });
+
+    // ── Chunks ──
+    for (const c of chunks) {
+      const chunkId = await ctx.runMutation(api.mutations.upsertChunk, {
+        projectId,
+        langCode: c.langCode,
+        chunkIndex: c.chunkIndex,
+        sourceText: c.sourceText,
+      });
+      if (c.translatedText) {
+        await ctx.runMutation(api.mutations.updateChunk, {
+          chunkId,
+          translatedText: c.translatedText,
+          status: c.status === "done" ? "done" : (c.status ?? "done"),
+        });
+      }
+    }
+
+    // ── Translations (per-language rollups) ──
+    const importedLangCodes: string[] = [];
+    for (const t of translations) {
+      await ctx.runMutation(api.mutations.upsertTranslation, {
+        projectId,
+        langCode: t.langCode,
+        totalChunks:
+          typeof t.totalChunks === "number"
+            ? t.totalChunks
+            : chunks.filter((c) =&gt; c.langCode === t.langCode).length || 1,
+        status: IMPORTED_STATUSES.has(t.status ?? "") ? t.status : "complete",
+        completedChunks:
+          typeof t.completedChunks === "number"
+            ? t.completedChunks
+            : chunks.filter((c) =&gt; c.langCode === t.langCode &amp;&amp; c.status === "done").length,
+        mergedText: t.mergedText ?? undefined,
+      });
+      importedLangCodes.push(t.langCode);
+    }
+
+    const langCodes =
+      d.langCodes &amp;&amp; d.langCodes.length &gt; 0 ? d.langCodes : importedLangCodes;
+
+    return { ok: true as const, jobId: projectId, importedLangCodes: langCodes };
+  },
+});
+</code></pre><h2>convex/exportProject.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>buildExportArtifact</code> — action</li><li><code>buildZipNow</code> — action</li></ul></p><pre><code>"use node";
+import { v } from "convex/values";
+import { action } from "./_generated/server";
+import { api } from "./_generated/api";
+import JSZip from "jszip";
+
+/**
+ * convex/exportProject.ts — PHASE 2 server-side export.
+ *
+ * The FULL JSON backup is assembled server-side (project metadata, fullText,
+ * pageData with coordinates, parsedPages, chunks, translations incl.
+ * mergedText + statuses, langCodes) and stored in Convex Storage. The browser
+ * only triggers the anchor-click download from the returned URL.
+ *
+ * Works when idle, paused, mid-translation, or complete — never gated on any
+ * client view state. Idempotent per project+kind: repeated calls replace the
+ * previous artifact row.
+ */
+
+export const EXPORT_KIND = "onyx-translate-project";
+
+export const buildExportArtifact = action({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) =&gt; {
+    const project = await ctx.runQuery(api.queries.getProjectRaw, {
+      projectId: args.projectId,
+    });
+    if (!project) throw new Error("Project not found");
+
+    const [chunks, translations] = await Promise.all([
+      ctx.runQuery(api.queries.getChunksForProjectRaw, { projectId: args.projectId }),
+      ctx.runQuery(api.queries.getTranslationsRaw, { projectId: args.projectId }),
+    ]);
+
+    const payload = {
+      type: EXPORT_KIND,
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      langCodes: translations.map((t: { langCode: string }) =&gt; t.langCode),
+      project: {
+        projectId: project._id,
+        fileName: project.fileName,
+        pageCount: project.pageCount,
+        wordCount: project.wordCount,
+        status: project.status,
+        fullText: project.fullText,
+        parsedPages: project.parsedPages,
+        pageData: project.pageData, // coordinates — required for PDF re-render
+        pdfStorageId: project.pdfStorageId ?? null,
+      },
+      chunks: (chunks as Array&lt;{
+        langCode: string;
+        chunkIndex: number;
+        sourceText: string;
+        translatedText?: string;
+        status: string;
+      }&gt;).map((c) =&gt; ({
+        langCode: c.langCode,
+        chunkIndex: c.chunkIndex,
+        sourceText: c.sourceText,
+        translatedText: c.translatedText ?? null,
+        status: c.status,
+      })),
+      translations: (translations as Array&lt;{
+        langCode: string;
+        status: string;
+        totalChunks: number;
+        completedChunks: number;
+        mergedText?: string;
+      }&gt;).map((t) =&gt; ({
+        langCode: t.langCode,
+        status: t.status,
+        totalChunks: t.totalChunks,
+        completedChunks: t.completedChunks,
+        mergedText: t.mergedText ?? null,
+      })),
+    };
+
+    const json = JSON.stringify(payload);
+    const bytes = new TextEncoder().encode(json);
+    const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "application/json" });
+    const storageId = await ctx.storage.store(blob);
+    const url = (await ctx.storage.getUrl(storageId)) ?? undefined;
+
+    // Idempotent upsert: one artifact row per project+kind (replace old).
+    const saved = await ctx.runMutation(api.artifactMutations.upsertExportArtifact, {
+      projectId: args.projectId,
+      storageId,
+      kind: EXPORT_KIND,
+      sizeBytes: bytes.length,
+    });
+    void saved;
+
+    return { ok: true, url, sizeBytes: bytes.length };
+  },
+});
+
+/**
+ * Server-side assembly of the per-project data ZIP (all language PDFs +
+ * translated .txt + report) for projects that are still mid-flight. The
+ * autonomous pipeline already builds this at completion (zipAssembly.buildZip);
+ * this action lets the user grab the ZIP early, from any state.
+ */
+export const buildZipNow = action({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) =&gt; {
+    await ctx.runAction(api.zipAssembly.buildZip, { projectId: args.projectId });
+    const project = await ctx.runQuery(api.queries.getProjectRaw, {
+      projectId: args.projectId,
+    });
+    return { ok: true, url: project?.zipUrl ?? undefined };
+  },
+});
+</code></pre><h2>convex/artifactMutations.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>upsertExportArtifact</code> — mutation</li></ul></p><pre><code>import { v } from "convex/values";
+import { mutation } from "./_generated/server";
+
+/**
+ * convex/artifactMutations.ts — PHASE 2: idempotent export-artifact upsert.
+ * (Actions cannot touch ctx.db directly, so the export action routes here.)
+ */
+export const upsertExportArtifact = mutation({
+  args: {
+    projectId: v.id("projects"),
+    storageId: v.id("_storage"),
+    kind: v.string(),
+    sizeBytes: v.number(),
+  },
+  handler: async (ctx, args) =&gt; {
+    const existing = await ctx.db
+      .query("exportArtifacts")
+      .withIndex("by_project", (q) =&gt; q.eq("projectId", args.projectId))
+      .collect();
+    for (const row of existing) {
+      if (row.kind === args.kind) {
+        await ctx.db.patch(row._id, {
+          storageId: args.storageId,
+          sizeBytes: args.sizeBytes,
+          createdAt: Date.now(),
+        });
+        return { artifactId: row._id, replaced: true as const };
+      }
+    }
+    const artifactId = await ctx.db.insert("exportArtifacts", {
+      projectId: args.projectId,
+      storageId: args.storageId,
+      kind: args.kind,
+      sizeBytes: args.sizeBytes,
+      createdAt: Date.now(),
+    });
+    return { artifactId, replaced: false as const };
+  },
+});
+</code></pre><h2>convex/http.ts — full real source</h2><p><strong>Exports:</strong><ul></ul></p><pre><code>import { httpRouter } from "convex/server";
+import { httpAction } from "./_generated/server";
+import { api } from "./_generated/api";
+
+/**
+ * convex/http.ts — PHASE 2 Path 1 endpoints (single-request, server-first).
+ *
+ * PHYSICS (honest limits, also surfaced in the UI):
+ *  - Convex upload POSTs are capped by a ~2-minute HTTP timeout.
+ *  - An HTTP action's REQUEST body may be at most 20MB → this endpoint accepts
+ *    files up to 19MB (headroom for multipart/other overhead). Larger files use
+ *    Path 2 (createPendingUpload → direct Storage POST → finalizeUploadedPdf).
+ *  - NO artificial 10MB/300-page limits exist anywhere. Real provider errors are
+ *    reported verbatim; nothing is converted into fake app limits.
+ *
+ * BANNED and absent here: base64 file args, sendBeacon/keepalive for large
+ * files. The file arrives as RAW bytes; zero client parsing beforehand.
+ */
+
+const MAX_PATH1_BYTES = 19 * 1024 * 1024; // 19MB — reported honestly, enforced by platform physics
+const MAX_IMPORT_BYTES = 19 * 1024 * 1024;
+
+const ALL_LANGS = [
+  "ur", "ar", "fr", "ja", "es", "hi", "tr", "zh", "ru", "ko",
+  "de", "ks", "ro", "sw", "it", "la", "id", "ne", "bn", "pt",
+];
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+  });
+}
+
+// ─── Path 1: ONE request → uploadJob → processing scheduled ────────────────
+
+export const uploadAndCreateJob = httpAction(async (ctx, request) =&gt; {
+  try {
+    const form = await request.formData();
+    const file = form.get("file");
+    if (!(file instanceof File)) {
+      return json({ ok: false, error: "Missing file field (multipart/form-data)" }, 400);
+    }
+    const clientId = String(form.get("clientId") ?? "");
+    if (!clientId) return json({ ok: false, error: "Missing clientId" }, 400);
+    const tabSessionId = String(form.get("tabSessionId") ?? "") || undefined;
+    const idempotencyKey = String(form.get("idempotencyKey") ?? "") || undefined;
+    const langsRaw = String(form.get("langCodes") ?? "");
+    const langCodes = langsRaw
+      ? langsRaw.split(",").map((s) =&gt; s.trim()).filter(Boolean)
+      : undefined;
+
+    if (file.size &gt; MAX_PATH1_BYTES) {
+      // Honest physics message — client should switch to Path 2, not give up.
+      return json(
+        {
+          ok: false,
+          error: `File is ${file.size} bytes; single-request upload accepts up to ${MAX_PATH1_BYTES}. Use the direct-upload path (Path 2) for this file.`,
+          code: "USE_PATH2",
+        },
+        413,
+      );
+    }
+    if (idempotencyKey) {
+      const dupe = await ctx.runQuery(api.identity.getUploadJobByIdempotencyKey, { idempotencyKey });
+      if (dupe) return json({ ok: true, uploadJobId: dupe._id, duplicate: true });
+    }
+
+    // Store RAW bytes — no client-side base64, no parsing, no text dump.
+    const storageId = await ctx.storage.store(file);
+
+    const now = Date.now();
+    const uploadJobId = await ctx.runMutation(api.identity.createUploadJob, {
+      clientId,
+      tabSessionId,
+      fileName: file.name || "upload.pdf",
+      fileSize: file.size,
+      storageId,
+      idempotencyKey,
+      langCodes: langCodes &amp;&amp; langCodes.length &gt; 0 ? langCodes : ALL_LANGS,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Fire server processing — the browser is DONE the moment this returns.
+    await ctx.scheduler.runAfter(0, api.jobProcessing.processUploadedPdf, { uploadJobId });
+
+    return json({ ok: true, uploadJobId, storageId, duplicate: false });
+  } catch (err) {
+    return json(
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      500,
+    );
+  }
+});
+
+// ─── Import: ONE request with the project JSON ──────────────────────────────
+
+export const uploadAndImport = httpAction(async (ctx, request) =&gt; {
+  try {
+    const form = await request.formData();
+    const file = form.get("file");
+    if (!(file instanceof File)) {
+      return json({ ok: false, error: "Missing file field (multipart/form-data)" }, 400);
+    }
+    const clientId = String(form.get("clientId") ?? "");
+    if (!clientId) return json({ ok: false, error: "Missing clientId" }, 400);
+    const tabSessionId = String(form.get("tabSessionId") ?? "") || undefined;
+    const sessionId = tabSessionId;
+
+    if (file.size &gt; MAX_IMPORT_BYTES) {
+      return json({ ok: false, error: `Import file exceeds ${MAX_IMPORT_BYTES} bytes (HTTP action request limit)` }, 413);
+    }
+
+    // Validate BEFORE any write — malformed/corrupt/incompatible JSON must
+    // produce a visible error and ZERO partial writes.
+    const text = await file.text();
+    let data: unknown;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      return json({ ok: false, error: "Import failed: file is not valid JSON (corrupt?)" }, 400);
+    }
+    const d = data as Record&lt;string, unknown&gt;;
+    if (d?.type !== "onyx-translate-project") {
+      return json({ ok: false, error: "Import failed: not an OnyxTranslate project file (missing type \"onyx-translate-project\")" }, 400);
+    }
+    const project = d.project as Record&lt;string, unknown&gt; | undefined;
+    if (!project || typeof project.fullText !== "string") {
+      return json({ ok: false, error: "Import failed: project payload missing or has no fullText" }, 400);
+    }
+
+    const result = await ctx.runAction(api.importJob.uploadAndImportFromData, {
+      clientId,
+      sessionId,
+      data: d as {
+        langCodes?: string[];
+        project: {
+          fileName?: string;
+          pageCount?: number;
+          wordCount?: number;
+          fullText: string;
+          parsedPages?: number;
+          status?: string;
+          pageData?: unknown;
+        };
+        chunks?: Array&lt;{ langCode: string; chunkIndex: number; sourceText: string; translatedText?: string | null; status?: string }&gt;;
+        translations?: Array&lt;{ langCode: string; status?: string; totalChunks?: number; completedChunks?: number; mergedText?: string | null }&gt;;
+      },
+    });
+    return json(result);
+  } catch (err) {
+    return json(
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      500,
+    );
+  }
+});
+
+const http = httpRouter();
+
+http.route({
+  path: "/uploadAndCreateJob",
+  method: "POST",
+  handler: uploadAndCreateJob,
+});
+http.route({
+  path: "/uploadAndImport",
+  method: "POST",
+  handler: uploadAndImport,
+});
+
+export default http;
+</code></pre><h2>convex/crons.ts — full real source</h2><p><strong>Exports:</strong><ul></ul></p><pre><code>import { cronJobs } from "convex/server";
+import { api } from "./_generated/api";
+
+/**
+ * convex/crons.ts — PHASE 2 housekeeping.
+ *
+ * Hourly orphan sweep (spec A):
+ *  - pendingUploads stuck "staging" &gt; 24h → abandoned
+ *  - uploadJobs with no heartbeat for 24h and no project → errored
+ * (Recreated in Phase 2; the Phase 1 removal cleared the old broken crons.)
+ */
+const crons = cronJobs();
+
+crons.hourly(
+  "sweep orphaned uploads",
+  { minuteUTC: 7 },
+  api.identity.sweepStaleUploads,
+  {},
+);
+
+export default crons;
 </code></pre>
 <hr>
 <p class="meta">OnyxTranslate static documentation mirror — plain HTML, no JavaScript. Interactive version: <a href="/#/overview">/#/overview</a></p>

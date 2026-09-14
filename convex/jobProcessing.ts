@@ -49,7 +49,8 @@ export const processUploadedPdf = action({
         if (!gate.ok) return { ok: false, projectId: undefined }; // superseded run
 
         await heartbeat();
-        const parsed = (await ctx.runQuery(api.parsePdf.parseUploadedPdf, {
+        // parseUploadedPdf is an ACTION (Node runtime) — must be runAction.
+        const parsed = (await ctx.runAction(api.parsePdf.parseUploadedPdf, {
           pdfStorageId: firstJob.storageId,
         })) as {
           pageData: unknown;

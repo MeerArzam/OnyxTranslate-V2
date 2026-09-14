@@ -186,5 +186,17 @@ rendering (Arabic/RTL, Devanagari, Bengali, CJK, Hangul, Cyrillic), native punct
 locked glossary/name behavior, and publish-grade prose quality with zero English leakage detected by
 the P8 script checks. Zero failures across the entire suite.</p>
 
+<section style="margin:2rem 0;">
+<h2>Phase 2 server-first verification (2026-09-14 17:30 UTC)</h2>
+<p>Harness: <code>scripts/phase2ServerTest.mjs</code> against the <strong>deployed</strong> Convex deployment (successful-iguana-419) — real HTTP endpoints and scheduled functions, no mocks. Result: <strong>17/17 PASS</strong>.</p>
+<ul>
+<li><strong>Path 1 upload</strong> — POST /uploadAndCreateJob with a real 5-page PDF: HTTP 200 in 816ms; uploadJob created; scheduled processing auto-parsed (5 pages, 711 words, 5 pageData blocks) and started the production translation chain server-side (status=translating).</li>
+<li><strong>Identity</strong> — project row bound to clientId + tabSessionId.</li>
+<li><strong>Idempotency</strong> — duplicate submit with the same idempotency key returns the SAME uploadJob (duplicate=true).</li>
+<li><strong>Import validation</strong> — malformed JSON → HTTP 400 "file is not valid JSON (corrupt?)", zero partial writes (0 → 0 rows); wrong-type JSON → HTTP 400.</li>
+<li><strong>Valid import</strong> — jobId returned; project + fullText + 2 chunks + 2 translations restored; identity reassigned to the importing device with a NEW tab session.</li>
+</ul>
+<p>Build gates: <code>convex dev --once</code> ✓ · <code>tsc -b --noEmit</code> exit 0 ✓ · <code>vite build</code> 14.4s ✓ · frozen archive verify 175/175 ✓ (untouched).</p>
+</section>
 </body>
 </html>

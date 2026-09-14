@@ -796,6 +796,40 @@ names. Suite aggregate 99.3/100, 0 failures.</li>
 <li><strong>Documented limitation (ur)</strong>: Noto Nastaliq Urdu has no presentation-form glyphs;
 Urdu keeps word-reversal rendering (right-aligned, correct word order) instead of glyph shaping.</li>
 </ul>
+
+<h2>Phase 12 — UNDO regression pass: upload / import / export / limits (2026-09-14)</h2>
+<ul>
+<li><strong>Why</strong>: the mega pass rebuilt the client handlers and broke what already worked in the real
+browser (upload did nothing, import/export unresponsive) while all server-side tests kept passing because they
+call the pipeline directly (<code>api.liveTest</code>) and never exercise the UI.</li>
+<li><strong>FIX 1 — upload restored</strong>: <code>handleDocumentSelect</code> (guardrail wrapper with
+ref-handoff auto-start) removed; <code>handleFileSelect</code> is again the single entry point for file input,
+drop and <code>handleDocumentSelect</code>'s old slot, running the pre-mega sequence: parsePDFHeader →
+parsePDFBatch → direct upload → <code>parseUploadedPdf</code> → <code>createProject</code> →
+<code>setProjectId</code>; translation starts on the <em>Begin Translation</em> click (server-side chain
+unchanged). Early-exit paths now log to console for diagnosability.</li>
+<li><strong>FIX 2 — limits removed</strong>: the 10MB and 300-page rejection branches and toasts are deleted.
+A non-blocking info toast ("Large file — translation will take longer") is shown for >10MB but processing
+always continues. Hidden platform cap found and fixed: Convex actions reject arguments over 5MiB, so
+<code>storePdf(pdfBase64)</code> could never carry a PDF larger than ~3.7MB — replaced by Convex direct upload
+(<code>upload.generatePdfUploadUrl</code> → browser POST → <code>upload.finalizePdfUpload</code>), which has
+no argument cap. <code>storePdf</code> kept for compatibility (now V8-runtime via atob).</li>
+<li><strong>FIX 3 — import restored</strong>: on success the client sets projectId, selectedLangCodes,
+first-language preview, resets error state, and toasts — no <code>isJobView</code> gating; visibility returns
+to the pre-mega rule (<code>convexTranslations.length &gt; 0</code>).</li>
+<li><strong>FIX 4 — export restored</strong>: unconditional with a project (idle, mid-translation, complete);
+Blob → URL.createObjectURL → anchor click → revoke; JSON now includes project metadata, fullText, pageData,
+parsedPages, per-language chunks (sourceText/translatedText), translations and langCodes. ZIP download stays
+separate.</li>
+<li><strong>FIX 5 — TDZ audit</strong>: <code>handleDrop</code> now references <code>handleFileSelect</code>
+directly (declared above it), eliminating the use-before-declaration hazard entirely.</li>
+<li><strong>Client-path verification (real browser)</strong>: headless Chromium (Playwright,
+<code>scripts/clientPathTest.mjs</code>) against the dev app — 17/17 assertions pass across 5 stages:
+upload (project row created, no auto-start, chip, Begin gating, Gemini round-trip for la), drag-and-drop,
+large file (10.6MB/310p processed with info toast, no rejection), export (downloaded JSON keys:
+type/version/exportedAt/langCodes/project/chunks/translations), import (fresh session: success toast,
+la:complete restored, Begin visible). Zero uncaught page errors in every stage.</li>
+</ul>
 """
 
     write("history.html", page("Change Log", "Reconstructed from verifiable code evidence", body, "history.html"))

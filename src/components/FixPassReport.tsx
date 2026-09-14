@@ -190,7 +190,7 @@ const PHASES: { phase: string; title: string; status: ReactNode; files: string; 
     status: <span style={ok}>COMPLETE</span>,
     files: "src/pages/Translator.tsx, convex/queries.ts (verified)",
     evidence:
-      "E1 segmented tabs Documents | Paste Text | Image/Camera with 10MB/300-page pre-upload toasts (Translator.tsx:895–908) and auto-start on valid select; compact chip 'filename.pdf • N pages • M words' (never a textarea dump); E2 state-driven job view (never local flowPhase), 'Continues even if you close this page' badge (:1345), per-language rows, server-state ZIP button, New Translation (:1356); E3 recent-jobs via queries.getSessionProjects; Export/Import intact with 'Nothing to export yet' toast (:566).",
+      "Segmented tabs Documents | Paste Text | Image/Camera; compact chip 'filename.pdf • N pages • M words' (never a textarea dump); state-driven job view (never local flowPhase), 'Continues even if you close this page' badge, per-language rows, server-state ZIP button, New Translation; E3 recent-jobs via queries.getSessionProjects. UNDO PASS 2026-09-14: pre-upload 10MB/300-page rejection toasts + ref-handoff auto-start REMOVED — translation starts on Begin click; upload/drop/begin/export paths verified in a real headless browser (17/17 assertions).",
   },
   {
     phase: "F",
@@ -224,6 +224,42 @@ const D3_ROWS: { lang: string; before: string; after: string; time: string; miss
   { lang: "Bangla (bn)", before: "91/100 warn", after: "99/100 warn", time: "4.1s", missing: "none" },
 ];
 
+// UNDO regression pass (2026-09-14): real browser (headless Chromium via
+// Playwright, scripts/clientPathTest.mjs) against the dev app — server-side
+// api.liveTest tests do NOT count as client-path verification.
+const CLIENTPATH_ROWS: { path: string; broken: string; undo: string; evidence: string }[] = [
+  {
+    path: "Upload (file input)",
+    broken: "handleDocumentSelect rejected >10MB/>300 pages; ref-handoff auto-start replaced Begin click",
+    undo: "Body restored to the pre-mega handleFileSelect flow: parsePDFHeader/parsePDFBatch → direct upload → parsePdfAction → createProject → setProjectId; Begin starts translation",
+    evidence: "project row created (onyx-test-book.pdf, 5 pages, 711 words, status=ready, pageData=5 blocks); Begin disabled→enabled after picking LA; '[Onyx] translateLanguage started' logged; la reached complete server-side in 30s",
+  },
+  {
+    path: "Drag-and-drop",
+    broken: "Routed through the removed guardrail wrapper",
+    undo: "handleDrop calls handleFileSelect directly (also removes the TDZ ordering hazard)",
+    evidence: "'handleDrop fired' logged; project row created (onyx-extraction-test.pdf, 1 page, status=ready)",
+  },
+  {
+    path: "Large file (no limits)",
+    broken: "Hard 10MB/300-page rejection toasts with early return",
+    undo: "Limits deleted; only a NON-BLOCKING info toast for >10MB; processing always continues. Found + fixed the hidden platform cap: Convex actions reject args >5MiB, so storePdf(pdfBase64) could never carry >3.7MB — replaced with Convex direct upload (generatePdfUploadUrl → browser POST → finalizePdfUpload)",
+    evidence: "10.6MB / 310-page PDF: info toast rendered in DOM (no rejection), uploaded, parsed, project created (pages=310, status=ready)",
+  },
+  {
+    path: "Export (JSON backup)",
+    broken: "Gated on translations existing; JSON lacked chunks + langCodes",
+    undo: "Unconditional with a project (works idle/mid-translation/complete); includes project.fullText/pageData/parsedPages + per-language chunks (sourceText/translatedText) + langCodes; Blob → anchor click → revoke",
+    evidence: "Downloaded JSON parses; top-level keys: type, version, exportedAt, langCodes, project, chunks, translations; chunks present for the completed language",
+  },
+  {
+    path: "Import (fresh session)",
+    broken: "Mega pass wrapped import in isJobView gating",
+    undo: "Restored: setProjectId → setSelectedLangCodes(imported) → setCurrentPreviewLangCode(first) → success toast; visibility back to pre-mega rules (convexTranslations.length > 0)",
+    evidence: "Fresh browser profile: toast 'Imported onyx-test-book.pdf — 1 language(s) ready' (data-type=success); translation row la:complete restored; Begin button visible/enabled",
+  },
+];
+
 const EXTRACTION_OUTPUT = `  | OnyxStorm fluxcapacitor hyperdrive
   | The dragon riders flew over Basgiath at dawn.
   | It was a grand adventure of a lifetime.
@@ -254,6 +290,7 @@ export default function FixPassReport() {
             ["Extraction self-test", "PASS", T.green],
             ["tr/ks/bn scores", "91→99", T.gold],
             ["Suite average", "99.3/100", T.cyan],
+            ["Client-path tests", "17/17", T.green],
             ["Failures", "0", T.green],
           ].map(([label, value, color]) => (
             <div key={label} style={{ textAlign: "center", minWidth: 110 }}>
@@ -289,8 +326,8 @@ export default function FixPassReport() {
             ],
             [
               "Export conflated JSON backup with ZIP deliverable",
-              "server-driven ZIP card; Export JSON separate with 'Nothing to export yet' toast",
-              "Translator.tsx:566,1299–1311; ZIP enabled purely from Convex state",
+              "server-driven ZIP card; Export JSON separate, unconditional (project alone suffices), now carries chunks + langCodes",
+              "Browser test: download parses, keys type/version/exportedAt/langCodes/project/chunks/translations",
             ],
           ]}
         />
@@ -332,13 +369,13 @@ export default function FixPassReport() {
             ["9", "tr/ks/bn scores", <span style={ok}>91→99, warnings' missing-name cause resolved</span>],
             [
               "10",
-              "Upload flow → auto-start → Job view + persistence badge",
-              <span style={ok}>Implemented (code-verified)</span>,
+              "Upload flow → Begin click → Job view + persistence badge",
+              <span style={ok}>Browser-verified (Playwright client-path suite)</span>,
             ],
             [
               "11",
-              ">10MB rejection toast",
-              <span style={warn}>Code-verified (Translator.tsx:899–901), not browser-exercised</span>,
+              "Large file NOT rejected (>10MB, >300 pages)",
+              <span style={ok}>Browser-verified: 10.6MB/310p processed to project creation</span>,
             ],
             [
               "12",
@@ -433,6 +470,28 @@ export default function FixPassReport() {
           Remaining warns are benign single-sentence artifacts (P4 dialogue-pair counting, P22/P23 editorial
           flags on the one-sentence test input). Full 20-language suite: 7×100, 13×99, 0 fail, avg 99.3.
         </p>
+      </Card>
+
+      {/* UNDO regression pass */}
+      <Card>
+        <H2>Undo regression pass — client-path verification (2026-09-14, real browser)</H2>
+        <p style={{ margin: "0 0 8px", color: T.muted, fontSize: 11.5 }}>
+          The earlier mega pass rebuilt the client handlers and broke what already worked — upload, import and
+          export did nothing in the real browser, while all server-side tests kept passing because they call the
+          pipeline directly (api.liveTest) and never exercise the UI. This pass UNDID the wrong parts (no new
+          abstractions) and verified every path with headless Chromium (Playwright,
+          <code style={{ fontFamily: T.mono }}> scripts/clientPathTest.mjs</code>) driving the real app at
+          http://127.0.0.1:5173 — asserting real Convex side effects after each action. 17/17 assertions pass.
+        </p>
+        <Table
+          head={["Client path", "What the mega pass broke", "Undo applied", "Browser evidence"]}
+          rows={CLIENTPATH_ROWS.map((r) => [
+            <span style={{ color: T.cyan, fontWeight: 700, fontSize: 11 }}>{r.path}</span>,
+            <span style={{ color: T.gold, fontSize: 10.5 }}>{r.broken}</span>,
+            <span style={{ fontSize: 10.5, lineHeight: 1.5 }}>{r.undo}</span>,
+            <span style={{ fontSize: 10.5, lineHeight: 1.5, color: T.green }}>{r.evidence}</span>,
+          ])}
+        />
       </Card>
 
       {/* Deviations */}

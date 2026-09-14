@@ -170,10 +170,6 @@ export default function Translator() {
   const [parseProgress, setParseProgress] = useState<{ current: number; total: number } | null>(null);
   const [parsePhase, setParsePhase] = useState<"idle" | "loading" | "parsing" | "done">("idle");
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // Phase E1: cross-callback handoff from the upload pipeline to auto-start
-  // (state setters would still be stale when auto-start runs).
-  const newProjectIdRef = useRef<Id<"projects"> | null>(null);
-  const serverFullTextRef = useRef<string>("");
 
   // ─── Phase E: Google-style segmented tabs (Documents | Text | Images) ───
   const [inputTab, setInputTab] = useState<"documents" | "text" | "images">("documents");
@@ -378,7 +374,14 @@ export default function Translator() {
 
   // ─── PDF Upload (chunked) ───
   const handleFileSelect = useCallback(async (file: File | null) => {
-    if (!file) return;
+    if (!file) {
+      console.debug("[Onyx] handleFileSelect: no file provided");
+      return;
+    }
+    // Non-blocking notice only — NO size/page limits. Large files always process.
+    if (file.size > 10 * 1024 * 1024) {
+      toast.info("Large file — translation will take longer. Processing anyway.");
+    }
 
     setIsUploading(true);
     setUploadError(null);
@@ -437,6 +440,7 @@ export default function Translator() {
       const warnings: string[] = [];
       const pagesWithText = allPageTexts.filter((t) => t.length > 10).length;
       if (fullText.length < 10) {
+        console.warn("[Onyx] handleFileSelect early-exit: no extractable text (scanned/image PDF?)");
         setUploadError(
           "The PDF does not contain extractable text. It may be a scanned/image-based PDF."
         );
@@ -451,26 +455,22 @@ export default function Translator() {
       }
       setPdfWarnings(warnings);
 
-      // Upload PDF to Convex File Storage
-      const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
-        const bytes = new Uint8Array(buffer);
-        let binary = "";
-        const chunkSize = 8192;
-        for (let i = 0; i < bytes.length; i += chunkSize) {
-          const chunk = bytes.subarray(i, i + chunkSize);
-          binary += String.fromCharCode(...chunk);
-        }
-        return btoa(binary);
-      };
-
-      const pdfBase64 = arrayBufferToBase64(header.arrayBuffer);
-      setParsePhase("parsing");
-      setParseProgress({ current: header.totalPages, total: header.totalPages });
-
-      const { storageId } = await storePdfAction({
-        fileName: file.name,
-        pdfBase64,
+      // Upload PDF to Convex File Storage.
+      // FIX 2: direct upload (generateUploadUrl → browser POST → storageId)
+      // instead of storePdf(pdfBase64) — Convex caps action ARGUMENTS at 5MiB,
+      // which silently failed for any PDF over ~3.7MB. Direct upload has no
+      // such cap, honoring the "no file size limits" requirement.
+      const uploadUrl = await convexClient.mutation(api.upload.generatePdfUploadUrl, {});
+      const uploadRes = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { "Content-Type": file.type || "application/pdf" },
+        body: file,
       });
+      if (!uploadRes.ok) {
+        throw new Error(`PDF storage upload failed (${uploadRes.status})`);
+      }
+      const { storageId } = (await uploadRes.json()) as { storageId: Id<"_storage"> };
+      await convexClient.mutation(api.upload.finalizePdfUpload, { storageId });
 
       // Server-side re-parse with proper text merging (fixes broken words/missing letters)
       setParsePhase("parsing");
@@ -527,9 +527,6 @@ export default function Translator() {
       });
 
       setProjectId(newProjectId);
-      // Phase E1: publish for the auto-start handoff
-      newProjectIdRef.current = newProjectId;
-      serverFullTextRef.current = serverFullText;
 
       const validation = validateTextForTranslation(fullText);
       if (!validation.valid) {
@@ -540,6 +537,7 @@ export default function Translator() {
       setParseProgress(null);
     } catch (err) {
       const pdfError = err as PDFParseError;
+      console.error("[Onyx] handleFileSelect failed — early-exit via catch:", pdfError);
       setUploadError(pdfError.message || "Failed to parse PDF.");
       setParseProgress(null);
       setParsePhase("idle");
@@ -561,18 +559,40 @@ export default function Translator() {
 
   // ─── Export / Import Progress ───
   const handleExportProgress = useCallback(async () => {
-    if (!convexProject || activeTranslations.length === 0) {
-      // Phase E2: never a silent no-op
+    console.debug("[Onyx] Export clicked", { hasProject: !!convexProject, translations: activeTranslations.length });
+    if (!convexProject) {
+      // Phase E2: never a silent no-op. Export is gated ONLY on project
+      // existence — works mid-translation, when idle, and with zero
+      // translations. Never gated on status/isJobView/flowPhase.
       toast.info("Nothing to export yet — start a translation first.");
       return;
     }
     // FIX 6: Complete export — includes sessionId, projectId mapping,
-    // parsedPages/pageData for PDF regeneration, and per-translation PDF
-    // fields so an import restores everything the UI needs.
+    // parsedPages/pageData for PDF regeneration, source chunks for
+    // round-trip completeness, and per-translation PDF fields so an
+    // import restores everything the UI needs.
+    const chunksByLang: Record<string, Array<{ chunkIndex: number; sourceText: string; translatedText: string; status: string }>> = {};
+    for (const t of activeTranslations) {
+      try {
+        const chunks = (await convexClient.query(api.queries.getChunksForLang, {
+          projectId: convexProject._id,
+          langCode: t.langCode,
+        })) as unknown as Array<{ chunkIndex: number; sourceText: string; translatedText: string; status: string }>;
+        chunksByLang[t.langCode] = chunks.map((c) => ({
+          chunkIndex: c.chunkIndex,
+          sourceText: c.sourceText,
+          translatedText: c.translatedText,
+          status: c.status,
+        }));
+      } catch (err) {
+        console.warn(`[Onyx] Export: chunk fetch failed for ${t.langCode}`, err);
+      }
+    }
     const exportData = {
       type: "onyx-translate-project" as const,
       version: 1,
       exportedAt: new Date().toISOString(),
+      langCodes: activeTranslations.map((t) => t.langCode),
       project: {
         projectId: convexProject._id,
         sessionId: convexProject.sessionId ?? sessionId,
@@ -585,6 +605,7 @@ export default function Translator() {
         pageData: convexProject.pageData ?? [],
         zipUrl: convexProject.zipUrl ?? undefined,
       },
+      chunks: chunksByLang,
       translations: activeTranslations.map((t) => ({
         langCode: t.langCode,
         totalChunks: t.totalChunks,
@@ -605,7 +626,7 @@ export default function Translator() {
     a.click();
     URL.revokeObjectURL(url);
     toast.success("Backup downloaded.");
-  }, [convexProject, activeTranslations, sessionId]);
+  }, [convexProject, activeTranslations, sessionId, convexClient]);
 
   const importProjectAction = useAction(api.importProject.importProject);
   const handleImportProgress = useCallback(async () => {
@@ -647,8 +668,6 @@ export default function Translator() {
     if (projectId) {
       await deleteProjectMutation({ projectId }).catch(() => {});
     }
-    newProjectIdRef.current = null;
-    serverFullTextRef.current = "";
     setProjectId(null);
     setSourceText("");
     setPdfFileName(null);
@@ -826,13 +845,13 @@ export default function Translator() {
       return;
     }
 
-    try {
-      setIsTranslating(true);
+    try {      setIsTranslating(true);
       setTranslationError(null);
 
       // If no project exists (pasted text, not PDF), create one now
       let activeProjectId = existingProjectId;
       if (!activeProjectId) {
+
 
         activeProjectId = await createProjectMutation({
           sessionId,
@@ -856,6 +875,7 @@ export default function Translator() {
 
 
       // UNIFIED: One action call kicks off the chain — each language chains to the next via scheduler
+      console.debug("[Onyx] translateLanguage started", { projectId: activeProjectId, langs });
       await translateLanguageAction({
         projectId: activeProjectId,
         langCode: langs[0],
@@ -891,48 +911,15 @@ export default function Translator() {
     [startTranslationCore],
   );
 
-  // Phase E1: Documents tab — guardrails + auto-start after upload.
-  // Rejects >10MB / >300 pages with a toast BEFORE any parsing work.
-  const handleDocumentSelect = useCallback(
-    async (file: File | null) => {
-      if (!file) return;
-      if (file.size > 10 * 1024 * 1024) {
-        toast.error("PDF must be under 10MB");
-        return;
-      }
-      try {
-        const header = await parsePDFHeader(file);
-        if (header.totalPages > 300) {
-          toast.error("PDF must be 300 pages or fewer");
-          return;
-        }
-      } catch {
-        // Header parse failed — let handleFileSelect surface the real error.
-      }
-      // Valid — proceed through the normal upload pipeline.
-      await handleFileSelect(file);
-      // Upload failed (empty/scanned PDF, parse error) — error already shown.
-      if (!newProjectIdRef.current) return;
-      // Auto-start translation of ALL languages the moment the project
-      // exists. Explicit overrides avoid the stale-closure window between
-      // createProjectMutation and the state setters repainting.
-      const langs = targetLanguages.map((l) => l.code);
-      await startTranslationCore({
-        existingProjectId: newProjectIdRef.current,
-        text: serverFullTextRef.current,
-        langs,
-      });
-    },
-    [handleFileSelect, startTranslationCore],
-  );
-
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       setIsDragOver(false);
-      handleDocumentSelect(e.dataTransfer.files[0]);
+      const file = e.dataTransfer.files[0];
+      console.debug("[Onyx] handleDrop fired", file ? `${file.name} (${file.size} bytes)` : "(no file)");
+      handleFileSelect(file || null);
     },
-    [handleDocumentSelect]
+    [handleFileSelect]
   );
 
   // ─── Retranslate: cancel queue, delete language chunks, restart queue ───
@@ -1238,7 +1225,7 @@ export default function Translator() {
         type="file"
         accept=".pdf,application/pdf"
         className="hidden"
-        onChange={(e) => handleDocumentSelect(e.target.files?.[0] || null)}
+        onChange={(e) => handleFileSelect(e.target.files?.[0] || null)}
       />
 
       {/* Header */}

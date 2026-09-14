@@ -24,7 +24,7 @@ td code{color:#00e5ff}
 <body>
 <p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
 <h1>Convex Functions — Mutations, Queries, History, Import, Upload</h1>
-<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-12 16:38 UTC</p>
+<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-13 16:35 UTC</p>
 <p>Files on this page: <code>convex/mutations.ts</code>, <code>convex/queries.ts</code>, <code>convex/history.ts</code>, <code>convex/importProject.ts</code>, <code>convex/upload.ts</code></p><h2>convex/mutations.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>createProject</code> — mutation</li><li><code>updateProject</code> — mutation</li><li><code>deleteProject</code> — mutation</li><li><code>upsertChunk</code> — mutation</li><li><code>updateChunk</code> — mutation</li><li><code>upsertTranslation</code> — mutation</li><li><code>updateTranslation</code> — mutation</li><li><code>deleteChunksForLang</code> — mutation</li><li><code>createJob</code> — mutation</li><li><code>saveImageTranslation</code> — mutation</li></ul></p><pre><code>import { v } from "convex/values";
 import { mutation } from "./_generated/server";
 
@@ -258,7 +258,7 @@ export const saveImageTranslation = mutation({
     });
   },
 });
-</code></pre><h2>convex/queries.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>getProject</code> — query</li><li><code>getLatestProject</code> — query</li><li><code>getProjectTranslations</code> — query</li><li><code>getProjectRaw</code> — query</li><li><code>getTranslationsRaw</code> — query</li><li><code>getChunkProgress</code> — query</li><li><code>getChunksForLang</code> — query</li><li><code>getAllJobs</code> — query</li><li><code>getHistory</code> — query</li><li><code>getStalledLanguages</code> — query</li><li><code>getTranslationProgress</code> — query</li><li><code>getAllProjectsForWatchdog</code> — query</li><li><code>getLivePreviewText</code> — query</li></ul></p><pre><code>import { v } from "convex/values";
+</code></pre><h2>convex/queries.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>getProject</code> — query</li><li><code>getLatestProject</code> — query</li><li><code>getSessionProjects</code> — query</li><li><code>getProjectTranslations</code> — query</li><li><code>getProjectRaw</code> — query</li><li><code>getTranslationsRaw</code> — query</li><li><code>getChunkProgress</code> — query</li><li><code>getChunksForLang</code> — query</li><li><code>getAllJobs</code> — query</li><li><code>getHistory</code> — query</li><li><code>getStalledLanguages</code> — query</li><li><code>getTranslationProgress</code> — query</li><li><code>getAllProjectsForWatchdog</code> — query</li><li><code>getLivePreviewText</code> — query</li></ul></p><pre><code>import { v } from "convex/values";
 import { query } from "./_generated/server";
 
 // ─── Client-facing queries (require sessionId) ───
@@ -281,6 +281,18 @@ export const getLatestProject = query({
       .order("desc")
       .take(1);
     return projects[0] ?? null;
+  },
+});
+
+// Phase E3: Recent jobs — compact session-scoped project cards.
+export const getSessionProjects = query({
+  args: { sessionId: v.string() },
+  handler: async (ctx, args) =&gt; {
+    return await ctx.db
+      .query("projects")
+      .withIndex("by_session", (q) =&gt; q.eq("sessionId", args.sessionId))
+      .order("desc")
+      .take(10);
   },
 });
 

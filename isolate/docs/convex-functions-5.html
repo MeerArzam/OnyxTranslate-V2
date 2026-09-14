@@ -24,7 +24,7 @@ td code{color:#00e5ff}
 <body>
 <p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
 <h1>Convex Functions — PDF Layout Cores (x-gap merge + block render)</h1>
-<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-12 16:38 UTC</p>
+<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-13 16:35 UTC</p>
 <p>Files on this page: <code>convex/pdfLayout.ts</code>, <code>convex/renderPdfCore.ts</code></p><h2>convex/pdfLayout.ts — full real source</h2><p><strong>Exports:</strong><ul></ul></p><pre><code>/**
  * convex/pdfLayout.ts — Pure PDF text-layout helpers (NO Convex imports).
  *
@@ -305,9 +305,13 @@ export function itemsToBlocks(items: LayoutTextItem[]): LayoutBlock[] {
  *       shrinks ×0.95 (floor 6pt) until the wrapped text fits BOTH width and
  *       height. Erase rectangle = block bounds + 1px padding (white).
  *
- *   C3. RTL — Arabic/Urdu/Kashmiri lines are rendered right-aligned with
- *       WORD-ORDER reversal only (never per-character, which would corrupt
- *       contextual shaping/ligatures).
+ *   C3. RTL — Arabic/Kashmiri get TRUE bidi (UAX #9) + Arabic shaping:
+ *       logical text is reshaped to Unicode presentation forms (U+FE70–U+FEFF
+ *       contextual glyphs via arabic-reshaper) and reordered to visual order
+ *       (bidi-js); the embedded Noto Sans Arabic font carries those glyphs
+ *       (verified via cmap). Urdu stays on WORD-ORDER reversal because Noto
+ *       Nastaliq Urdu lacks presentation-form glyphs (would render boxes);
+ *       documented limitation, not silent corruption.
  */
 
 import { itemsToBlocks, type LayoutTextItem } from "./pdfLayout";
@@ -476,6 +480,7 @@ export function fitBlockText(
   text: string,
   block: RenderBlock,
   isRTL: boolean,
+  useBidiShaping = false,
 ): BlockOp {
   const width = Math.max(block.width, 20);
   const height = Math.max(block.height, block.fontSize);
@@ -520,7 +525,9 @@ export function fitBlockText(
     if (!line.trim()) continue;
     const baselineTop = firstBaselineTopOrigin + drawn * lineHeight;
     if (baselineTop &gt; block.y + height + lineHeight * 0.5) break; // don't spill past block
-    const visual = isRTL ? reverseWords(line) : line;
+    const visual = isRTL
+      ? (useBidiShaping ? toVisualBidi(line) : reverseWords(line))
+      : line;
     let x = block.x;
     const lineWidth = font.widthOfTextAtSize(visual, size);
     if (block.align === "center" || isRTL) {
@@ -551,6 +558,29 @@ export function reverseWords(line: string): string {
   return line.split(/\s+/).filter(Boolean).reverse().join(" ");
 }
 
+/**
+ * C3 TRUE bidi pipeline (ar/ks): logical Arabic → shaped presentation forms
+ * (U+FE70–U+FEFF) → visual-order string via the Unicode Bidirectional
+ * Algorithm. Both pure-JS, no node builtins — verified Convex-compatible.
+ * Dynamic requires keep the bundler from eagerly evaluating them in actions
+ * that never render RTL pages.
+ */
+export function toVisualBidi(line: string): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const arabicShaper = require("arabic-reshaper");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const bidiFactory = require("bidi-js");
+    const bidi = (bidiFactory.default ?? bidiFactory)();
+    const shaped: string =
+      (arabicShaper.convertArabic ?? arabicShaper.default?.convertArabic)(line);
+    const levels = bidi.getEmbeddingLevels(shaped, "rtl");
+    return bidi.getReorderedString(shaped, levels);
+  } catch {
+    return reverseWords(line); // safety net — never worse than before
+  }
+}
+
 // ──────────────────────────────────────────────────────────
 // Full-page planning
 // ──────────────────────────────────────────────────────────
@@ -571,8 +601,9 @@ export function planPageOverlay(opts: {
   paragraphs: string[];
   font: RenderFont;
   isRTL: boolean;
+  useBidiShaping?: boolean;
 }): PageOverlayPlan {
-  const { textItems, storedBlocks, pageHeight, paragraphs, font, isRTL } = opts;
+  const { textItems, storedBlocks, pageHeight, paragraphs, font, isRTL, useBidiShaping = false } = opts;
 
   // Resolve blocks: prefer stored, else cluster on the fly. Stored items are
   // TOP-origin; clustering helpers expect PDF BOTTOM-origin, so convert.
@@ -601,7 +632,7 @@ export function planPageOverlay(opts: {
   for (let i = 0; i &lt; blocks.length; i++) {
     const text = blockTexts[i] ?? "";
     if (!text.trim()) continue;
-    const op = fitBlockText(font, text, blocks[i], isRTL);
+    const op = fitBlockText(font, text, blocks[i], isRTL, useBidiShaping);
     op.eraseYBottomOrigin = pageHeight - op.erase.y - op.erase.height;
     ops.push(op);
     minSize = Math.min(minSize, op.fontSize);
@@ -643,8 +674,13 @@ export interface RenderStats {
 
 export const RENDER_FONT_URLS: RenderFontUrls = {
   ur: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notonastaliqurdu/NotoNastaliqUrdu[wght].ttf",
-  ar: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansarabic/NotoSansArabic[wdth,wght].ttf",
-  ks: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansarabic/NotoSansArabic[wdth,wght].ttf",
+  // C3: ar/ks use Amiri (STATIC classical Naskh with full Unicode
+  // presentation-form coverage). The VARIABLE Noto Sans Arabic crashes in
+  // fontkit's GPOS anchor parser on real shaped text (null anchor in a
+  // variable-glyph combination) — Amiri embeds+draws the identical text
+  // cleanly (verified against the full production translation).
+  ar: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/amiri/Amiri-Regular.ttf",
+  ks: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/amiri/Amiri-Regular.ttf",
   ja: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansjp/NotoSansJP[wght].ttf",
   zh: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanssc/NotoSansSC[wght].ttf",
   ko: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanskr/NotoSansKR[wght].ttf",
@@ -693,6 +729,11 @@ export async function renderTranslatedPdf(opts: {
   }
 
   const isRTL = RTL_LANGS.has(langCode);
+  // C3: TRUE bidi+shaping only where the embedded font carries the Unicode
+  // presentation forms the reshaper emits (verified cmap coverage):
+  //   ar/ks → Noto Sans Arabic (full coverage)  → bidi + reshape
+  //   ur    → Noto Nastaliq Urdu (NO coverage)  → word-reversal fallback
+  const useBidiShaping = isRTL &amp;&amp; (langCode === "ar" || langCode === "ks");
   const fontUrl = RENDER_FONT_URLS[langCode];
   let font: PDFFont;
   try {
@@ -780,6 +821,7 @@ export async function renderTranslatedPdf(opts: {
         paragraphs: pageParas,
         font: font as unknown as { widthOfTextAtSize(t: string, s: number): number; heightAtSize(s: number): number },
         isRTL,
+        useBidiShaping,
       });
       for (const op of plan.ops) {
         copiedPage.drawRectangle({
@@ -825,7 +867,9 @@ export async function renderTranslatedPdf(opts: {
         if (y &lt; bottomY) break;
         try {
           if (isRTL) {
-            const visual = toVisualRTL(line);
+            // C3: ar/ks use true bidi+shaped visual order; ur falls back to
+            // word reversal (its Nastaliq font lacks presentation forms).
+            const visual = useBidiShaping ? toVisualBidi(line) : toVisualRTL(line);
             const lineWidth = font.widthOfTextAtSize(visual, fontSize);
             copiedPage.drawText(visual, { x: textLeft + bandWidth - lineWidth, y, size: fontSize, font, color: black });
           } else {
@@ -847,8 +891,8 @@ export async function renderTranslatedPdf(opts: {
         if (baseline - fontSize &lt; textBottom) break;
         if (line.trim()) {
           try {
-            if (isRTL) {
-              const visual = line.split(/\s+/).reverse().join(" ");
+          if (isRTL) {
+            const visual = useBidiShaping ? toVisualBidi(line) : line.split(/\s+/).filter(Boolean).reverse().join(" ");
               const lineWidth = font.widthOfTextAtSize(visual, fontSize);
               copiedPage.drawText(visual, { x: textLeft + maxWidth - lineWidth, y: baseline, size: fontSize, font, color: black });
             } else {

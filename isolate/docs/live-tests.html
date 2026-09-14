@@ -162,6 +162,24 @@ word-order-reversal rendering (correct right-alignment and word order; calligrap
 the viewer). This is documented, not silent corruption.</li>
 </ul>
 
+<h2>Client-path tests — real browser (2026-09-14, headless Chromium via Playwright)</h2>
+<p class="note">The server-side tests above call the pipeline directly and never exercise the UI. After the
+undo regression pass (Phase 12), every client path was driven in a real headless browser
+(<code>scripts/clientPathTest.mjs</code>) against the dev app at http://127.0.0.1:5173, asserting real Convex
+side effects after each action. <strong>17/17 assertions pass; 0 uncaught page errors in every stage.</strong></p>
+<table>
+<tr><th>Path</th><th>Result</th><th>Evidence</th></tr>
+<tr><td>Upload (file input)</td><td>PASS ×5</td><td>storePdf→parsePdf→createProject all fired — project row <code>onyx-test-book.pdf</code>, 5 pages, 711 words, 5 pageData blocks, status=ready (no auto-start); compact chip "onyx-test-book.pdf · 5 pages · 711 words"; Begin button disabled → enabled after language pick; <code>[Onyx] translateLanguage started</code> logged; <code>la</code> reached <code>complete</code> server-side in 30s.</td></tr>
+<tr><td>Drag-and-drop</td><td>PASS ×2</td><td><code>handleDrop fired</code> logged; project row <code>onyx-extraction-test.pdf</code> (1 page, status=ready).</td></tr>
+<tr><td>Large file (limits removed)</td><td>PASS ×2</td><td>10.6MB / 310-page PDF: non-blocking info toast rendered in DOM, no rejection, uploaded via Convex direct upload, parsed, project created (pages=310, status=ready).</td></tr>
+<tr><td>Export (JSON backup)</td><td>PASS ×2</td><td>Downloaded via Blob→anchor click; JSON parses; top-level keys: type, version, exportedAt, langCodes, project, chunks, translations; project keys include fullText/pageData/parsedPages.</td></tr>
+<tr><td>Import (fresh session)</td><td>PASS ×3</td><td>Success toast "Imported onyx-test-book.pdf — 1 language(s) ready" (data-type=success); translation row <code>la:complete</code> restored; Begin button visible and enabled.</td></tr>
+</table>
+<p class="note">Note on platform limits discovered during testing: Convex actions cap arguments at 5MiB, so
+the legacy <code>storePdf(pdfBase64)</code> path physically could not carry PDFs over ~3.7MB. The upload path
+now uses Convex direct upload (generatePdfUploadUrl → browser POST → finalizePdfUpload), which has no such
+cap — this is what made the "no file size limits" requirement actually work.</p>
+
 <h2>Verdict</h2>
 <p class="note">The production pipeline is verified live in all 20 target markets: correct script
 rendering (Arabic/RTL, Devanagari, Bengali, CJK, Hangul, Cyrillic), native punctuation per language,

@@ -74,6 +74,14 @@ import {
 import { useQuery, useMutation, useAction, useConvex } from "convex/react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { api } from "../../convex/_generated/api";
+// PHASE 2: server-first identity + hybrid upload + server-side export/import
+import { getClientId, getTabSessionId, listStagingRecords, deleteStagingRecord, saveStagingRecord, type UploadStagingRecord } from "@/lib/identity";
+import {
+  uploadAndCreateJob,
+  uploadLargeFile,
+  uploadAndImport,
+  PATH1_MAX_BYTES,
+} from "@/lib/translator/serverUpload";
 
 const targetLanguages = [
   { code: "ur", name: "Urdu", nativeName: "اردو", script: "Arabic" },
@@ -110,15 +118,21 @@ interface CompletedLanguage {
 }
 
 export default function Translator() {
-  // ─── C1: Session isolation (per-tab, stored in sessionStorage) ───
+  // ─── PHASE 2 identity: durable device id + per-tab session id ───
+  // localStorage `onyx-client-id` (device, durable) + sessionStorage
+  // `onyx-tab-session-id` (tab, fresh). The legacy `onyx-session-id` key is
+  // kept as this tab's session value so existing session-scoped queries
+  // (C1 isolation, history) continue to work unchanged.
+  const [clientId] = useState(() => getClientId());
   const [sessionId] = useState(() => {
     if (typeof window === "undefined") return "ssr-fallback";
-    const existing = sessionStorage.getItem("onyx-session-id");
-    if (existing) return existing;
-    const newId = crypto.randomUUID();
-    sessionStorage.setItem("onyx-session-id", newId);
-    return newId;
+    const tab = getTabSessionId();
+    const legacy = sessionStorage.getItem("onyx-session-id");
+    if (legacy === tab) return tab;
+    sessionStorage.setItem("onyx-session-id", tab);
+    return tab;
   });
+  const tabSessionId = sessionId; // one value, two names — clarity at call sites
 
   // ─── Convex server-side actions ───
   const parsePdfAction = useAction(api.parsePdf.parseUploadedPdf);
@@ -298,6 +312,31 @@ export default function Translator() {
   // ─── ZIP ───
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
 
+  // ─── PHASE 2: server-first upload state ───
+  const [uploadPercent, setUploadPercent] = useState<number | null>(null);
+  const [activeUploadJobId, setActiveUploadJobId] = useState<Id<"uploadJobs"> | null>(null);
+  const [serverHandoffAck, setServerHandoffAck] = useState(false);
+  const [activeUploadError, setActiveUploadError] = useState<string | null>(null);
+  const [pendingStaging, setPendingStaging] = useState<UploadStagingRecord[]>([]);
+  const [showYourJobs, setShowYourJobs] = useState(false);
+  const uploadAbortRef = useRef<AbortController | null>(null);
+  const uploadStartRef = useRef<number>(0);
+
+  // PHASE 2: this device's own past/active jobs (never another device's).
+  const resumableJobs = useQuery(api.identity.getResumableJobs, { clientId, limit: 12 });
+  // Live progress for an in-flight upload job (status + stage chips).
+  const activeUploadJob = useQuery(
+    api.identity.getUploadJob,
+    activeUploadJobId ? { uploadJobId: activeUploadJobId, clientId } : "skip"
+  );
+
+  // PHASE 2: interrupted uploads (staging records) → "Resume upload / Discard".
+  useEffect(() => {
+    listStagingRecords().then((rows) => {
+      if (rows.length > 0) setPendingStaging(rows);
+    });
+  }, []);
+
   // ─── Image / Camera Translation ───
   const [imageMode, setImageMode] = useState<"none" | "upload" | "camera">("none");
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -365,19 +404,21 @@ export default function Translator() {
 
 
 
-  // ─── PDF Upload (chunked) ───
+  // ─── PHASE 2: SERVER-FIRST upload — the browser only picks the file and
+  // POSTs raw bytes. Parsing/chunking/translation/PDF/ZIP all run server-side.
+  // NO artificial limits: every file processes; real errors surface verbatim.
   const handleFileSelect = useCallback(async (file: File | null) => {
     if (!file) {
       console.debug("[Onyx] handleFileSelect: no file provided");
       return;
     }
-    // Non-blocking notice only — NO size/page limits. Large files always process.
-    if (file.size > 10 * 1024 * 1024) {
-      toast.info("Large file — translation will take longer. Processing anyway.");
-    }
+    console.debug("[Onyx] handleFileSelect", { name: file.name, size: file.size });
 
     setIsUploading(true);
     setUploadError(null);
+    setActiveUploadError(null);
+    setUploadPercent(0);
+    setServerHandoffAck(false);
     setParseProgress(null);
     setParsePhase("loading");
     resetFlow();
@@ -385,159 +426,232 @@ export default function Translator() {
     if (projectId) {
       await deleteProjectMutation({ projectId }).catch(() => {});
     }
-    // progress state managed by Convex
+
+    const controller = new AbortController();
+    uploadAbortRef.current = controller;
+    uploadStartRef.current = Date.now();
+
+    // PHASE 2 staging record — persisted BEFORE any network work (spec A), so
+    // an interrupted upload can be offered as "Resume upload" on reopen.
+    const idempotencyKey = crypto.randomUUID();
+    await saveStagingRecord({
+      uploadId: idempotencyKey,
+      fileName: file.name,
+      size: file.size,
+      langCodes: selectedLangCodes,
+      path: file.size <= PATH1_MAX_BYTES ? 1 : 2,
+      createdAt: Date.now(),
+    });
 
     try {
-      // Step 1: Parse header (fast — no page processing)
-      const header = await parsePDFHeader(file);
-
-      setPdfFileName(file.name);
-      setPdfPageCount(header.totalPages);
-      setOriginalArrayBuffer(header.arrayBuffer);
-
       setParsePhase("parsing");
-      setParseProgress({ current: 0, total: header.totalPages });
-
-      // Step 2: Parse pages in batches of PARSE_BATCH_SIZE
-      const allPageData: PDFPageData[] = [];
-      const allPageTexts: string[] = [];
-
-      for (
-        let batchStart = 1;
-        batchStart <= header.totalPages;
-        batchStart += PARSE_BATCH_SIZE
-      ) {
-        const batchEnd = Math.min(batchStart + PARSE_BATCH_SIZE - 1, header.totalPages);
-        const batchResults = await parsePDFBatch(header.pdf, batchStart, batchEnd);
-
-        for (const result of batchResults) {
-          allPageData.push(result);
-          allPageTexts.push(result.text);
-        }
-
-        allPageData.sort((a, b) => a.num - b.num);
-
-        const incrementalText = allPageTexts.filter(Boolean).join("\n\n").trim();
-
-        setParseProgress({ current: batchEnd, total: header.totalPages });
-        setPageData([...allPageData]);
-        setOriginalPageTexts([...allPageTexts]);
-        setSourceText(incrementalText);
+      // NO client parsing — the file is posted RAW. The server parses with the
+      // production parser (x-gap merge + paragraph clustering).
+      if (file.size <= PATH1_MAX_BYTES) {
+        // PATH 1 — ONE request: raw POST → server stores + schedules processing.
+        const handle = await uploadAndCreateJob({
+          file,
+          clientId,
+          tabSessionId,
+          langCodes: selectedLangCodes,
+          idempotencyKey,
+          onProgress: (loaded, total) => setUploadPercent(Math.round((loaded / total) * 100)),
+          signal: controller.signal,
+        });
+        await deleteStagingRecord(idempotencyKey);
+        setActiveUploadJobId(handle.uploadJobId);
+        setUploadPercent(100);
+        setPdfFileName(file.name);
+        setParsePhase("done");
+      } else {
+        // PATH 2 — staged direct upload with progress % + cancel.
+        const handle = await uploadLargeFile({
+          file,
+          clientId,
+          tabSessionId,
+          langCodes: selectedLangCodes,
+          convex: { mutation: (ref, args) => convexClient.mutation(ref as never, args as never) },
+          onProgress: (loaded, total) => setUploadPercent(Math.round((loaded / total) * 100)),
+          signal: controller.signal,
+        });
+        await deleteStagingRecord(idempotencyKey);
+        setActiveUploadJobId(handle.uploadJobId);
+        setUploadPercent(100);
+        setPdfFileName(file.name);
+        setParsePhase("done");
       }
-
-      // Final text
-      const fullText = allPageTexts.filter(Boolean).join("\n\n").trim();
-      setSourceText(fullText);
-
-      // Update warnings
-      const warnings: string[] = [];
-      const pagesWithText = allPageTexts.filter((t) => t.length > 10).length;
-      if (fullText.length < 10) {
-        console.warn("[Onyx] handleFileSelect early-exit: no extractable text (scanned/image PDF?)");
-        setUploadError(
-          "The PDF does not contain extractable text. It may be a scanned/image-based PDF."
-        );
-        setIsUploading(false);
-        setParsePhase("idle");
-        return;
-      }
-      if (pagesWithText < header.totalPages * 0.3 && header.totalPages > 5) {
-        warnings.push(
-          `Only ${pagesWithText} of ${header.totalPages} pages contain extractable text.`
-        );
-      }
-      setPdfWarnings(warnings);
-
-      // Upload PDF to Convex File Storage.
-      // FIX 2: direct upload (generateUploadUrl → browser POST → storageId)
-      // instead of storePdf(pdfBase64) — Convex caps action ARGUMENTS at 5MiB,
-      // which silently failed for any PDF over ~3.7MB. Direct upload has no
-      // such cap, honoring the "no file size limits" requirement.
-      const uploadUrl = await convexClient.mutation(api.upload.generatePdfUploadUrl, {});
-      const uploadRes = await fetch(uploadUrl, {
-        method: "POST",
-        headers: { "Content-Type": file.type || "application/pdf" },
-        body: file,
-      });
-      if (!uploadRes.ok) {
-        throw new Error(`PDF storage upload failed (${uploadRes.status})`);
-      }
-      const { storageId } = (await uploadRes.json()) as { storageId: Id<"_storage"> };
-      await convexClient.mutation(api.upload.finalizePdfUpload, { storageId });
-
-      // Server-side re-parse with proper text merging (fixes broken words/missing letters)
-      setParsePhase("parsing");
-      setParseProgress({ current: header.totalPages, total: header.totalPages });
-
-      let serverPageData = allPageData;
-      let serverFullText = fullText;
-      let serverWordCount = fullText.split(/\s+/).filter(Boolean).length;
-
-      try {
-        const serverResult = await parsePdfAction({ pdfStorageId: storageId });
-        // Use server-parsed data if it returned valid results
-        if (serverResult.fullText && serverResult.fullText.length > 10) {
-          serverFullText = serverResult.fullText;
-          serverWordCount = serverResult.wordCount;
-          // Map server page data to client PDFPageData format
-          serverPageData = serverResult.pageData.map((p: any) => ({
-            num: p.num,
-            text: p.text,
-            textItems: (p.textItems || []).map((it: any) => ({
-              str: it.str,
-              // Convert PDF bottom-origin coords to top-origin for client rendering
-              x: it.x,
-              y: p.pageHeight - it.y - it.height,
-              width: it.width,
-              height: it.height,
-              fontName: it.fontName,
-            })),
-            pageWidth: p.pageWidth,
-            pageHeight: p.pageHeight,
-          }));
-          // Update page data and texts from server result
-          setPageData(serverPageData);
-          const serverTexts = serverPageData.map((p) => p.text);
-          setOriginalPageTexts(serverTexts);
-          setSourceText(serverFullText);
-        }
-      } catch (serverErr) {
-        // Server parse failed — fall back to browser-parsed data
-        console.warn("Server-side parse failed, using browser result:", serverErr);
-      }
-
-      // Create project record in Convex DB with the best available data
-      const newProjectId = await createProjectMutation({
-        sessionId,
-        fileName: file.name,
-        pageCount: header.totalPages,
-        wordCount: serverWordCount,
-        pdfStorageId: storageId,
-        pageData: serverPageData,
-        fullText: serverFullText,
-        parsedPages: header.totalPages,
-        status: "ready",
-      });
-
-      setProjectId(newProjectId);
-
-      const validation = validateTextForTranslation(fullText);
-      if (!validation.valid) {
-        setUploadError(validation.errors.join(" "));
-      }
-
-      setParsePhase("done");
-      setParseProgress(null);
+      // The reactive `activeUploadJob` subscription drives the per-stage chips
+      // and the "Safe to close" indicator once the server ACKs the handoff.
     } catch (err) {
-      const pdfError = err as PDFParseError;
-      console.error("[Onyx] handleFileSelect failed — early-exit via catch:", pdfError);
-      setUploadError(pdfError.message || "Failed to parse PDF.");
-      setParseProgress(null);
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[Onyx] upload failed:", message);
+      setActiveUploadError(message);
+      setUploadError(message);
       setParsePhase("idle");
     } finally {
+      uploadAbortRef.current = null;
       setIsUploading(false);
     }
-  }, [projectId, sessionId, deleteProjectMutation, createProjectMutation, parsePdfAction]);
+  }, [projectId, clientId, tabSessionId, selectedLangCodes, deleteProjectMutation]);
+
+  // PHASE 2: cancel an in-flight upload (real cancel — aborts the XHR).
+  const handleCancelUpload = useCallback(() => {
+    uploadAbortRef.current?.abort();
+    setActiveUploadError("Upload cancelled");
+    setUploadPercent(null);
+  }, []);
+
+  // PHASE 2: when the server pipeline attaches a project to the upload job,
+  // adopt it into this tab — the tab may close any time after the ACK.
+  useEffect(() => {
+    const pid = activeUploadJob?.projectId;
+    if (pid && !projectId) {
+      setProjectId(pid as Id<"projects">);
+      setView("job");
+    }
+    if (
+      activeUploadJob &&
+      ["processing", "parsed", "ready", "translating", "generating_pdf", "assembling_zip", "complete"].includes(activeUploadJob.status)
+    ) {
+      setServerHandoffAck(true);
+    }
+  }, [activeUploadJob, projectId]);
+
+  // PHASE 2 EXPORT — server assembles the FULL JSON backup (metadata, fullText,
+  // pageData coordinates, parsedPages, chunks, translations + statuses,
+  // langCodes) into Convex Storage; the browser only triggers the save.
+  // Unconditional: works idle, paused, mid-translation, or complete.
+  const buildExportAction = useAction(api.exportProject.buildExportArtifact);
+  const [isExporting, setIsExporting] = useState(false);
+  const handleExportBackup = useCallback(async () => {
+    if (!projectId) {
+      toast.info("Nothing to export yet — upload a PDF or start a project first.");
+      return;
+    }
+    setIsExporting(true);
+    try {
+      const res = await buildExportAction({ projectId });
+      if (res.url) {
+        const a = document.createElement("a");
+        a.href = res.url;
+        a.download = `${(pdfFileName || "onyx-project").replace(/\.pdf$/i, "").replace(/[^a-zA-Z0-9_-]/g, "_")}_backup.json`;
+        a.click();
+        toast.success("Export ready — JSON backup downloaded.");
+      } else {
+        throw new Error("Export artifact URL missing");
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[Onyx] export failed:", message);
+      toast.error(`Export failed: ${message}`);
+    } finally {
+      setIsExporting(false);
+    }
+  }, [projectId, pdfFileName, buildExportAction]);
+
+  // PHASE 2 IMPORT — one raw POST; server validates before any write and
+  // restores the project server-side. Browser may close once the toast shows.
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const handleImportFile = useCallback(
+    async (file: File | null) => {
+      if (!file) return;
+      setIsImporting(true);
+      try {
+        const res = await uploadAndImport({ file, clientId, tabSessionId });
+        setProjectId(res.jobId as Id<"projects">);
+        setCurrentPreviewLangCode(res.importedLangCodes[0] ?? null);
+        setView("job");
+        toast.success(`Imported ${file.name} — ${res.importedLangCodes.length} language(s) ready. Server is restoring progress.`);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("[Onyx] import failed:", message);
+        toast.error(`Import failed: ${message}`);
+      } finally {
+        setIsImporting(false);
+        if (importInputRef.current) importInputRef.current.value = "";
+      }
+    },
+    [clientId, tabSessionId]
+  );
+
+  // PHASE 2: adopt one of THIS DEVICE's past jobs from a previous tab/session.
+  const adoptJobMutation = useMutation(api.identity.adoptJob);
+  const handleAdoptJob = useCallback(
+    async (pid: Id<"projects">) => {
+      try {
+        await adoptJobMutation({ projectId: pid, clientId, tabSessionId, sessionId });
+        setProjectId(pid);
+        setShowYourJobs(false);
+        setView("job");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Could not open that job");
+      }
+    },
+    [adoptJobMutation, clientId, tabSessionId, sessionId]
+  );
+
+  // PHASE 2: retry a failed upload with the SAME idempotency key (no duplicates).
+  const handleRetryUpload = useCallback(
+    async (stagingRec: UploadStagingRecord) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".pdf,application/pdf";
+      input.onchange = async () => {
+        const file = input.files?.[0];
+        if (!file) return;
+        setIsUploading(true);
+        setActiveUploadError(null);
+        setUploadPercent(0);
+        setServerHandoffAck(false);
+        try {
+          if (file.size <= PATH1_MAX_BYTES) {
+            const handle = await uploadAndCreateJob({
+              file,
+              clientId,
+              tabSessionId,
+              langCodes: stagingRec.langCodes,
+              idempotencyKey: stagingRec.uploadId, // SAME key → no duplicate jobs
+              onProgress: (loaded, total) => setUploadPercent(Math.round((loaded / total) * 100)),
+            });
+            await deleteStagingRecord(stagingRec.uploadId);
+            setActiveUploadJobId(handle.uploadJobId);
+            setUploadPercent(100);
+            setPdfFileName(file.name);
+            setParsePhase("done");
+          } else {
+            const handle = await uploadLargeFile({
+              file,
+              clientId,
+              tabSessionId,
+              langCodes: stagingRec.langCodes,
+              convex: { mutation: (ref, args) => convexClient.mutation(ref as never, args as never) },
+              onProgress: (loaded, total) => setUploadPercent(Math.round((loaded / total) * 100)),
+            });
+            await deleteStagingRecord(stagingRec.uploadId);
+            setActiveUploadJobId(handle.uploadJobId);
+            setUploadPercent(100);
+            setPdfFileName(file.name);
+            setParsePhase("done");
+          }
+          setPendingStaging((prev) => prev.filter((r) => r.uploadId !== stagingRec.uploadId));
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          setActiveUploadError(message);
+          toast.error(`Retry failed: ${message}`);
+        } finally {
+          setIsUploading(false);
+        }
+      };
+      input.click();
+    },
+    [clientId, tabSessionId, convexClient]
+  );
+
+  const handleDiscardStaging = useCallback(async (uploadId: string) => {
+    await deleteStagingRecord(uploadId);
+    setPendingStaging((prev) => prev.filter((r) => r.uploadId !== uploadId));
+  }, []);
 
 
   const handleDragOver = useCallback((e: React.DragEvent) => {

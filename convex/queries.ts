@@ -105,6 +105,37 @@ export const getAllJobs = query({
   },
 });
 
+// PHASE 2: server-side export needs every chunk for a project (all languages).
+export const getChunksForProjectRaw = query({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("chunks")
+      .withIndex("by_project_status", (q) => q.eq("projectId", args.projectId))
+      .collect();
+  },
+});
+
+// PHASE 2: raw upload-job lookup for actions (no ownership filter — callers
+// gate internally by stage/seq, mirroring getProjectRaw usage).
+export const getUploadJobRaw = query({
+  args: { uploadJobId: v.id("uploadJobs") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.uploadJobId);
+  },
+});
+
+// PHASE 2: export artifact rows for a project (used by the export action).
+export const getExportArtifactsRaw = query({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("exportArtifacts")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
+  },
+});
+
 // ─── History ───
 
 export const getHistory = query({

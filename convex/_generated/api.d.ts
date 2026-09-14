@@ -8,8 +8,15 @@
  * @module
  */
 
+import type * as artifactMutations from "../artifactMutations.js";
+import type * as exportProject from "../exportProject.js";
 import type * as generatePdf from "../generatePdf.js";
 import type * as history from "../history.js";
+import type * as http from "../http.js";
+import type * as identity from "../identity.js";
+import type * as importJob from "../importJob.js";
+import type * as jobMutations from "../jobMutations.js";
+import type * as jobProcessing from "../jobProcessing.js";
 import type * as liveTest from "../liveTest.js";
 import type * as liveTestStore from "../liveTestStore.js";
 import type * as mutations from "../mutations.js";
@@ -30,8 +37,15 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  artifactMutations: typeof artifactMutations;
+  exportProject: typeof exportProject;
   generatePdf: typeof generatePdf;
   history: typeof history;
+  http: typeof http;
+  identity: typeof identity;
+  importJob: typeof importJob;
+  jobMutations: typeof jobMutations;
+  jobProcessing: typeof jobProcessing;
   liveTest: typeof liveTest;
   liveTestStore: typeof liveTestStore;
   mutations: typeof mutations;

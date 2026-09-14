@@ -4,6 +4,10 @@ import { v } from "convex/values";
 export default defineSchema({
   projects: defineTable({
     sessionId: v.optional(v.string()),
+    // PHASE 2: durable device + tab identity. clientId survives reopens;
+    // tabSessionId isolates two tabs of the same device (existing C1 rule).
+    clientId: v.optional(v.string()),
+    tabSessionId: v.optional(v.string()),
     fileName: v.string(),
     pageCount: v.number(),
     wordCount: v.number(),
@@ -14,8 +18,12 @@ export default defineSchema({
     status: v.string(),
     zipStorageId: v.optional(v.string()),
     zipUrl: v.optional(v.string()),
+    // PHASE 2: pending-upload staging (set at uploadJob creation, cleared at parse)
+    uploadJobId: v.optional(v.id("uploadJobs")),
     createdAt: v.number(),
-  }).index("by_session", ["sessionId"]),
+  })
+    .index("by_session", ["sessionId"])
+    .index("by_client", ["clientId"]),
 
   chunks: defineTable({
     projectId: v.id("projects"),
@@ -82,6 +90,61 @@ export default defineSchema({
   })
     .index("by_status_scheduled", ["status", "scheduledFor"])
     .index("by_project", ["projectId"]),
+
+  // ══ PHASE 2: server-first upload pipeline ══
+  // One row per PDF upload. Statuses: uploaded → processing → parsed →
+  // ready → translating → generating_pdf → assembling_zip → complete | error | cancelled.
+  // processStage + heartbeat give the UI honest per-stage progress; the idempotency
+  // key makes retries (Path 1 double-submit, finalize re-fire) never duplicate.
+  uploadJobs: defineTable({
+    clientId: v.string(),
+    tabSessionId: v.optional(v.string()),
+    fileName: v.string(),
+    fileSize: v.number(),
+    storageId: v.optional(v.id("_storage")),
+    projectId: v.optional(v.id("projects")),
+    status: v.string(),
+    // parsed → chunked → translating → generating_pdf → assembling_zip → complete
+    processStage: v.optional(v.string()),
+    // monotonic counter: a scheduled stage run is only valid if stageSeq matches
+    stageSeq: v.optional(v.number()),
+    heartbeatAt: v.optional(v.number()),
+    error: v.optional(v.string()),
+    idempotencyKey: v.optional(v.string()),
+    langCodes: v.optional(v.array(v.string())),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_client", ["clientId"])
+    .index("by_idempotency", ["idempotencyKey"])
+    .index("by_status", ["status"]),
+
+  // ══ PHASE 2: Path 2 staging for large files (>19MB) ══
+  // Created BEFORE the browser POSTs the raw file to Storage, so an interrupted
+  // upload leaves a durable record the client can offer to resume/discard.
+  // Orphans older than 24h are swept.
+  pendingUploads: defineTable({
+    clientId: v.string(),
+    tabSessionId: v.optional(v.string()),
+    uploadJobId: v.id("uploadJobs"),
+    fileName: v.string(),
+    fileSize: v.number(),
+    langCodes: v.optional(v.array(v.string())),
+    status: v.string(), // staging | uploaded | finalized | abandoned
+    storageId: v.optional(v.id("_storage")),
+    createdAt: v.number(),
+  })
+    .index("by_client", ["clientId"])
+    .index("by_status", ["status"]),
+
+  // ══ PHASE 2: server-generated JSON export artifacts ══
+  exportArtifacts: defineTable({
+    projectId: v.id("projects"),
+    storageId: v.id("_storage"),
+    kind: v.optional(v.string()),
+    sizeBytes: v.optional(v.number()),
+    createdAt: v.number(),
+  }).index("by_project", ["projectId"]),
 
   // LIVE TEST: per-language live verification results (one row per language,
   // upserted by the saveLiveTest mutation after each Gemini round-trip).

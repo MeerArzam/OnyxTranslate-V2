@@ -10,6 +10,7 @@
 
 import type * as generatePdf from "../generatePdf.js";
 import type * as history from "../history.js";
+import type * as importProject from "../importProject.js";
 import type * as liveTest from "../liveTest.js";
 import type * as liveTestStore from "../liveTestStore.js";
 import type * as mutations from "../mutations.js";
@@ -32,6 +33,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   generatePdf: typeof generatePdf;
   history: typeof history;
+  importProject: typeof importProject;
   liveTest: typeof liveTest;
   liveTestStore: typeof liveTestStore;
   mutations: typeof mutations;

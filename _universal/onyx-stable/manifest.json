@@ -1,0 +1,5665 @@
+{
+  "archive": "_universal/onyx-stable",
+  "created": "2026-09-14T14:28:17.492Z",
+  "purpose": "FROZEN reference snapshot of the entire OnyxTranslate project, captured before Phase 1 safe removal (upload/import/export regression undo). Reference-only: never imported at runtime, never edited, never deleted from.",
+  "rules": [
+    "NEVER edit, overwrite, rename, or delete anything inside _universal/onyx-stable.",
+    "NEVER import from it at runtime.",
+    "NEVER add new/unverified code to it.",
+    "Repair flow: copy OUTSIDE the folder, edit the copy, verify, then — only after USER verification — replace the archived version.",
+    "Folder is chmod a-w (read-only). Verify with: bun scripts/verify-universal-archive.mjs"
+  ],
+  "exclusions": [
+    "node_modules",
+    "dist",
+    ".git",
+    "isolate",
+    "_universal",
+    "*.log",
+    "__pycache__",
+    ".vite",
+    ".turbo",
+    ".cache",
+    ".env",
+    ".env.local",
+    ".env.*"
+  ],
+  "redactions": [
+    {
+      "file": ".env.local",
+      "reason": "secret env file — never archived; recorded as redacted"
+    },
+    {
+      "file": ".env.example",
+      "reason": "env template — excluded with all env files; recorded as redacted"
+    }
+  ],
+  "gitHash": null,
+  "gitNote": "Git commands are blocked in this environment (Vly manages version control) — per-file gitHash recorded as null.",
+  "generatedBy": "scripts/build-universal-manifest.mjs (run from project root)",
+  "totals": {
+    "files": 175,
+    "bytes": 4253083
+  },
+  "files": [
+    {
+      "path": ".gitignore",
+      "size": 51,
+      "sha256": "8f9f81468b7014268c4e1e0d1ed08981a5078b47080182263e6d3f81671e57e2",
+      "category": "other",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": ".prettierignore",
+      "size": 46,
+      "sha256": "c0bc152fad243abad151e87de344112a13f37f04305b63134d1763f64943ca5b",
+      "category": "config",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": ".prettierrc",
+      "size": 3,
+      "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+      "category": "config",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "BASELINE_REPORT.md",
+      "size": 12844,
+      "sha256": "49a1d56ef153d60c399add49c3ebc3eea54db94e143cfdcd0912004f6ce638a8",
+      "category": "docs",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-09-14T14:27:53.023Z",
+      "gitHash": null
+    },
+    {
+      "path": "PROJECT_DOCUMENTATION.json",
+      "size": 70692,
+      "sha256": "4be93dbb7b64d81db4fc87d0cb565c47c817b0db6b71b6d9351d9a61dd203a63",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "unknown",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-09-04T15:13:19.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "README.md",
+      "size": 10050,
+      "sha256": "200651d44270d9bfbd6c4db283c02fddfe06df580faaba7fee128c35e80f11e5",
+      "category": "docs",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "bun.lock",
+      "size": 123030,
+      "sha256": "ba80f1e73cf66954993aa072b59f614032c051407bcab70a2c33cf9c003dee11",
+      "category": "config",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-09-14T13:54:09.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "components.json",
+      "size": 426,
+      "sha256": "6e94b7742765792c58b51aed1d98e78988ef468a8906f7bb723417f98f2b29e3",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "convex/_generated/api.d.ts",
+      "size": 2188,
+      "sha256": "41ee5b3055ef91303e1c7b03c6ab0f179136bd5f39e4f84e09fceccabbbcc60d",
+      "category": "types",
+      "exportedSymbols": [],
+      "imports": [
+        "../generatePdf.js",
+        "../history.js",
+        "../importProject.js",
+        "../liveTest.js",
+        "../liveTestStore.js",
+        "../mutations.js",
+        "../parsePdf.js",
+        "../pdfLayout.js",
+        "../queries.js",
+        "../renderPdfCore.js",
+        "../translateContent.js",
+        "../translateImage.js",
+        "../translateQueue.js",
+        "../upload.js",
+        "../zipAssembly.js",
+        "convex/server"
+      ],
+      "directCallers": [],
+      "callees": [
+        "convex/generatePdf.js",
+        "convex/history.js",
+        "convex/importProject.js",
+        "convex/liveTest.js",
+        "convex/liveTestStore.js",
+        "convex/mutations.js",
+        "convex/parsePdf.js",
+        "convex/pdfLayout.js",
+        "convex/queries.js",
+        "convex/renderPdfCore.js",
+        "convex/translateContent.js",
+        "convex/translateImage.js",
+        "convex/translateQueue.js",
+        "convex/upload.js",
+        "convex/zipAssembly.js"
+      ],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-09-09T17:47:11.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "convex/_generated/api.js",
+      "size": 480,
+      "sha256": "f513058549831e85376f8d19cafaf2a4a770b6eb1b859fb371141f2c9dec0d70",
+      "category": "asset",
+      "exportedSymbols": [
+        "api",
+        "internal",
+        "components"
+      ],
+      "imports": [
+        "convex/server"
+      ],
+      "directCallers": [
+        "convex/_generated/api.d.ts",
+        "convex/_generated/server.d.ts",
+        "convex/generatePdf.ts",
+        "convex/importProject.ts",
+        "convex/liveTest.ts",
+        "convex/translateContent.ts",
+        "convex/translateImage.ts",
+        "convex/translateQueue.ts",
+        "convex/zipAssembly.ts",
+        "eslint.config.js",
+        "public/vendor/pdf.min.mjs",
+        "public/vendor/pdf.worker.min.mjs",
+        "scripts/clientPathTest.mjs",
+        "scripts/make-test-pdf.cjs",
+        "scripts/testPdfFidelity.cjs",
+        "src/components/FixPassReport.tsx",
+        "src/components/HistoryPanel.tsx",
+        "src/components/LanguageAccordion.tsx",
+        "src/components/LiveTestPanel.tsx",
+        "src/components/ui/alert-dialog.tsx",
+        "src/components/ui/button-group.tsx",
+        "src/components/ui/calendar.tsx",
+        "src/components/ui/carousel.tsx",
+        "src/components/ui/command.tsx",
+        "src/components/ui/field.tsx",
+        "src/components/ui/form.tsx",
+        "src/components/ui/index.ts",
+        "src/components/ui/input-group.tsx",
+        "src/components/ui/item.tsx",
+        "src/components/ui/pagination.tsx",
+        "src/components/ui/sidebar.tsx",
+        "src/components/ui/toggle-group.tsx",
+        "src/instrumentation.tsx",
+        "src/lib/translator/engine.ts",
+        "src/lib/translator/vendor.ts",
+        "src/lib/translator/voices.ts",
+        "src/main.tsx",
+        "src/pages/Overview.tsx",
+        "src/pages/Translator.tsx",
+        "vly-toolbar-readonly.tsx"
+      ],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-10T18:03:47.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "convex/_generated/dataModel.d.ts",
+      "size": 1736,
+      "sha256": "db177073d16a4393c7a96bcdc3a2a904e88c2432d54d138ca7715cc431982c17",
+      "category": "types",
+      "exportedSymbols": [
+        "TableNames",
+        "Doc",
+        "Id",
+        "DataModel"
+      ],
+      "imports": [
+        "convex/server",
+        "convex/values",
+        "../schema.js"
+      ],
+      "directCallers": [
+        "convex/_generated/server.d.ts",
+        "convex/importProject.ts",
+        "convex/translateContent.ts",
+        "convex/translateQueue.ts",
+        "src/components/LanguageAccordion.tsx",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "convex/schema.js"
+      ],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-25T17:58:18.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "convex/_generated/server.d.ts",
+      "size": 6008,
+      "sha256": "2b536ee08d434dd044efe0302aeaf4ccb00cd08af10c9f8c7bc7a6734e4aa49b",
+      "category": "types",
+      "exportedSymbols": [
+        "QueryCtx",
+        "MutationCtx",
+        "ActionCtx",
+        "DatabaseReader",
+        "DatabaseWriter"
+      ],
+      "imports": [
+        "convex/server",
+        "./dataModel.js"
+      ],
+      "directCallers": [
+        "convex/_generated/server.js"
+      ],
+      "callees": [
+        "dataModel.js"
+      ],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-14T19:06:14.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "convex/_generated/server.js",
+      "size": 3872,
+      "sha256": "0cdd1d842b9458d8a6f2444c35eb9929312316a384ca76a4b1d964bedde8a6f2",
+      "category": "asset",
+      "exportedSymbols": [
+        "query",
+        "internalQuery",
+        "mutation",
+        "internalMutation",
+        "action",
+        "internalAction",
+        "httpAction",
+        "env"
+      ],
+      "imports": [
+        "convex/server"
+      ],
+      "directCallers": [
+        "convex/_generated/dataModel.d.ts",
+        "convex/_generated/server.d.ts",
+        "convex/generatePdf.ts",
+        "convex/history.ts",
+        "convex/importProject.ts",
+        "convex/liveTest.ts",
+        "convex/liveTestStore.ts",
+        "convex/mutations.ts",
+        "convex/parsePdf.ts",
+        "convex/queries.ts",
+        "convex/renderPdfCore.ts",
+        "convex/schema.ts",
+        "convex/translateContent.ts",
+        "convex/translateImage.ts",
+        "convex/translateQueue.ts",
+        "convex/upload.ts",
+        "convex/zipAssembly.ts",
+        "main.ts",
+        "public/vendor/pdf.min.mjs",
+        "public/vendor/pdf.worker.min.mjs",
+        "public/vendor/transformers.min.js",
+        "scripts/clientPathTest.mjs",
+        "scripts/testPdfFidelity.cjs",
+        "src/components/FixPassReport.tsx",
+        "src/components/ui/card.tsx",
+        "src/components/ui/sidebar.tsx",
+        "src/instrumentation.tsx",
+        "src/lib/translator/engine.ts",
+        "src/lib/translator/neural.ts",
+        "src/lib/translator/qa.ts",
+        "src/lib/translator/voices.ts",
+        "src/lib/vly-integrations.ts",
+        "src/main.tsx",
+        "src/pages/Overview.tsx",
+        "src/pages/Translator.tsx",
+        "sst-env.d.ts",
+        "vly-toolbar-readonly.tsx"
+      ],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-14T19:06:14.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "convex/crons.ts.bak",
+      "size": 2357,
+      "sha256": "9a4e64d36e6569cc3344786814a865f05bf3db492cdfe3934f13299573b16da8",
+      "category": "other",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "dead",
+      "area": "shared",
+      "note": "Backup file, never compiled (non-.ts extension).",
+      "redacted": false,
+      "timestamp": "2026-08-30T16:32:19.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "convex/generatePdf.ts",
+      "size": 5878,
+      "sha256": "90ff77a8951442ca58601b310d6ce0a3606b0b4ecfb6f566d7067481dc3ff551",
+      "category": "source",
+      "exportedSymbols": [
+        "generateTranslatedPdf"
+      ],
+      "imports": [
+        "convex/values",
+        "./_generated/server",
+        "./_generated/api",
+        "./renderPdfCore"
+      ],
+      "directCallers": [
+        "convex/translateContent.ts",
+        "convex/translateQueue.ts",
+        "scripts/testPdfFidelity.cjs"
+      ],
+      "callees": [
+        "_generated/api",
+        "_generated/server",
+        "renderPdfCore"
+      ],
+      "status": "working",
+      "area": "pdf",
+      "redacted": false,
+      "timestamp": "2026-09-10T17:29:51.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "convex/history.ts",
+      "size": 1181,
+      "sha256": "bdabd162a11e3c0555c5117ce54a649964b4882b25051a3bb3d72b113539efa8",
+      "category": "source",
+      "exportedSymbols": [
+        "saveToHistory",
+        "deleteHistory"
+      ],
+      "imports": [
+        "convex/values",
+        "./_generated/server"
+      ],
+      "directCallers": [
+        "src/components/HistoryPanel.tsx",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "_generated/server"
+      ],
+      "status": "working",
+      "area": "storage",
+      "redacted": false,
+      "timestamp": "2026-08-30T09:36:53.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "convex/importProject.ts",
+      "size": 2600,
+      "sha256": "66a9296b66418f5e6ac30c5fb120b1b456bb69cd16b1dd52b130393a70038a00",
+      "category": "source",
+      "exportedSymbols": [
+        "importProject"
+      ],
+      "imports": [
+        "convex/values",
+        "./_generated/server",
+        "./_generated/api",
+        "./_generated/dataModel"
+      ],
+      "directCallers": [
+        "convex/_generated/api.d.ts",
+        "scripts/clientPathTest.mjs",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "_generated/api",
+        "_generated/dataModel",
+        "_generated/server"
+      ],
+      "status": "working",
+      "area": "import",
+      "note": "Client-path verified 2026-09-14; scheduled for removal in Phase 1 (server test scripts e2e-one.py also call it).",
+      "redacted": false,
+      "timestamp": "2026-09-06T16:40:02.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "convex/liveTest.ts",
+      "size": 9840,
+      "sha256": "5c32044c82d8f23bed4bb564a2f4b59e68d24c0e854563ca853d8db9b8d2f3dd",
+      "category": "source",
+      "exportedSymbols": [
+        "LIVE_TEST_LANGUAGES",
+        "runLiveTestLanguage",
+        "runAllLiveTests"
+      ],
+      "imports": [
+        "./_generated/server",
+        "convex/values",
+        "./_generated/api",
+        "./translateContent",
+        "../src/lib/translator/qa",
+        "../src/data/localization"
+      ],
+      "directCallers": [
+        "convex/liveTestStore.ts",
+        "src/components/FixPassReport.tsx",
+        "src/components/LiveTestPanel.tsx"
+      ],
+      "callees": [
+        "_generated/api",
+        "_generated/server",
+        "src/data/localization/index.ts",
+        "src/lib/translator/qa.ts",
+        "translateContent"
+      ],
+      "status": "working",
+      "area": "shared",
+      "note": "Server-side live-test pipeline (Overview dashboard).",
+      "redacted": false,
+      "timestamp": "2026-09-09T11:30:47.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "convex/liveTestStore.ts",
+      "size": 3779,
+      "sha256": "3a9105b2dc0fc05305c97d470b4a73fdbbab82dc00206cce0801beb3c658b7d3",
+      "category": "source",
+      "exportedSymbols": [
+        "getLiveTests",
+        "upsertLiveTestPending",
+        "saveLiveTestResult",
+        "clearLiveTests"
+      ],
+      "imports": [
+        "./_generated/server",
+        "convex/values",
+        "../src/data/localization"
+      ],
+      "directCallers": [
+        "convex/liveTest.ts",
+        "src/components/LiveTestPanel.tsx"
+      ],
+      "callees": [
+        "_generated/server",
+        "src/data/localization/index.ts"
+      ],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-09-07T12:32:42.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "convex/mutations.ts",
+      "size": 6449,
+      "sha256": "0d1f121a3783bd1252c4401a6e99a1ea3594081aa4990b34895dba54d4516de3",
+      "category": "source",
+      "exportedSymbols": [
+        "createProject",
+        "updateProject",
+        "deleteProject",
+        "upsertChunk",
+        "updateChunk",
+        "upsertTranslation",
+        "updateTranslation",
+        "deleteChunksForLang",
+        "createJob",
+        "saveImageTranslation"
+      ],
+      "imports": [
+        "convex/values",
+        "./_generated/server"
+      ],
+      "directCallers": [
+        "convex/generatePdf.ts",
+        "convex/importProject.ts",
+        "convex/translateContent.ts",
+        "convex/translateImage.ts",
+        "convex/translateQueue.ts",
+        "convex/zipAssembly.ts",
+        "scripts/clientPathTest.mjs",
+        "scripts/testPdfFidelity.cjs",
+        "src/components/FixPassReport.tsx",
+        "src/lib/translator/storage.ts",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "_generated/server"
+      ],
+      "status": "working",
+      "area": "storage",
+      "note": "createProject/upsertTranslation/deleteProject/deleteChunksForLang — shared by working features.",
+      "redacted": false,
+      "timestamp": "2026-09-06T16:23:22.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "convex/parsePdf.ts",
+      "size": 6408,
+      "sha256": "301677e71b3aba2297e5ca631e09541e1f16de629201a6c6e180ae51e9ad5ae7",
+      "category": "source",
+      "exportedSymbols": [
+        "ServerParsedTextItem",
+        "ServerParsedLine",
+        "ServerParsedPage",
+        "parseUploadedPdf"
+      ],
+      "imports": [
+        "convex/values",
+        "./_generated/server",
+        "./pdfLayout",
+        "pdfjs-dist/legacy/build/pdf.worker.mjs",
+        "pdfjs-dist/legacy/build/pdf.mjs"
+      ],
+      "directCallers": [
+        "scripts/testPdfFidelity.cjs",
+        "src/components/FixPassReport.tsx",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "_generated/server",
+        "pdfLayout"
+      ],
+      "status": "working",
+      "area": "pdf",
+      "note": "x-gap merge + paragraph clustering (Phase B) — shared parsing core, DO NOT remove.",
+      "redacted": false,
+      "timestamp": "2026-09-09T17:38:19.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "convex/pdfLayout.ts",
+      "size": 9198,
+      "sha256": "18aaa34b8b972788809bf34cf1087ace70378b507bea79938bb33f0bb6a983a4",
+      "category": "source",
+      "exportedSymbols": [
+        "LayoutTextItem",
+        "LayoutLine",
+        "LayoutBlock",
+        "mergeItemsIntoLines",
+        "clusterIntoBlocks",
+        "itemsToBlocks"
+      ],
+      "imports": [],
+      "directCallers": [
+        "convex/parsePdf.ts",
+        "convex/renderPdfCore.ts"
+      ],
+      "callees": [],
+      "status": "working",
+      "area": "pdf",
+      "redacted": false,
+      "timestamp": "2026-09-10T15:45:22.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "convex/queries.ts",
+      "size": 6051,
+      "sha256": "1d58d69c88bd0e73bd91b177a7f69d8d2070af675ee3a8822ba1fba7b48e6000",
+      "category": "source",
+      "exportedSymbols": [
+        "getProject",
+        "getLatestProject",
+        "getSessionProjects",
+        "getProjectTranslations",
+        "getProjectRaw",
+        "getTranslationsRaw",
+        "getChunkProgress",
+        "getChunksForLang",
+        "getAllJobs",
+        "getHistory",
+        "getStalledLanguages",
+        "getTranslationProgress",
+        "getAllProjectsForWatchdog",
+        "getLivePreviewText"
+      ],
+      "imports": [
+        "convex/values",
+        "./_generated/server"
+      ],
+      "directCallers": [
+        "convex/generatePdf.ts",
+        "convex/translateContent.ts",
+        "convex/translateQueue.ts",
+        "convex/zipAssembly.ts",
+        "scripts/clientPathTest.mjs",
+        "scripts/testPdfFidelity.cjs",
+        "src/components/FixPassReport.tsx",
+        "src/components/HistoryPanel.tsx",
+        "src/lib/translator/storage.ts",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "_generated/server"
+      ],
+      "status": "working",
+      "area": "storage",
+      "note": "getChunksForLang used by live Export (added in undo pass).",
+      "redacted": false,
+      "timestamp": "2026-09-12T17:10:45.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "convex/renderPdfCore.ts",
+      "size": 24452,
+      "sha256": "9d3101fe434de659b14d2ad7c5a3fe8a23dcefee33e1b9ea619658408d19645d",
+      "category": "source",
+      "exportedSymbols": [
+        "RenderFont",
+        "RenderBlock",
+        "BlockOp",
+        "PageOverlayPlan",
+        "wrapText",
+        "mapParagraphsToBlocks",
+        "fitBlockText",
+        "reverseWords",
+        "toVisualBidi",
+        "planPageOverlay",
+        "SourcePageData",
+        "RenderFontUrls",
+        "RenderStats",
+        "RENDER_FONT_URLS",
+        "renderTranslatedPdf"
+      ],
+      "imports": [
+        "./pdfLayout",
+        "pdf-lib",
+        "@pdf-lib/fontkit"
+      ],
+      "directCallers": [
+        "convex/generatePdf.ts",
+        "scripts/testPdfFidelity.cjs",
+        "src/components/FixPassReport.tsx",
+        "src/lib/translator/pdf-render.ts"
+      ],
+      "callees": [
+        "pdfLayout"
+      ],
+      "status": "working",
+      "area": "pdf",
+      "note": "Includes Phase C3 bidi+reshape (ar/ks on Amiri).",
+      "redacted": false,
+      "timestamp": "2026-09-13T15:49:20.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "convex/schema.ts",
+      "size": 3448,
+      "sha256": "46685b5a23c08d1358e124f64d12e644d00f6d6e4e46202a3dbe472efcd8867a",
+      "category": "source",
+      "exportedSymbols": [
+        "default"
+      ],
+      "imports": [
+        "convex/server",
+        "convex/values"
+      ],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "storage",
+      "note": "Schema — DO NOT remove (session fields, history, liveTests).",
+      "redacted": false,
+      "timestamp": "2026-09-07T12:21:27.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "convex/translateContent.ts",
+      "size": 52388,
+      "sha256": "b567012da61adfb3f121af2cdcacf6ad517f396eb9d299d5caa05820c99d9076",
+      "category": "source",
+      "exportedSymbols": [
+        "LIVE_TEST_SOURCE",
+        "buildSystemPromptForTest",
+        "applyBiblePassForTest",
+        "restorePlaceholdersForTest",
+        "callGeminiForTest",
+        "postProcessTranslationForTest",
+        "translateLanguage"
+      ],
+      "imports": [
+        "./_generated/server",
+        "convex/values",
+        "./_generated/api",
+        "./_generated/dataModel",
+        "../src/data/glossary.json",
+        "../src/data/localization",
+        "../src/lib/translator/voices",
+        "../src/lib/translator/cultural",
+        "../src/lib/translator/formatters",
+        "../src/lib/translator/qa"
+      ],
+      "directCallers": [
+        "convex/generatePdf.ts",
+        "convex/liveTest.ts",
+        "scripts/clientPathTest.mjs",
+        "scripts/testPdfFidelity.cjs",
+        "src/components/FixPassReport.tsx",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "_generated/api",
+        "_generated/dataModel",
+        "_generated/server",
+        "src/data/glossary.json",
+        "src/data/localization/index.ts",
+        "src/lib/translator/cultural.ts",
+        "src/lib/translator/formatters.ts",
+        "src/lib/translator/qa.ts",
+        "src/lib/translator/voices.ts"
+      ],
+      "status": "working",
+      "area": "translation",
+      "note": "23-phase prompt + Bible Pass + 5-key rotation — DO NOT remove.",
+      "redacted": false,
+      "timestamp": "2026-09-09T17:42:30.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "convex/translateImage.ts",
+      "size": 4822,
+      "sha256": "4db2feb18a48517611f3a37be8aac5386769a5c1f341c03e618f3d2eae30a144",
+      "category": "source",
+      "exportedSymbols": [
+        "translateImage"
+      ],
+      "imports": [
+        "./_generated/server",
+        "convex/values",
+        "./_generated/api"
+      ],
+      "directCallers": [
+        "convex/_generated/api.d.ts",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "_generated/api",
+        "_generated/server"
+      ],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-28T17:58:46.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "convex/translateQueue.ts",
+      "size": 36246,
+      "sha256": "059f6498550fe560d6b32a75dd1256c0f337708f63ba47ff67c4cb96efb8f59a",
+      "category": "source",
+      "exportedSymbols": [
+        "startTranslation",
+        "processLanguage",
+        "cancelTranslation"
+      ],
+      "imports": [
+        "./_generated/server",
+        "convex/values",
+        "./_generated/api",
+        "./_generated/dataModel",
+        "../src/data/glossary.json",
+        "../src/data/localization",
+        "../src/lib/translator/voices",
+        "../src/lib/translator/cultural",
+        "../src/lib/translator/formatters",
+        "../src/lib/translator/qa"
+      ],
+      "directCallers": [
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "_generated/api",
+        "_generated/dataModel",
+        "_generated/server",
+        "src/data/glossary.json",
+        "src/data/localization/index.ts",
+        "src/lib/translator/cultural.ts",
+        "src/lib/translator/formatters.ts",
+        "src/lib/translator/qa.ts",
+        "src/lib/translator/voices.ts"
+      ],
+      "status": "working",
+      "area": "translation",
+      "note": "Watchdog/auto-resume chain — DO NOT remove.",
+      "redacted": false,
+      "timestamp": "2026-09-09T17:43:27.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "convex/upload.ts",
+      "size": 1819,
+      "sha256": "f39587e8d816a5845b46d96215f391d799c394e61f97e3246843d917a0500ab5",
+      "category": "source",
+      "exportedSymbols": [
+        "storePdf",
+        "generatePdfUploadUrl",
+        "finalizePdfUpload"
+      ],
+      "imports": [
+        "convex/values",
+        "./_generated/server"
+      ],
+      "directCallers": [
+        "scripts/clientPathTest.mjs",
+        "scripts/testPdfFidelity.cjs",
+        "src/components/FixPassReport.tsx",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "_generated/server"
+      ],
+      "status": "partial",
+      "area": "storage",
+      "note": "storePdf = test-infra only (scripts via HTTP); generatePdfUploadUrl/finalizePdfUpload = live client direct-upload pair.",
+      "redacted": false,
+      "timestamp": "2026-09-14T10:36:31.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "convex/zipAssembly.ts",
+      "size": 2627,
+      "sha256": "248785d9d0be7acfbd32267d1ce2bd029d51dc7c59943e8fd24b59d76140c613",
+      "category": "source",
+      "exportedSymbols": [
+        "buildZip"
+      ],
+      "imports": [
+        "./_generated/server",
+        "convex/values",
+        "./_generated/api",
+        "jszip"
+      ],
+      "directCallers": [
+        "convex/generatePdf.ts"
+      ],
+      "callees": [
+        "_generated/api",
+        "_generated/server"
+      ],
+      "status": "working",
+      "area": "pdf",
+      "redacted": false,
+      "timestamp": "2026-08-30T16:31:37.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "eslint.config.js",
+      "size": 851,
+      "sha256": "548a52f37acca65f5306387111c1e50b245b6a273ce8d12b23208d79c33aa79c",
+      "category": "asset",
+      "exportedSymbols": [],
+      "imports": [
+        "@eslint/js",
+        "globals",
+        "eslint-plugin-react-hooks",
+        "eslint-plugin-react-refresh",
+        "typescript-eslint",
+        "eslint-config-prettier/flat"
+      ],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "index.html",
+      "size": 608,
+      "sha256": "b160269fe68fdbb60af3bbb3312a9ce2bf0fab37251c7a7848a315789a668f2e",
+      "category": "html",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-09-09T17:30:09.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "integrations.md",
+      "size": 3800,
+      "sha256": "e39c2d1884a9c225bcace9d54917cc9fbf443e5b9e7937a44208c674e6ee8e96",
+      "category": "docs",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-09-06T16:31:12.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "main.ts",
+      "size": 691,
+      "sha256": "4f2d20af3f324fe758e76080fba2214f8216daaa947d95447d5c0e62e1da3668",
+      "category": "source",
+      "exportedSymbols": [],
+      "imports": [
+        "hono",
+        "hono/deno"
+      ],
+      "directCallers": [],
+      "callees": [],
+      "status": "unknown",
+      "area": "shared",
+      "note": "Platform SST entry.",
+      "redacted": false,
+      "timestamp": "2026-08-11T18:13:30.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "package-lock.json",
+      "size": 248614,
+      "sha256": "a0d5277cbaade89e7bd654ff2244773db5d03ea9e88a4a2b76e0261a649a7b6d",
+      "category": "lockfile",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "package.json",
+      "size": 2982,
+      "sha256": "c3defc8de5c4c197ab4197d9074b8f299d9bae8a2a69f51260a00bc37a83dea1",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-09-14T13:54:09.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "postcss.config.cjs",
+      "size": 242,
+      "sha256": "b0542570d87da297ea2169adfc307142babcc114d8b3cd05a021ff11c3b157b0",
+      "category": "script",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "public/docs/architecture.html",
+      "size": 11859,
+      "sha256": "8de651d5c85a31d6100a7e7152c959f2d05da2b3b2eb8da610d930dc0e985126",
+      "category": "html",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-09-14T10:50:47.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "public/docs/convex-functions-2.html",
+      "size": 54913,
+      "sha256": "b7ddb4938b7b630a580756f65ae84516e41ab4b0f1f1395dab9f429823284928",
+      "category": "html",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-09-14T10:50:47.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "public/docs/convex-functions-3.html",
+      "size": 43807,
+      "sha256": "edd9a926788adef5c006da43ec17ba42ee3eee57b9af10edf48ee942e18e169b",
+      "category": "html",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-09-14T10:50:47.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "public/docs/convex-functions-4.html",
+      "size": 17318,
+      "sha256": "7728a2478fc1477c03dda2a4e631fb31afeb0e318c91c23bf9d9f8790da44a40",
+      "category": "html",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-09-14T10:50:47.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "public/docs/convex-functions-5.html",
+      "size": 36138,
+      "sha256": "31d29ec19047801c8fb95b7a49220c99ed234023e5bb9867326d9e913ca9f1be",
+      "category": "html",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-09-14T10:50:47.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "public/docs/convex-functions.html",
+      "size": 22261,
+      "sha256": "99cac1241f134437254f9cf253796ec6cfeacadee044bc5e1e4f6fa646091ccf",
+      "category": "html",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-09-14T10:50:47.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "public/docs/frontend.html",
+      "size": 21552,
+      "sha256": "e43c5ad9cb1cb90a3cc354155c6f743b88082098ae9ec01b5a94ddbff42e4628",
+      "category": "html",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-09-14T10:50:47.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "public/docs/history.html",
+      "size": 15091,
+      "sha256": "374f7dd983abb9163b5a18494039b3bfdbb3bf656cc29b3951b848ec2464a54e",
+      "category": "html",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-09-14T10:50:47.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "public/docs/index.html",
+      "size": 5495,
+      "sha256": "a6d278fa4d428e430b50d49e844f1f8298cf430644b9da69d1f7791a9dfcaa30",
+      "category": "html",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-09-14T10:50:47.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "public/docs/live-tests.html",
+      "size": 15636,
+      "sha256": "926c47452b18bf9cca21f0b6b6447c8bc09ccd8745d08f2f413ff7f89b2cd9f6",
+      "category": "html",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-09-14T10:51:27.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "public/docs/translation-pipeline.html",
+      "size": 27111,
+      "sha256": "38002a506250e439c44eedfdc115570666dfc059aec1643dfeae3d5741207ecd",
+      "category": "html",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-09-14T10:50:47.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "public/logo.svg",
+      "size": 9246,
+      "sha256": "97b8658c87bce903d43131a66f3e6d324c51384995c7980ae71bce816723fef8",
+      "category": "asset",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "public/manifest.webmanifest",
+      "size": 363,
+      "sha256": "c7bf360ab554f221e898d726a7ce27acf84335f08ee082e10eb2d72bae52f491",
+      "category": "asset",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "public/vendor/pdf.min.mjs",
+      "size": 418792,
+      "sha256": "343b4166b06716a55a8f87175b83223cb1a9ab701eb8a96b2577509d47fbaf4a",
+      "category": "vendored-runtime",
+      "exportedSymbols": [
+        "AbortException",
+        "AnnotationEditorLayer",
+        "AnnotationEditorParamsType",
+        "AnnotationEditorType",
+        "AnnotationEditorUIManager",
+        "AnnotationLayer",
+        "AnnotationMode",
+        "AnnotationType",
+        "CSSConstants",
+        "ColorPicker",
+        "DOMSVGFactory",
+        "DrawLayer",
+        "FeatureTest",
+        "GlobalWorkerOptions",
+        "ImageKind",
+        "InvalidPDFException",
+        "MathClamp",
+        "OPS",
+        "OutputScale",
+        "PDFDataRangeTransport",
+        "PDFDateString",
+        "PDFWorker",
+        "PasswordResponses",
+        "PermissionFlag",
+        "PixelsPerInch",
+        "RenderingCancelledException",
+        "ResponseException",
+        "SignatureExtractor",
+        "SupportedImageMimeTypes",
+        "TextLayer",
+        "TouchManager",
+        "Util",
+        "VerbosityLevel",
+        "XfaLayer",
+        "applyOpacity",
+        "build",
+        "createValidAbsoluteUrl",
+        "fetchData",
+        "findContrastColor",
+        "getDocument",
+        "getFilenameFromUrl",
+        "getPdfFilenameFromUrl",
+        "getRGB",
+        "getUuid",
+        "getXfaPageViewport",
+        "isDataScheme",
+        "isPdfFile",
+        "isValidExplicitDest",
+        "noContextMenu",
+        "normalizeUnicode",
+        "renderRichText",
+        "setLayerDimensions",
+        "shadow",
+        "stopEvent",
+        "updateUrlHash",
+        "version"
+      ],
+      "imports": [
+        "${t}"
+      ],
+      "directCallers": [
+        "convex/generatePdf.ts",
+        "convex/importProject.ts",
+        "convex/parsePdf.ts",
+        "convex/renderPdfCore.ts",
+        "public/vendor/pdf.worker.min.mjs",
+        "public/vendor/transformers.min.js",
+        "scripts/testPdfFidelity.cjs",
+        "src/components/FixPassReport.tsx",
+        "src/components/ui/alert-dialog.tsx",
+        "src/components/ui/badge.tsx",
+        "src/components/ui/button-group.tsx",
+        "src/components/ui/button.tsx",
+        "src/components/ui/calendar.tsx",
+        "src/components/ui/card.tsx",
+        "src/components/ui/chart.tsx",
+        "src/components/ui/checkbox.tsx",
+        "src/components/ui/context-menu.tsx",
+        "src/components/ui/dialog.tsx",
+        "src/components/ui/dropdown-menu.tsx",
+        "src/components/ui/hover-card.tsx",
+        "src/components/ui/input-group.tsx",
+        "src/components/ui/input-otp.tsx",
+        "src/components/ui/input.tsx",
+        "src/components/ui/menubar.tsx",
+        "src/components/ui/navigation-menu.tsx",
+        "src/components/ui/popover.tsx",
+        "src/components/ui/radio-group.tsx",
+        "src/components/ui/scroll-area.tsx",
+        "src/components/ui/select.tsx",
+        "src/components/ui/sheet.tsx",
+        "src/components/ui/sidebar.tsx",
+        "src/components/ui/slider.tsx",
+        "src/components/ui/switch.tsx",
+        "src/components/ui/tabs.tsx",
+        "src/components/ui/textarea.tsx",
+        "src/components/ui/toggle-group.tsx",
+        "src/components/ui/toggle.tsx",
+        "src/lib/translator/neural.ts",
+        "src/lib/translator/pdfGenerator.ts",
+        "src/lib/translator/pdfParser.ts",
+        "src/lib/translator/vendor.ts",
+        "src/pages/Translator.tsx",
+        "vite.config.ts",
+        "vly-toolbar-readonly.tsx"
+      ],
+      "callees": [],
+      "status": "working",
+      "area": "pdf",
+      "redacted": false,
+      "timestamp": "2026-08-10T04:31:05.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "public/vendor/pdf.worker.min.mjs",
+      "size": 1046214,
+      "sha256": "dbcae78a691b3c501508f74b774c6066a57a14a76cefdc9e25ad86b651bb75d5",
+      "category": "vendored-runtime",
+      "exportedSymbols": [
+        "WorkerMessageHandler"
+      ],
+      "imports": [],
+      "directCallers": [
+        "public/vendor/pdf.min.mjs"
+      ],
+      "callees": [],
+      "status": "working",
+      "area": "pdf",
+      "redacted": false,
+      "timestamp": "2026-08-10T04:31:05.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "public/vendor/transformers.min.js",
+      "size": 897938,
+      "sha256": "bcf7cf304e51f470ed59409622b9d6ffbad80dfcf5baf6a40c919e4b9c4ff812",
+      "category": "vendored-runtime",
+      "exportedSymbols": [
+        "ASTFeatureExtractor",
+        "ASTForAudioClassification",
+        "ASTModel",
+        "ASTPreTrainedModel",
+        "AlbertForMaskedLM",
+        "AlbertForQuestionAnswering",
+        "AlbertForSequenceClassification",
+        "AlbertModel",
+        "AlbertPreTrainedModel",
+        "AlbertTokenizer",
+        "AudioClassificationPipeline",
+        "AutoConfig",
+        "AutoModel",
+        "AutoModelForAudioClassification",
+        "AutoModelForAudioFrameClassification",
+        "AutoModelForCTC",
+        "AutoModelForCausalLM",
+        "AutoModelForDepthEstimation",
+        "AutoModelForDocumentQuestionAnswering",
+        "AutoModelForImageClassification",
+        "AutoModelForImageFeatureExtraction",
+        "AutoModelForImageMatting",
+        "AutoModelForImageSegmentation",
+        "AutoModelForImageToImage",
+        "AutoModelForMaskGeneration",
+        "AutoModelForMaskedLM",
+        "AutoModelForObjectDetection",
+        "AutoModelForQuestionAnswering",
+        "AutoModelForSemanticSegmentation",
+        "AutoModelForSeq2SeqLM",
+        "AutoModelForSequenceClassification",
+        "AutoModelForSpeechSeq2Seq",
+        "AutoModelForTextToSpectrogram",
+        "AutoModelForTextToWaveform",
+        "AutoModelForTokenClassification",
+        "AutoModelForVision2Seq",
+        "AutoModelForXVector",
+        "AutoModelForZeroShotObjectDetection",
+        "AutoProcessor",
+        "AutoTokenizer",
+        "AutomaticSpeechRecognitionPipeline",
+        "BartForConditionalGeneration",
+        "BartForSequenceClassification",
+        "BartModel",
+        "BartPretrainedModel",
+        "BartTokenizer",
+        "BaseModelOutput",
+        "BeitFeatureExtractor",
+        "BeitForImageClassification",
+        "BeitModel",
+        "BeitPreTrainedModel",
+        "BertForMaskedLM",
+        "BertForQuestionAnswering",
+        "BertForSequenceClassification",
+        "BertForTokenClassification",
+        "BertModel",
+        "BertPreTrainedModel",
+        "BertTokenizer",
+        "BitImageProcessor",
+        "BlenderbotForConditionalGeneration",
+        "BlenderbotModel",
+        "BlenderbotPreTrainedModel",
+        "BlenderbotSmallForConditionalGeneration",
+        "BlenderbotSmallModel",
+        "BlenderbotSmallPreTrainedModel",
+        "BlenderbotSmallTokenizer",
+        "BlenderbotTokenizer",
+        "BloomForCausalLM",
+        "BloomModel",
+        "BloomPreTrainedModel",
+        "BloomTokenizer",
+        "CLIPFeatureExtractor",
+        "CLIPModel",
+        "CLIPPreTrainedModel",
+        "CLIPSegForImageSegmentation",
+        "CLIPSegModel",
+        "CLIPSegPreTrainedModel",
+        "CLIPTextModelWithProjection",
+        "CLIPTokenizer",
+        "CLIPVisionModelWithProjection",
+        "CamembertForMaskedLM",
+        "CamembertForQuestionAnswering",
+        "CamembertForSequenceClassification",
+        "CamembertForTokenClassification",
+        "CamembertModel",
+        "CamembertPreTrainedModel",
+        "CamembertTokenizer",
+        "CausalLMOutput",
+        "CausalLMOutputWithPast",
+        "ChineseCLIPFeatureExtractor",
+        "ChineseCLIPModel",
+        "ChineseCLIPPreTrainedModel",
+        "ClapAudioModelWithProjection",
+        "ClapFeatureExtractor",
+        "ClapModel",
+        "ClapPreTrainedModel",
+        "ClapTextModelWithProjection",
+        "CodeGenForCausalLM",
+        "CodeGenModel",
+        "CodeGenPreTrainedModel",
+        "CodeGenTokenizer",
+        "CodeLlamaTokenizer",
+        "CohereTokenizer",
+        "ConvBertForMaskedLM",
+        "ConvBertForQuestionAnswering",
+        "ConvBertForSequenceClassification",
+        "ConvBertForTokenClassification",
+        "ConvBertModel",
+        "ConvBertPreTrainedModel",
+        "ConvBertTokenizer",
+        "ConvNextFeatureExtractor",
+        "ConvNextForImageClassification",
+        "ConvNextImageProcessor",
+        "ConvNextModel",
+        "ConvNextPreTrainedModel",
+        "ConvNextV2ForImageClassification",
+        "ConvNextV2Model",
+        "ConvNextV2PreTrainedModel",
+        "DPTFeatureExtractor",
+        "DPTForDepthEstimation",
+        "DPTImageProcessor",
+        "DPTModel",
+        "DPTPreTrainedModel",
+        "DebertaForMaskedLM",
+        "DebertaForQuestionAnswering",
+        "DebertaForSequenceClassification",
+        "DebertaForTokenClassification",
+        "DebertaModel",
+        "DebertaPreTrainedModel",
+        "DebertaTokenizer",
+        "DebertaV2ForMaskedLM",
+        "DebertaV2ForQuestionAnswering",
+        "DebertaV2ForSequenceClassification",
+        "DebertaV2ForTokenClassification",
+        "DebertaV2Model",
+        "DebertaV2PreTrainedModel",
+        "DebertaV2Tokenizer",
+        "DeiTFeatureExtractor",
+        "DeiTForImageClassification",
+        "DeiTModel",
+        "DeiTPreTrainedModel",
+        "DepthAnythingForDepthEstimation",
+        "DepthAnythingPreTrainedModel",
+        "DepthEstimationPipeline",
+        "DetrFeatureExtractor",
+        "DetrForObjectDetection",
+        "DetrForSegmentation",
+        "DetrModel",
+        "DetrObjectDetectionOutput",
+        "DetrPreTrainedModel",
+        "DetrSegmentationOutput",
+        "Dinov2ForImageClassification",
+        "Dinov2Model",
+        "Dinov2PreTrainedModel",
+        "DistilBertForMaskedLM",
+        "DistilBertForQuestionAnswering",
+        "DistilBertForSequenceClassification",
+        "DistilBertForTokenClassification",
+        "DistilBertModel",
+        "DistilBertPreTrainedModel",
+        "DistilBertTokenizer",
+        "DocumentQuestionAnsweringPipeline",
+        "DonutFeatureExtractor",
+        "DonutSwinModel",
+        "DonutSwinPreTrainedModel",
+        "EfficientNetForImageClassification",
+        "EfficientNetImageProcessor",
+        "EfficientNetModel",
+        "EfficientNetPreTrainedModel",
+        "ElectraForMaskedLM",
+        "ElectraForQuestionAnswering",
+        "ElectraForSequenceClassification",
+        "ElectraForTokenClassification",
+        "ElectraModel",
+        "ElectraPreTrainedModel",
+        "ElectraTokenizer",
+        "EsmForMaskedLM",
+        "EsmForSequenceClassification",
+        "EsmForTokenClassification",
+        "EsmModel",
+        "EsmPreTrainedModel",
+        "EsmTokenizer",
+        "FFT",
+        "FalconForCausalLM",
+        "FalconModel",
+        "FalconPreTrainedModel",
+        "FalconTokenizer",
+        "FastViTForImageClassification",
+        "FastViTModel",
+        "FastViTPreTrainedModel",
+        "FeatureExtractionPipeline",
+        "FeatureExtractor",
+        "FillMaskPipeline",
+        "GLPNFeatureExtractor",
+        "GLPNForDepthEstimation",
+        "GLPNModel",
+        "GLPNPreTrainedModel",
+        "GPT2LMHeadModel",
+        "GPT2Model",
+        "GPT2PreTrainedModel",
+        "GPT2Tokenizer",
+        "GPTBigCodeForCausalLM",
+        "GPTBigCodeModel",
+        "GPTBigCodePreTrainedModel",
+        "GPTJForCausalLM",
+        "GPTJModel",
+        "GPTJPreTrainedModel",
+        "GPTNeoForCausalLM",
+        "GPTNeoModel",
+        "GPTNeoPreTrainedModel",
+        "GPTNeoXForCausalLM",
+        "GPTNeoXModel",
+        "GPTNeoXPreTrainedModel",
+        "GPTNeoXTokenizer",
+        "GemmaTokenizer",
+        "Grok1Tokenizer",
+        "HerbertTokenizer",
+        "HubertForCTC",
+        "HubertForSequenceClassification",
+        "HubertModel",
+        "HubertPreTrainedModel",
+        "ImageClassificationPipeline",
+        "ImageFeatureExtractionPipeline",
+        "ImageFeatureExtractor",
+        "ImageMattingOutput",
+        "ImageSegmentationPipeline",
+        "ImageToImagePipeline",
+        "ImageToTextPipeline",
+        "LlamaForCausalLM",
+        "LlamaModel",
+        "LlamaPreTrainedModel",
+        "LlamaTokenizer",
+        "LongT5ForConditionalGeneration",
+        "LongT5Model",
+        "LongT5PreTrainedModel",
+        "M2M100ForConditionalGeneration",
+        "M2M100Model",
+        "M2M100PreTrainedModel",
+        "M2M100Tokenizer",
+        "MBart50Tokenizer",
+        "MBartForCausalLM",
+        "MBartForConditionalGeneration",
+        "MBartForSequenceClassification",
+        "MBartModel",
+        "MBartPreTrainedModel",
+        "MBartTokenizer",
+        "MPNetForMaskedLM",
+        "MPNetForQuestionAnswering",
+        "MPNetForSequenceClassification",
+        "MPNetForTokenClassification",
+        "MPNetModel",
+        "MPNetPreTrainedModel",
+        "MPNetTokenizer",
+        "MT5ForConditionalGeneration",
+        "MT5Model",
+        "MT5PreTrainedModel",
+        "MarianMTModel",
+        "MarianModel",
+        "MarianPreTrainedModel",
+        "MarianTokenizer",
+        "MaskedLMOutput",
+        "MistralForCausalLM",
+        "MistralModel",
+        "MistralPreTrainedModel",
+        "MobileBertForMaskedLM",
+        "MobileBertForQuestionAnswering",
+        "MobileBertForSequenceClassification",
+        "MobileBertModel",
+        "MobileBertPreTrainedModel",
+        "MobileBertTokenizer",
+        "MobileViTFeatureExtractor",
+        "MobileViTForImageClassification",
+        "MobileViTImageProcessor",
+        "MobileViTModel",
+        "MobileViTPreTrainedModel",
+        "MobileViTV2ForImageClassification",
+        "MobileViTV2Model",
+        "MobileViTV2PreTrainedModel",
+        "ModelOutput",
+        "MptForCausalLM",
+        "MptModel",
+        "MptPreTrainedModel",
+        "NllbTokenizer",
+        "NomicBertModel",
+        "NomicBertPreTrainedModel",
+        "NougatImageProcessor",
+        "NougatTokenizer",
+        "OPTForCausalLM",
+        "OPTModel",
+        "OPTPreTrainedModel",
+        "ObjectDetectionPipeline",
+        "OwlViTFeatureExtractor",
+        "OwlViTForObjectDetection",
+        "OwlViTModel",
+        "OwlViTPreTrainedModel",
+        "OwlViTProcessor",
+        "Owlv2ForObjectDetection",
+        "Owlv2ImageProcessor",
+        "Owlv2Model",
+        "Owlv2PreTrainedModel",
+        "PhiForCausalLM",
+        "PhiModel",
+        "PhiPreTrainedModel",
+        "Pipeline",
+        "PreTrainedModel",
+        "PreTrainedTokenizer",
+        "PretrainedConfig",
+        "PretrainedMixin",
+        "Processor",
+        "QuestionAnsweringModelOutput",
+        "QuestionAnsweringPipeline",
+        "Qwen2ForCausalLM",
+        "Qwen2Model",
+        "Qwen2PreTrainedModel",
+        "Qwen2Tokenizer",
+        "RawImage",
+        "ResNetForImageClassification",
+        "ResNetModel",
+        "ResNetPreTrainedModel",
+        "RoFormerForMaskedLM",
+        "RoFormerForQuestionAnswering",
+        "RoFormerForSequenceClassification",
+        "RoFormerForTokenClassification",
+        "RoFormerModel",
+        "RoFormerPreTrainedModel",
+        "RoFormerTokenizer",
+        "RobertaForMaskedLM",
+        "RobertaForQuestionAnswering",
+        "RobertaForSequenceClassification",
+        "RobertaForTokenClassification",
+        "RobertaModel",
+        "RobertaPreTrainedModel",
+        "RobertaTokenizer",
+        "SamImageProcessor",
+        "SamImageSegmentationOutput",
+        "SamModel",
+        "SamPreTrainedModel",
+        "SamProcessor",
+        "SeamlessM4TFeatureExtractor",
+        "SegformerFeatureExtractor",
+        "SegformerForImageClassification",
+        "SegformerForSemanticSegmentation",
+        "SegformerModel",
+        "SegformerPreTrainedModel",
+        "Seq2SeqLMOutput",
+        "SequenceClassifierOutput",
+        "SiglipImageProcessor",
+        "SiglipModel",
+        "SiglipPreTrainedModel",
+        "SiglipTextModel",
+        "SiglipTokenizer",
+        "SiglipVisionModel",
+        "SpeechT5FeatureExtractor",
+        "SpeechT5ForSpeechToText",
+        "SpeechT5ForTextToSpeech",
+        "SpeechT5HifiGan",
+        "SpeechT5Model",
+        "SpeechT5PreTrainedModel",
+        "SpeechT5Processor",
+        "SpeechT5Tokenizer",
+        "SqueezeBertForMaskedLM",
+        "SqueezeBertForQuestionAnswering",
+        "SqueezeBertForSequenceClassification",
+        "SqueezeBertModel",
+        "SqueezeBertPreTrainedModel",
+        "SqueezeBertTokenizer",
+        "StableLmForCausalLM",
+        "StableLmModel",
+        "StableLmPreTrainedModel",
+        "Starcoder2ForCausalLM",
+        "Starcoder2Model",
+        "Starcoder2PreTrainedModel",
+        "SummarizationPipeline",
+        "Swin2SRForImageSuperResolution",
+        "Swin2SRImageProcessor",
+        "Swin2SRModel",
+        "Swin2SRPreTrainedModel",
+        "SwinForImageClassification",
+        "SwinModel",
+        "SwinPreTrainedModel",
+        "T5ForConditionalGeneration",
+        "T5Model",
+        "T5PreTrainedModel",
+        "T5Tokenizer",
+        "TableTransformerForObjectDetection",
+        "TableTransformerModel",
+        "TableTransformerObjectDetectionOutput",
+        "TableTransformerPreTrainedModel",
+        "Tensor",
+        "Text2TextGenerationPipeline",
+        "TextClassificationPipeline",
+        "TextGenerationPipeline",
+        "TextToAudioPipeline",
+        "TokenClassificationPipeline",
+        "TokenClassifierOutput",
+        "TokenizerModel",
+        "TrOCRForCausalLM",
+        "TrOCRPreTrainedModel",
+        "TranslationPipeline",
+        "UniSpeechForCTC",
+        "UniSpeechForSequenceClassification",
+        "UniSpeechModel",
+        "UniSpeechPreTrainedModel",
+        "UniSpeechSatForAudioFrameClassification",
+        "UniSpeechSatForCTC",
+        "UniSpeechSatForSequenceClassification",
+        "UniSpeechSatModel",
+        "UniSpeechSatPreTrainedModel",
+        "ViTFeatureExtractor",
+        "ViTForImageClassification",
+        "ViTImageProcessor",
+        "ViTModel",
+        "ViTPreTrainedModel",
+        "VisionEncoderDecoderModel",
+        "VitMatteForImageMatting",
+        "VitMatteImageProcessor",
+        "VitMattePreTrainedModel",
+        "VitsModel",
+        "VitsModelOutput",
+        "VitsPreTrainedModel",
+        "VitsTokenizer",
+        "Wav2Vec2BertForCTC",
+        "Wav2Vec2BertForSequenceClassification",
+        "Wav2Vec2BertModel",
+        "Wav2Vec2BertPreTrainedModel",
+        "Wav2Vec2CTCTokenizer",
+        "Wav2Vec2FeatureExtractor",
+        "Wav2Vec2ForAudioFrameClassification",
+        "Wav2Vec2ForCTC",
+        "Wav2Vec2ForSequenceClassification",
+        "Wav2Vec2Model",
+        "Wav2Vec2PreTrainedModel",
+        "Wav2Vec2ProcessorWithLM",
+        "WavLMForAudioFrameClassification",
+        "WavLMForCTC",
+        "WavLMForSequenceClassification",
+        "WavLMForXVector",
+        "WavLMModel",
+        "WavLMPreTrainedModel",
+        "WhisperFeatureExtractor",
+        "WhisperForConditionalGeneration",
+        "WhisperModel",
+        "WhisperPreTrainedModel",
+        "WhisperProcessor",
+        "WhisperTokenizer",
+        "XLMForQuestionAnswering",
+        "XLMForSequenceClassification",
+        "XLMForTokenClassification",
+        "XLMModel",
+        "XLMPreTrainedModel",
+        "XLMRobertaForMaskedLM",
+        "XLMRobertaForQuestionAnswering",
+        "XLMRobertaForSequenceClassification",
+        "XLMRobertaForTokenClassification",
+        "XLMRobertaModel",
+        "XLMRobertaPreTrainedModel",
+        "XLMRobertaTokenizer",
+        "XLMTokenizer",
+        "XLMWithLMHeadModel",
+        "XVectorOutput",
+        "YolosFeatureExtractor",
+        "YolosForObjectDetection",
+        "YolosModel",
+        "YolosObjectDetectionOutput",
+        "YolosPreTrainedModel",
+        "ZeroShotAudioClassificationPipeline",
+        "ZeroShotClassificationPipeline",
+        "ZeroShotImageClassificationPipeline",
+        "ZeroShotObjectDetectionPipeline",
+        "bankers_round",
+        "cat",
+        "cos_sim",
+        "dot",
+        "dynamicTimeWarping",
+        "env",
+        "getTopItems",
+        "hanning",
+        "interpolate",
+        "interpolate_data",
+        "layer_norm",
+        "log_softmax",
+        "magnitude",
+        "max",
+        "mean",
+        "mean_pooling",
+        "medianFilter",
+        "mel_filter_bank",
+        "min",
+        "ones",
+        "ones_like",
+        "permute",
+        "permute_data",
+        "pipeline",
+        "quantize_embeddings",
+        "read_audio",
+        "round",
+        "softmax",
+        "spectrogram",
+        "stack",
+        "std_mean",
+        "window_function"
+      ],
+      "imports": [],
+      "directCallers": [
+        "convex/_generated/server.d.ts",
+        "convex/_generated/server.js",
+        "convex/importProject.ts",
+        "convex/liveTest.ts",
+        "convex/liveTestStore.ts",
+        "convex/pdfLayout.ts",
+        "convex/queries.ts",
+        "convex/renderPdfCore.ts",
+        "convex/schema.ts",
+        "convex/translateContent.ts",
+        "convex/translateImage.ts",
+        "convex/translateQueue.ts",
+        "public/vendor/pdf.min.mjs",
+        "public/vendor/pdf.worker.min.mjs",
+        "scripts/clientPathTest.mjs",
+        "scripts/testPdfFidelity.cjs",
+        "src/components/FixPassReport.tsx",
+        "src/components/HistoryPanel.tsx",
+        "src/components/LanguageAccordion.tsx",
+        "src/components/LiveTestPanel.tsx",
+        "src/components/RoyalProgressPanel.tsx",
+        "src/components/ui/alert-dialog.tsx",
+        "src/components/ui/alert.tsx",
+        "src/components/ui/calendar.tsx",
+        "src/components/ui/card.tsx",
+        "src/components/ui/carousel.tsx",
+        "src/components/ui/chart.tsx",
+        "src/components/ui/command.tsx",
+        "src/components/ui/context-menu.tsx",
+        "src/components/ui/dialog.tsx",
+        "src/components/ui/drawer.tsx",
+        "src/components/ui/dropdown-menu.tsx",
+        "src/components/ui/empty.tsx",
+        "src/components/ui/input-group.tsx",
+        "src/components/ui/input.tsx",
+        "src/components/ui/kbd.tsx",
+        "src/components/ui/menubar.tsx",
+        "src/components/ui/navigation-menu.tsx",
+        "src/components/ui/select.tsx",
+        "src/components/ui/sheet.tsx",
+        "src/components/ui/sidebar.tsx",
+        "src/components/ui/slider.tsx",
+        "src/components/ui/textarea.tsx",
+        "src/components/ui/toggle-group.tsx",
+        "src/components/ui/toggle.tsx",
+        "src/hooks/use-mobile.ts",
+        "src/instrumentation.tsx",
+        "src/lib/translator/baseline.ts",
+        "src/lib/translator/cultural.ts",
+        "src/lib/translator/engine.ts",
+        "src/lib/translator/neural.ts",
+        "src/lib/translator/pdf-render.ts",
+        "src/lib/translator/pdfGenerator.ts",
+        "src/lib/translator/pdfParser.ts",
+        "src/lib/translator/qa.ts",
+        "src/lib/translator/vendor.ts",
+        "src/lib/vly-integrations.ts",
+        "src/main.tsx",
+        "src/pages/Overview.tsx",
+        "src/pages/Translator.tsx",
+        "sst-env.d.ts",
+        "vly-toolbar-readonly.tsx"
+      ],
+      "callees": [],
+      "status": "working",
+      "area": "pdf",
+      "redacted": false,
+      "timestamp": "2026-08-10T04:31:05.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "scripts/archive-exclude.txt",
+      "size": 103,
+      "sha256": "181bfb8b7f55d3b8dfa7d4eec05f5cceabcd8fb02dfda4ff4586440ca9e982e5",
+      "category": "script",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "note": "Exclusion list used to build this archive.",
+      "redacted": false,
+      "timestamp": "2026-09-14T14:16:39.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "scripts/clientPathTest.mjs",
+      "size": 14336,
+      "sha256": "fe7411c3ea250ff8a6f20cbfaee1b6b26ad078477c71a8b3c598d9015a4e4bbc",
+      "category": "asset",
+      "exportedSymbols": [],
+      "imports": [
+        "playwright",
+        "node:fs",
+        "pdf-lib"
+      ],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "note": "Playwright client-path harness (17/17 assertions 2026-09-14).",
+      "redacted": false,
+      "timestamp": "2026-09-14T10:46:23.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "scripts/e2e-full-test.py",
+      "size": 6095,
+      "sha256": "9d4565c0a810252805fd59acbdec950ce1cd7db8974227daace635f3dcf6173b",
+      "category": "script",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "note": "Calls upload:storePdf via HTTP.",
+      "redacted": false,
+      "timestamp": "2026-09-06T17:25:51.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "scripts/e2e-one.py",
+      "size": 4818,
+      "sha256": "0cd1d7a61f52a728e13dbe7833d2f19b244948a5c3d5b99538d9f422761ae470",
+      "category": "script",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "note": "Calls upload:storePdf + importProject? (storePdf confirmed).",
+      "redacted": false,
+      "timestamp": "2026-09-06T17:27:33.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "scripts/generate-docs.py",
+      "size": 46699,
+      "sha256": "b9bfbc4adfce009ef9b091e45d132874ed91703cdf0aa5c82e875b6dd8b9a300",
+      "category": "script",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-09-14T10:50:38.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "scripts/make-test-pdf.cjs",
+      "size": 5986,
+      "sha256": "932c51608364f2cc1ae0ef301d5725feeb7c2c55da5576cc6fd41f83023463b8",
+      "category": "script",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-09-06T17:18:42.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "scripts/testPdfFidelity.cjs",
+      "size": 30244,
+      "sha256": "d2ee921829d97126e930b97e24060599230314dfc016d99e32058fa882a68aff",
+      "category": "script",
+      "exportedSymbols": [],
+      "imports": [
+        "pdfjs-dist/legacy/build/pdf.worker.mjs",
+        "pdfjs-dist/legacy/build/pdf.mjs",
+        "../convex/renderPdfCore",
+        "@pdf-lib/fontkit"
+      ],
+      "directCallers": [],
+      "callees": [
+        "convex/renderPdfCore.ts"
+      ],
+      "status": "working",
+      "area": "shared",
+      "note": "Calls upload:storePdf via HTTP — reason storePdf must stay in Phase 1.",
+      "redacted": false,
+      "timestamp": "2026-09-13T15:44:07.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "scripts/update-docs.sh",
+      "size": 1222,
+      "sha256": "d781e3dadc19df7b316710e1bcfe0467aa8a69e8dfb44afae17324c6544b7f04",
+      "category": "script",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-09-05T07:21:08.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/assets/logo.svg",
+      "size": 9246,
+      "sha256": "97b8658c87bce903d43131a66f3e6d324c51384995c7980ae71bce816723fef8",
+      "category": "asset",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/DragonIntro.tsx",
+      "size": 2544,
+      "sha256": "ba4526064dd7bb25845c27755c99e4232e4d742dcbda95f8d713722a1da484d3",
+      "category": "source",
+      "exportedSymbols": [
+        "DragonIntro"
+      ],
+      "imports": [
+        "react"
+      ],
+      "directCallers": [
+        "src/components/FixPassReport.tsx",
+        "src/main.tsx"
+      ],
+      "callees": [],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "2026-09-04T14:25:46.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/FixPassReport.tsx",
+      "size": 26768,
+      "sha256": "fd9856c58c95f380deddaf73115d21ce6e443eac5cbb2b0becc8215d4f7ddd27",
+      "category": "source",
+      "exportedSymbols": [
+        "FixPassReport"
+      ],
+      "imports": [
+        "react"
+      ],
+      "directCallers": [
+        "src/pages/Overview.tsx"
+      ],
+      "callees": [],
+      "status": "working",
+      "area": "ui",
+      "note": "Overview 'Fix Report' view; contains stale 10MB/300-page history text (historical).",
+      "redacted": false,
+      "timestamp": "2026-09-14T10:49:23.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/HistoryPanel.tsx",
+      "size": 7098,
+      "sha256": "00000511bde602e8b3bec1988549a51fa70e840f1ebe54c1706da181667c2382",
+      "category": "source",
+      "exportedSymbols": [
+        "HistoryPanel"
+      ],
+      "imports": [
+        "convex/react",
+        "../../convex/_generated/api",
+        "@/components/ui/scroll-area",
+        "lucide-react"
+      ],
+      "directCallers": [
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "convex/_generated/api.d.ts",
+        "src/components/ui/scroll-area.tsx"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "2026-08-30T09:37:27.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/LanguageAccordion.tsx",
+      "size": 7435,
+      "sha256": "7e1db1bd9466f659d5a8afb8501a9d49390bd0268d7ac53924ed09b4edf8f697",
+      "category": "source",
+      "exportedSymbols": [
+        "LanguageAccordion"
+      ],
+      "imports": [
+        "react",
+        "convex/react",
+        "../../convex/_generated/api",
+        "@/components/ui/scroll-area",
+        "lucide-react",
+        "../../convex/_generated/dataModel"
+      ],
+      "directCallers": [
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "convex/_generated/api.d.ts",
+        "convex/_generated/dataModel.d.ts",
+        "src/components/ui/scroll-area.tsx"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "2026-09-03T11:33:16.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/LiveTestPanel.tsx",
+      "size": 13384,
+      "sha256": "d82c16ef606cc499187af386023f6264ba75dd1a8652e9b9830d70a18ab088df",
+      "category": "source",
+      "exportedSymbols": [
+        "LiveTestPanel"
+      ],
+      "imports": [
+        "react",
+        "convex/react",
+        "../../convex/_generated/api"
+      ],
+      "directCallers": [
+        "src/pages/Overview.tsx"
+      ],
+      "callees": [
+        "convex/_generated/api.d.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "2026-09-09T11:34:47.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/RoyalProgressPanel.tsx",
+      "size": 8410,
+      "sha256": "429f0aa16aad587db85b0ca14bb0acbce5ec664db1e5de0920d00f3c2b601e9a",
+      "category": "source",
+      "exportedSymbols": [
+        "RoyalProgressPanel"
+      ],
+      "imports": [
+        "lucide-react",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "2026-08-30T10:12:03.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/accordion.tsx",
+      "size": 2039,
+      "sha256": "1e00288c7eee72380002164ea3ff7589df5d92f2f1b8c7aa5077596ef680acdb",
+      "category": "source",
+      "exportedSymbols": [
+        "Accordion",
+        "AccordionItem",
+        "AccordionTrigger",
+        "AccordionContent"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-accordion",
+        "lucide-react",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/LanguageAccordion.tsx",
+        "src/components/ui/index.ts",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/alert-dialog.tsx",
+      "size": 3850,
+      "sha256": "683cf8b6c3b0c29fb0e31f36e8c7794c63ab5b7ab431f7441ea2d478bbf9fe41",
+      "category": "source",
+      "exportedSymbols": [
+        "AlertDialog",
+        "AlertDialogPortal",
+        "AlertDialogOverlay",
+        "AlertDialogTrigger",
+        "AlertDialogContent",
+        "AlertDialogHeader",
+        "AlertDialogFooter",
+        "AlertDialogTitle",
+        "AlertDialogDescription",
+        "AlertDialogAction",
+        "AlertDialogCancel"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-alert-dialog",
+        "@/lib/utils",
+        "@/components/ui/button"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts"
+      ],
+      "callees": [
+        "src/components/ui/button.tsx",
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/alert.tsx",
+      "size": 1614,
+      "sha256": "49d8311589b810b106aada8ef7b13f70b2b1f68cfce4e1458b7f31a191f420e9",
+      "category": "source",
+      "exportedSymbols": [
+        "Alert",
+        "AlertTitle",
+        "AlertDescription"
+      ],
+      "imports": [
+        "react",
+        "class-variance-authority",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/aspect-ratio.tsx",
+      "size": 280,
+      "sha256": "6a75117416aa89200cf31e8d61643b428e812f479caea857c80004b26d893e79",
+      "category": "source",
+      "exportedSymbols": [
+        "AspectRatio"
+      ],
+      "imports": [
+        "@radix-ui/react-aspect-ratio"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts"
+      ],
+      "callees": [],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/avatar.tsx",
+      "size": 1083,
+      "sha256": "e637ab3522c01631eac2e456588ef301314e2bb7940ebf7cd96e698a868d47bc",
+      "category": "source",
+      "exportedSymbols": [
+        "Avatar",
+        "AvatarImage",
+        "AvatarFallback"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-avatar",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/badge.tsx",
+      "size": 1633,
+      "sha256": "e7455feb113b38c59456ba29a9ec264b5ffa1daae8883866332ad637ffd57c31",
+      "category": "source",
+      "exportedSymbols": [
+        "Badge",
+        "badgeVariants"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-slot",
+        "class-variance-authority",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts",
+        "src/pages/Overview.tsx",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/breadcrumb.tsx",
+      "size": 2357,
+      "sha256": "22f3f4c13ed1085c4131379bfccc6fb173a474f861636bc2736506820153aa08",
+      "category": "source",
+      "exportedSymbols": [
+        "Breadcrumb",
+        "BreadcrumbList",
+        "BreadcrumbItem",
+        "BreadcrumbLink",
+        "BreadcrumbPage",
+        "BreadcrumbSeparator",
+        "BreadcrumbEllipsis"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-slot",
+        "lucide-react",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/button-group.tsx",
+      "size": 2209,
+      "sha256": "ccbf09097f5ebf2eec86f1a96cb92e8dd39d251ebb5867394196c8b4fec68a5c",
+      "category": "source",
+      "exportedSymbols": [
+        "ButtonGroup",
+        "ButtonGroupSeparator",
+        "ButtonGroupText",
+        "buttonGroupVariants"
+      ],
+      "imports": [
+        "@radix-ui/react-slot",
+        "class-variance-authority",
+        "@/lib/utils",
+        "@/components/ui/separator"
+      ],
+      "directCallers": [],
+      "callees": [
+        "src/components/ui/separator.tsx",
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/button.tsx",
+      "size": 2218,
+      "sha256": "5a5c4b8b60a8a80ba7b8b5d0319be2d3c61bfd2ce4fc2a645371dee9f6db0a77",
+      "category": "source",
+      "exportedSymbols": [
+        "Button",
+        "buttonVariants"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-slot",
+        "class-variance-authority",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "public/vendor/pdf.worker.min.mjs",
+        "src/components/ui/alert-dialog.tsx",
+        "src/components/ui/calendar.tsx",
+        "src/components/ui/carousel.tsx",
+        "src/components/ui/index.ts",
+        "src/components/ui/input-group.tsx",
+        "src/components/ui/pagination.tsx",
+        "src/components/ui/sidebar.tsx",
+        "src/instrumentation.tsx",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/calendar.tsx",
+      "size": 7793,
+      "sha256": "c8e67d15d8622135b72045d974a3234ea99f5ffcc1b981eafea8847a14ae1f12",
+      "category": "source",
+      "exportedSymbols": [
+        "Calendar",
+        "CalendarDayButton"
+      ],
+      "imports": [
+        "react",
+        "lucide-react",
+        "react-day-picker",
+        "@/lib/utils",
+        "@/components/ui/button"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts"
+      ],
+      "callees": [
+        "src/components/ui/button.tsx",
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/card.tsx",
+      "size": 1987,
+      "sha256": "2040cdff27cd1ed771e0ebbd15abcd73d31f2f1e4be6664bd6816fffd2a87476",
+      "category": "source",
+      "exportedSymbols": [
+        "Card",
+        "CardHeader",
+        "CardFooter",
+        "CardTitle",
+        "CardAction",
+        "CardDescription",
+        "CardContent"
+      ],
+      "imports": [
+        "react",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/FixPassReport.tsx",
+        "src/components/ui/index.ts",
+        "src/pages/Overview.tsx"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/carousel.tsx",
+      "size": 5542,
+      "sha256": "10c5388b66d98f0c555dad2e5b89b9bc846fbc1a3de101ee8b98abc305ec2c51",
+      "category": "source",
+      "exportedSymbols": [
+        "type CarouselApi",
+        "Carousel",
+        "CarouselContent",
+        "CarouselItem",
+        "CarouselPrevious",
+        "CarouselNext"
+      ],
+      "imports": [
+        "react",
+        "embla-carousel-react",
+        "lucide-react",
+        "@/lib/utils",
+        "@/components/ui/button"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts"
+      ],
+      "callees": [
+        "src/components/ui/button.tsx",
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/chart.tsx",
+      "size": 10069,
+      "sha256": "39a2fde544144e0ed0e3e7f76eb3f3988f570f849f30f62208c6f3e2fc4e3e4f",
+      "category": "source",
+      "exportedSymbols": [
+        "ChartConfig",
+        "ChartContainer",
+        "ChartTooltip",
+        "ChartTooltipContent",
+        "ChartLegend",
+        "ChartLegendContent",
+        "ChartStyle"
+      ],
+      "imports": [
+        "react",
+        "recharts",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/checkbox.tsx",
+      "size": 1219,
+      "sha256": "a8292972a5b81eff164f621ac0bb66f4ed4419d1599e2d4901968e216574677f",
+      "category": "source",
+      "exportedSymbols": [
+        "Checkbox"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-checkbox",
+        "lucide-react",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/collapsible.tsx",
+      "size": 786,
+      "sha256": "661444318605c90d19e47e4d21289a68b4c5f7f01782be70dafa80d3f7a4cd08",
+      "category": "source",
+      "exportedSymbols": [
+        "Collapsible",
+        "CollapsibleTrigger",
+        "CollapsibleContent"
+      ],
+      "imports": [
+        "@radix-ui/react-collapsible"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts",
+        "src/instrumentation.tsx"
+      ],
+      "callees": [],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/command.tsx",
+      "size": 4804,
+      "sha256": "416cdc19eb9e7301b51f9665b4f1a797534769a6bb58a563808979f460b0b8a2",
+      "category": "source",
+      "exportedSymbols": [
+        "Command",
+        "CommandDialog",
+        "CommandInput",
+        "CommandList",
+        "CommandEmpty",
+        "CommandGroup",
+        "CommandItem",
+        "CommandShortcut",
+        "CommandSeparator"
+      ],
+      "imports": [
+        "react",
+        "cmdk",
+        "lucide-react",
+        "@/lib/utils",
+        "@/components/ui/dialog"
+      ],
+      "directCallers": [
+        "public/vendor/pdf.worker.min.mjs",
+        "src/components/ui/index.ts"
+      ],
+      "callees": [
+        "src/components/ui/dialog.tsx",
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/context-menu.tsx",
+      "size": 8274,
+      "sha256": "70e547a9bececcc98adf2fbfb2cae05c99179707ab0edb1ddfb5d2de329dab42",
+      "category": "source",
+      "exportedSymbols": [
+        "ContextMenu",
+        "ContextMenuTrigger",
+        "ContextMenuContent",
+        "ContextMenuItem",
+        "ContextMenuCheckboxItem",
+        "ContextMenuRadioItem",
+        "ContextMenuLabel",
+        "ContextMenuSeparator",
+        "ContextMenuShortcut",
+        "ContextMenuGroup",
+        "ContextMenuPortal",
+        "ContextMenuSub",
+        "ContextMenuSubContent",
+        "ContextMenuSubTrigger",
+        "ContextMenuRadioGroup"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-context-menu",
+        "lucide-react",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/dialog.tsx",
+      "size": 3981,
+      "sha256": "6333f1124e85ff25bce5061ac9ab5981e5346782d5535c9dfeeb51b2d535a7cc",
+      "category": "source",
+      "exportedSymbols": [
+        "Dialog",
+        "DialogClose",
+        "DialogContent",
+        "DialogDescription",
+        "DialogFooter",
+        "DialogHeader",
+        "DialogOverlay",
+        "DialogPortal",
+        "DialogTitle",
+        "DialogTrigger"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-dialog",
+        "lucide-react",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/command.tsx",
+        "src/components/ui/index.ts",
+        "src/instrumentation.tsx"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/drawer.tsx",
+      "size": 4255,
+      "sha256": "0c9464ed4f95207ff6ec0b8f433f550388ea0fe57fecd36bbe100b084ee46a3e",
+      "category": "source",
+      "exportedSymbols": [
+        "Drawer",
+        "DrawerPortal",
+        "DrawerOverlay",
+        "DrawerTrigger",
+        "DrawerClose",
+        "DrawerContent",
+        "DrawerHeader",
+        "DrawerFooter",
+        "DrawerTitle",
+        "DrawerDescription"
+      ],
+      "imports": [
+        "react",
+        "vaul",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/dropdown-menu.tsx",
+      "size": 8410,
+      "sha256": "ba022169876b487c849d046ac577654ab61a4cfba158305c8790c572b704ed9e",
+      "category": "source",
+      "exportedSymbols": [
+        "DropdownMenu",
+        "DropdownMenuPortal",
+        "DropdownMenuTrigger",
+        "DropdownMenuContent",
+        "DropdownMenuGroup",
+        "DropdownMenuLabel",
+        "DropdownMenuItem",
+        "DropdownMenuCheckboxItem",
+        "DropdownMenuRadioGroup",
+        "DropdownMenuRadioItem",
+        "DropdownMenuSeparator",
+        "DropdownMenuShortcut",
+        "DropdownMenuSub",
+        "DropdownMenuSubTrigger",
+        "DropdownMenuSubContent"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-dropdown-menu",
+        "lucide-react",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/empty.tsx",
+      "size": 2396,
+      "sha256": "584b491f9eb69f8041b3d3732a4d139f5af01de19a00b7a97656c7af7a78716a",
+      "category": "source",
+      "exportedSymbols": [
+        "Empty",
+        "EmptyHeader",
+        "EmptyTitle",
+        "EmptyDescription",
+        "EmptyContent",
+        "EmptyMedia"
+      ],
+      "imports": [
+        "class-variance-authority",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "convex/translateContent.ts",
+        "convex/translateImage.ts",
+        "public/vendor/pdf.worker.min.mjs",
+        "src/components/ui/command.tsx"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/field.tsx",
+      "size": 6145,
+      "sha256": "e9dcb51b16e5f235bdf23a0b4a092e55c05b2bad08a83126ac675b72aae5380d",
+      "category": "source",
+      "exportedSymbols": [
+        "Field",
+        "FieldLabel",
+        "FieldDescription",
+        "FieldError",
+        "FieldGroup",
+        "FieldLegend",
+        "FieldSeparator",
+        "FieldSet",
+        "FieldContent",
+        "FieldTitle"
+      ],
+      "imports": [
+        "react",
+        "class-variance-authority",
+        "@/lib/utils",
+        "@/components/ui/label",
+        "@/components/ui/separator"
+      ],
+      "directCallers": [
+        "public/vendor/pdf.worker.min.mjs"
+      ],
+      "callees": [
+        "src/components/ui/label.tsx",
+        "src/components/ui/separator.tsx",
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/form.tsx",
+      "size": 3764,
+      "sha256": "a12f73507ab613e9d797979b988a15e32d23458fc8dd4ba71b922aeee977a3b6",
+      "category": "source",
+      "exportedSymbols": [
+        "useFormField",
+        "Form",
+        "FormItem",
+        "FormLabel",
+        "FormControl",
+        "FormDescription",
+        "FormMessage",
+        "FormField"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-label",
+        "@radix-ui/react-slot",
+        "react-hook-form",
+        "@/lib/utils",
+        "@/components/ui/label"
+      ],
+      "directCallers": [
+        "public/vendor/pdf.worker.min.mjs",
+        "src/components/ui/index.ts"
+      ],
+      "callees": [
+        "src/components/ui/label.tsx",
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/hover-card.tsx",
+      "size": 1532,
+      "sha256": "031f6a309d87c8e42a2282fccc277dde75e373de8c93dad881582c9dc13e05d0",
+      "category": "source",
+      "exportedSymbols": [
+        "HoverCard",
+        "HoverCardTrigger",
+        "HoverCardContent"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-hover-card",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/index.ts",
+      "size": 9464,
+      "sha256": "164306ad3b6d8ba152764c15a56b65c19517ced4bb6cc55aad05e7b669dc0744",
+      "category": "source",
+      "exportedSymbols": [
+        "Badge",
+        "Label",
+        "Separator",
+        "Skeleton",
+        "Button",
+        "Input",
+        "Textarea",
+        "Checkbox",
+        "Switch",
+        "Slider",
+        "RadioGroup",
+        "Avatar",
+        "Card",
+        "CardHeader",
+        "CardFooter",
+        "CardTitle",
+        "CardDescription",
+        "CardContent",
+        "Progress",
+        "AspectRatio",
+        "Breadcrumb",
+        "BreadcrumbList",
+        "BreadcrumbItem",
+        "BreadcrumbLink",
+        "BreadcrumbPage",
+        "BreadcrumbSeparator",
+        "BreadcrumbEllipsis",
+        "Tabs",
+        "TabsList",
+        "TabsTrigger",
+        "TabsContent",
+        "NavigationMenu",
+        "NavigationMenuList",
+        "NavigationMenuItem",
+        "NavigationMenuTrigger",
+        "NavigationMenuContent",
+        "NavigationMenuLink",
+        "NavigationMenuIndicator",
+        "NavigationMenuViewport",
+        "navigationMenuTriggerStyle",
+        "Tooltip",
+        "TooltipTrigger",
+        "TooltipContent",
+        "TooltipProvider",
+        "Popover",
+        "PopoverTrigger",
+        "PopoverContent",
+        "HoverCard",
+        "HoverCardTrigger",
+        "HoverCardContent",
+        "Dialog",
+        "DialogTrigger",
+        "DialogContent",
+        "DialogHeader",
+        "DialogFooter",
+        "DialogTitle",
+        "DialogDescription",
+        "Sheet",
+        "SheetTrigger",
+        "SheetContent",
+        "SheetHeader",
+        "SheetFooter",
+        "SheetTitle",
+        "SheetDescription",
+        "AlertDialog",
+        "AlertDialogAction",
+        "AlertDialogCancel",
+        "AlertDialogContent",
+        "AlertDialogDescription",
+        "AlertDialogFooter",
+        "AlertDialogHeader",
+        "AlertDialogTitle",
+        "AlertDialogTrigger",
+        "DropdownMenu",
+        "DropdownMenuTrigger",
+        "DropdownMenuContent",
+        "DropdownMenuItem",
+        "DropdownMenuCheckboxItem",
+        "DropdownMenuRadioItem",
+        "DropdownMenuLabel",
+        "DropdownMenuSeparator",
+        "DropdownMenuShortcut",
+        "DropdownMenuGroup",
+        "DropdownMenuPortal",
+        "DropdownMenuSub",
+        "DropdownMenuSubContent",
+        "DropdownMenuSubTrigger",
+        "DropdownMenuRadioGroup",
+        "ContextMenu",
+        "ContextMenuTrigger",
+        "ContextMenuContent",
+        "ContextMenuItem",
+        "ContextMenuCheckboxItem",
+        "ContextMenuRadioItem",
+        "ContextMenuLabel",
+        "ContextMenuSeparator",
+        "ContextMenuShortcut",
+        "ContextMenuGroup",
+        "ContextMenuPortal",
+        "ContextMenuSub",
+        "ContextMenuSubContent",
+        "ContextMenuSubTrigger",
+        "ContextMenuRadioGroup",
+        "Menubar",
+        "MenubarMenu",
+        "MenubarTrigger",
+        "MenubarContent",
+        "MenubarItem",
+        "MenubarSeparator",
+        "MenubarLabel",
+        "MenubarCheckboxItem",
+        "MenubarRadioGroup",
+        "MenubarRadioItem",
+        "MenubarPortal",
+        "MenubarSubContent",
+        "MenubarSubTrigger",
+        "MenubarGroup",
+        "MenubarSub",
+        "MenubarShortcut",
+        "Select",
+        "SelectGroup",
+        "SelectValue",
+        "SelectTrigger",
+        "SelectContent",
+        "SelectLabel",
+        "SelectItem",
+        "SelectSeparator",
+        "SelectScrollUpButton",
+        "SelectScrollDownButton",
+        "Form",
+        "FormItem",
+        "FormLabel",
+        "FormControl",
+        "FormDescription",
+        "FormMessage",
+        "FormField",
+        "InputOTP",
+        "InputOTPGroup",
+        "InputOTPSlot",
+        "InputOTPSeparator",
+        "Accordion",
+        "AccordionItem",
+        "AccordionTrigger",
+        "AccordionContent",
+        "Collapsible",
+        "CollapsibleTrigger",
+        "CollapsibleContent",
+        "Toggle",
+        "toggleVariants",
+        "ToggleGroup",
+        "ToggleGroupItem",
+        "Alert",
+        "AlertTitle",
+        "AlertDescription",
+        "Table",
+        "TableHeader",
+        "TableBody",
+        "TableFooter",
+        "TableHead",
+        "TableRow",
+        "TableCell",
+        "TableCaption",
+        "ScrollArea",
+        "ScrollBar",
+        "Drawer",
+        "DrawerPortal",
+        "DrawerOverlay",
+        "DrawerTrigger",
+        "DrawerClose",
+        "DrawerContent",
+        "DrawerHeader",
+        "DrawerFooter",
+        "DrawerTitle",
+        "DrawerDescription",
+        "Carousel",
+        "CarouselContent",
+        "CarouselItem",
+        "CarouselPrevious",
+        "CarouselNext",
+        "Calendar",
+        "Command",
+        "CommandDialog",
+        "CommandInput",
+        "CommandList",
+        "CommandEmpty",
+        "CommandGroup",
+        "CommandItem",
+        "CommandShortcut",
+        "CommandSeparator",
+        "Pagination",
+        "PaginationContent",
+        "PaginationEllipsis",
+        "PaginationItem",
+        "PaginationLink",
+        "PaginationNext",
+        "PaginationPrevious",
+        "ResizablePanelGroup",
+        "ResizablePanel",
+        "ResizableHandle",
+        "Sidebar",
+        "SidebarProvider",
+        "SidebarTrigger",
+        "SidebarInset",
+        "SidebarHeader",
+        "SidebarFooter",
+        "SidebarContent",
+        "SidebarGroup",
+        "SidebarGroupLabel",
+        "SidebarGroupAction",
+        "SidebarGroupContent",
+        "SidebarMenu",
+        "SidebarMenuItem",
+        "SidebarMenuButton",
+        "SidebarMenuAction",
+        "SidebarMenuSub",
+        "SidebarMenuSubItem",
+        "SidebarMenuSubButton",
+        "SidebarMenuBadge",
+        "SidebarSeparator",
+        "SidebarRail",
+        "ChartContainer",
+        "ChartTooltip",
+        "ChartTooltipContent",
+        "ChartLegend",
+        "ChartLegendContent",
+        "ChartStyle",
+        "Toaster"
+      ],
+      "imports": [
+        "./badge",
+        "./label",
+        "./separator",
+        "./skeleton",
+        "./button",
+        "./input",
+        "./textarea",
+        "./checkbox",
+        "./switch",
+        "./slider",
+        "./radio-group",
+        "./avatar",
+        "./card",
+        "./progress",
+        "./aspect-ratio",
+        "./breadcrumb",
+        "./tabs",
+        "./navigation-menu",
+        "./tooltip",
+        "./popover",
+        "./hover-card",
+        "./dialog",
+        "./sheet",
+        "./alert-dialog",
+        "./dropdown-menu",
+        "./context-menu",
+        "./menubar",
+        "./select",
+        "./form",
+        "./input-otp",
+        "./accordion",
+        "./collapsible",
+        "./toggle",
+        "./toggle-group",
+        "./alert",
+        "./table",
+        "./scroll-area",
+        "./drawer",
+        "./carousel",
+        "./calendar",
+        "./command",
+        "./pagination",
+        "./resizable",
+        "./sidebar",
+        "./chart",
+        "./sonner",
+        "@/components/ui",
+        "@/components/ui/chart",
+        "@/components/ui/calendar"
+      ],
+      "directCallers": [
+        "convex/pdfLayout.ts",
+        "public/vendor/pdf.min.mjs",
+        "public/vendor/pdf.worker.min.mjs",
+        "public/vendor/transformers.min.js",
+        "scripts/clientPathTest.mjs",
+        "src/components/FixPassReport.tsx",
+        "src/components/HistoryPanel.tsx",
+        "src/components/LanguageAccordion.tsx",
+        "src/components/LiveTestPanel.tsx",
+        "src/components/RoyalProgressPanel.tsx",
+        "src/components/ui/accordion.tsx",
+        "src/components/ui/alert-dialog.tsx",
+        "src/components/ui/alert.tsx",
+        "src/components/ui/aspect-ratio.tsx",
+        "src/components/ui/avatar.tsx",
+        "src/components/ui/badge.tsx",
+        "src/components/ui/breadcrumb.tsx",
+        "src/components/ui/button-group.tsx",
+        "src/components/ui/button.tsx",
+        "src/components/ui/calendar.tsx",
+        "src/components/ui/card.tsx",
+        "src/components/ui/carousel.tsx",
+        "src/components/ui/chart.tsx",
+        "src/components/ui/checkbox.tsx",
+        "src/components/ui/collapsible.tsx",
+        "src/components/ui/command.tsx",
+        "src/components/ui/context-menu.tsx",
+        "src/components/ui/dialog.tsx",
+        "src/components/ui/drawer.tsx",
+        "src/components/ui/dropdown-menu.tsx",
+        "src/components/ui/field.tsx",
+        "src/components/ui/form.tsx",
+        "src/components/ui/hover-card.tsx",
+        "src/components/ui/input-group.tsx",
+        "src/components/ui/input-otp.tsx",
+        "src/components/ui/input.tsx",
+        "src/components/ui/item.tsx",
+        "src/components/ui/label.tsx",
+        "src/components/ui/menubar.tsx",
+        "src/components/ui/navigation-menu.tsx",
+        "src/components/ui/pagination.tsx",
+        "src/components/ui/popover.tsx",
+        "src/components/ui/progress.tsx",
+        "src/components/ui/radio-group.tsx",
+        "src/components/ui/resizable.tsx",
+        "src/components/ui/scroll-area.tsx",
+        "src/components/ui/select.tsx",
+        "src/components/ui/separator.tsx",
+        "src/components/ui/sheet.tsx",
+        "src/components/ui/sidebar.tsx",
+        "src/components/ui/skeleton.tsx",
+        "src/components/ui/slider.tsx",
+        "src/components/ui/sonner.tsx",
+        "src/components/ui/switch.tsx",
+        "src/components/ui/table.tsx",
+        "src/components/ui/tabs.tsx",
+        "src/components/ui/textarea.tsx",
+        "src/components/ui/toggle-group.tsx",
+        "src/components/ui/toggle.tsx",
+        "src/components/ui/tooltip.tsx",
+        "src/instrumentation.tsx",
+        "src/pages/Overview.tsx",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "accordion",
+        "alert",
+        "alert-dialog",
+        "aspect-ratio",
+        "avatar",
+        "badge",
+        "breadcrumb",
+        "button",
+        "calendar",
+        "card",
+        "carousel",
+        "chart",
+        "checkbox",
+        "collapsible",
+        "command",
+        "context-menu",
+        "dialog",
+        "drawer",
+        "dropdown-menu",
+        "form",
+        "hover-card",
+        "input",
+        "input-otp",
+        "label",
+        "menubar",
+        "navigation-menu",
+        "pagination",
+        "popover",
+        "progress",
+        "radio-group",
+        "resizable",
+        "scroll-area",
+        "select",
+        "separator",
+        "sheet",
+        "sidebar",
+        "skeleton",
+        "slider",
+        "sonner",
+        "src/components/ui/calendar.tsx",
+        "src/components/ui/chart.tsx",
+        "src/components/ui/index.ts",
+        "switch",
+        "table",
+        "tabs",
+        "textarea",
+        "toggle",
+        "toggle-group",
+        "tooltip"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/input-group.tsx",
+      "size": 5065,
+      "sha256": "c0df02569e483db8ee86bd51b3b392a1ba62b276604d8c7ea90a9efc5faa9e25",
+      "category": "source",
+      "exportedSymbols": [
+        "InputGroup",
+        "InputGroupAddon",
+        "InputGroupButton",
+        "InputGroupText",
+        "InputGroupInput",
+        "InputGroupTextarea"
+      ],
+      "imports": [
+        "react",
+        "class-variance-authority",
+        "@/lib/utils",
+        "@/components/ui/button",
+        "@/components/ui/input",
+        "@/components/ui/textarea"
+      ],
+      "directCallers": [],
+      "callees": [
+        "src/components/ui/button.tsx",
+        "src/components/ui/input.tsx",
+        "src/components/ui/textarea.tsx",
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/input-otp.tsx",
+      "size": 2240,
+      "sha256": "7fd7ed5273f849cde558238148ee1bbae729aa1149407c7c732b6c65906933d2",
+      "category": "source",
+      "exportedSymbols": [
+        "InputOTP",
+        "InputOTPGroup",
+        "InputOTPSlot",
+        "InputOTPSeparator"
+      ],
+      "imports": [
+        "react",
+        "input-otp",
+        "lucide-react",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/input.tsx",
+      "size": 962,
+      "sha256": "56b7fd30208addbcc2468cfda4f5bc0a55342211deaab61ee35b1c352b1622f1",
+      "category": "source",
+      "exportedSymbols": [
+        "Input"
+      ],
+      "imports": [
+        "react",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "convex/pdfLayout.ts",
+        "public/vendor/transformers.min.js",
+        "src/components/ui/command.tsx",
+        "src/components/ui/index.ts",
+        "src/components/ui/input-group.tsx",
+        "src/components/ui/sidebar.tsx"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/item.tsx",
+      "size": 4494,
+      "sha256": "6d64b756260749245b3a1f292e2aaf2774d7ec0b8bb99403eb8c1be31bd26900",
+      "category": "source",
+      "exportedSymbols": [
+        "Item",
+        "ItemMedia",
+        "ItemContent",
+        "ItemActions",
+        "ItemGroup",
+        "ItemSeparator",
+        "ItemTitle",
+        "ItemDescription",
+        "ItemHeader",
+        "ItemFooter"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-slot",
+        "class-variance-authority",
+        "@/lib/utils",
+        "@/components/ui/separator"
+      ],
+      "directCallers": [
+        "src/components/ui/accordion.tsx",
+        "src/components/ui/command.tsx",
+        "src/components/ui/context-menu.tsx",
+        "src/components/ui/dropdown-menu.tsx",
+        "src/components/ui/menubar.tsx",
+        "src/components/ui/navigation-menu.tsx",
+        "src/components/ui/radio-group.tsx",
+        "src/components/ui/select.tsx",
+        "src/components/ui/toggle-group.tsx"
+      ],
+      "callees": [
+        "src/components/ui/separator.tsx",
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/kbd.tsx",
+      "size": 862,
+      "sha256": "886e04c83aaa016dfce924e461aa38aa68a9f5c83bdaedd6209dc358c32a8f22",
+      "category": "source",
+      "exportedSymbols": [
+        "Kbd",
+        "KbdGroup"
+      ],
+      "imports": [
+        "@/lib/utils"
+      ],
+      "directCallers": [],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/label.tsx",
+      "size": 611,
+      "sha256": "9ec42c8a57e82311118b794318409ee02b2cebfa49ba6cce8457cff6448cd471",
+      "category": "source",
+      "exportedSymbols": [
+        "Label"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-label",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/context-menu.tsx",
+        "src/components/ui/dropdown-menu.tsx",
+        "src/components/ui/field.tsx",
+        "src/components/ui/form.tsx",
+        "src/components/ui/index.ts",
+        "src/components/ui/menubar.tsx",
+        "src/components/ui/select.tsx"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/menubar.tsx",
+      "size": 8380,
+      "sha256": "b4be4da586ce1288e8259b1e760a9e317eb0ee9183548c762d8b2a222bbdb3e5",
+      "category": "source",
+      "exportedSymbols": [
+        "Menubar",
+        "MenubarPortal",
+        "MenubarMenu",
+        "MenubarTrigger",
+        "MenubarContent",
+        "MenubarGroup",
+        "MenubarSeparator",
+        "MenubarLabel",
+        "MenubarItem",
+        "MenubarShortcut",
+        "MenubarCheckboxItem",
+        "MenubarRadioGroup",
+        "MenubarRadioItem",
+        "MenubarSub",
+        "MenubarSubTrigger",
+        "MenubarSubContent"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-menubar",
+        "lucide-react",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/navigation-menu.tsx",
+      "size": 6664,
+      "sha256": "d71f57fe0f365541fbf5d00196b0b78a461d8c4f38d35293e5754680d93b9245",
+      "category": "source",
+      "exportedSymbols": [
+        "NavigationMenu",
+        "NavigationMenuList",
+        "NavigationMenuItem",
+        "NavigationMenuContent",
+        "NavigationMenuTrigger",
+        "NavigationMenuLink",
+        "NavigationMenuIndicator",
+        "NavigationMenuViewport",
+        "navigationMenuTriggerStyle"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-navigation-menu",
+        "class-variance-authority",
+        "lucide-react",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/pagination.tsx",
+      "size": 2717,
+      "sha256": "374ad135c3d4ff3ec080a0009cd9745cdd0e12faa89d2b0e86074f11e5127fd1",
+      "category": "source",
+      "exportedSymbols": [
+        "Pagination",
+        "PaginationContent",
+        "PaginationLink",
+        "PaginationItem",
+        "PaginationPrevious",
+        "PaginationNext",
+        "PaginationEllipsis"
+      ],
+      "imports": [
+        "react",
+        "lucide-react",
+        "@/lib/utils",
+        "@/components/ui/button"
+      ],
+      "directCallers": [
+        "public/vendor/pdf.worker.min.mjs",
+        "src/components/ui/index.ts"
+      ],
+      "callees": [
+        "src/components/ui/button.tsx",
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/popover.tsx",
+      "size": 1635,
+      "sha256": "29a217781737bbf5c430859b3de46097a44ada81c4143c2d05543d2167de0ee1",
+      "category": "source",
+      "exportedSymbols": [
+        "Popover",
+        "PopoverTrigger",
+        "PopoverContent",
+        "PopoverAnchor"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-popover",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/progress.tsx",
+      "size": 726,
+      "sha256": "9e36ca3f10bc56b69058d8edd342832b72c8c1b2d36cd142a0decb2445c3b724",
+      "category": "source",
+      "exportedSymbols": [
+        "Progress"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-progress",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "scripts/clientPathTest.mjs",
+        "src/components/LiveTestPanel.tsx",
+        "src/components/RoyalProgressPanel.tsx",
+        "src/components/ui/index.ts",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/radio-group.tsx",
+      "size": 1466,
+      "sha256": "b12ca5cef859dd75b274337234bae66e413b0f97845243254a1dedcb2d7a7237",
+      "category": "source",
+      "exportedSymbols": [
+        "RadioGroup",
+        "RadioGroupItem"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-radio-group",
+        "lucide-react",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/context-menu.tsx",
+        "src/components/ui/dropdown-menu.tsx",
+        "src/components/ui/index.ts",
+        "src/components/ui/menubar.tsx"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/resizable.tsx",
+      "size": 2014,
+      "sha256": "2e3ed707fae45a4354f73d8d7661d02e97451477bf7266ae1e6cbe93108323eb",
+      "category": "source",
+      "exportedSymbols": [
+        "ResizablePanelGroup",
+        "ResizablePanel",
+        "ResizableHandle"
+      ],
+      "imports": [
+        "react",
+        "lucide-react",
+        "react-resizable-panels",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/scroll-area.tsx",
+      "size": 1645,
+      "sha256": "1c5d0b242d0513848f4bfa9b57ba7f438d9b1120617029941bfaa137196ecead",
+      "category": "source",
+      "exportedSymbols": [
+        "ScrollArea",
+        "ScrollBar"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-scroll-area",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/HistoryPanel.tsx",
+        "src/components/LanguageAccordion.tsx",
+        "src/components/ui/index.ts",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/select.tsx",
+      "size": 6344,
+      "sha256": "68fc754d3042f9fec3406895845e6fcc05d44f93a049478a9d3c706919100ebe",
+      "category": "source",
+      "exportedSymbols": [
+        "Select",
+        "SelectContent",
+        "SelectGroup",
+        "SelectItem",
+        "SelectLabel",
+        "SelectScrollDownButton",
+        "SelectScrollUpButton",
+        "SelectSeparator",
+        "SelectTrigger",
+        "SelectValue"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-select",
+        "lucide-react",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "scripts/clientPathTest.mjs",
+        "src/components/ui/index.ts",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/separator.tsx",
+      "size": 699,
+      "sha256": "e9dddbd8dbbc0eccd683306481b0f0bbc8e2b60ea97817416ebb9fe7fbbbdca8",
+      "category": "source",
+      "exportedSymbols": [
+        "Separator"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-separator",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/button-group.tsx",
+        "src/components/ui/command.tsx",
+        "src/components/ui/context-menu.tsx",
+        "src/components/ui/dropdown-menu.tsx",
+        "src/components/ui/field.tsx",
+        "src/components/ui/index.ts",
+        "src/components/ui/item.tsx",
+        "src/components/ui/menubar.tsx",
+        "src/components/ui/select.tsx",
+        "src/components/ui/sidebar.tsx"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/sheet.tsx",
+      "size": 4076,
+      "sha256": "fbe9b257fd95b9865e1aba651489899c959ed5c16cb8493fe8c2733f83b92ee1",
+      "category": "source",
+      "exportedSymbols": [
+        "Sheet",
+        "SheetTrigger",
+        "SheetClose",
+        "SheetContent",
+        "SheetHeader",
+        "SheetFooter",
+        "SheetTitle",
+        "SheetDescription"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-dialog",
+        "lucide-react",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts",
+        "src/components/ui/sidebar.tsx"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/sidebar.tsx",
+      "size": 21638,
+      "sha256": "6074d8027b4bc9ea2d5eb1527a8528a7fa69df96f6261b9c6441c3980d41700f",
+      "category": "source",
+      "exportedSymbols": [
+        "Sidebar",
+        "SidebarContent",
+        "SidebarFooter",
+        "SidebarGroup",
+        "SidebarGroupAction",
+        "SidebarGroupContent",
+        "SidebarGroupLabel",
+        "SidebarHeader",
+        "SidebarInput",
+        "SidebarInset",
+        "SidebarMenu",
+        "SidebarMenuAction",
+        "SidebarMenuBadge",
+        "SidebarMenuButton",
+        "SidebarMenuItem",
+        "SidebarMenuSkeleton",
+        "SidebarMenuSub",
+        "SidebarMenuSubButton",
+        "SidebarMenuSubItem",
+        "SidebarProvider",
+        "SidebarRail",
+        "SidebarSeparator",
+        "SidebarTrigger",
+        "useSidebar"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-slot",
+        "class-variance-authority",
+        "lucide-react",
+        "@/hooks/use-mobile",
+        "@/lib/utils",
+        "@/components/ui/button",
+        "@/components/ui/input",
+        "@/components/ui/separator",
+        "@/components/ui/sheet",
+        "@/components/ui/skeleton",
+        "@/components/ui/tooltip"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts",
+        "src/pages/Overview.tsx"
+      ],
+      "callees": [
+        "src/components/ui/button.tsx",
+        "src/components/ui/input.tsx",
+        "src/components/ui/separator.tsx",
+        "src/components/ui/sheet.tsx",
+        "src/components/ui/skeleton.tsx",
+        "src/components/ui/tooltip.tsx",
+        "src/hooks/use-mobile.ts",
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/skeleton.tsx",
+      "size": 276,
+      "sha256": "f2aea81d8baf2b621945382aabac150e3db40f20d19ac1abea7aff805f1dc33c",
+      "category": "source",
+      "exportedSymbols": [
+        "Skeleton"
+      ],
+      "imports": [
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts",
+        "src/components/ui/sidebar.tsx"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/slider.tsx",
+      "size": 1996,
+      "sha256": "640996327017c3977e3c61eee8ec55230fa0bec509d0f4b44bdc9acdd8eca138",
+      "category": "source",
+      "exportedSymbols": [
+        "Slider"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-slider",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/sonner.tsx",
+      "size": 1020,
+      "sha256": "a3868f2a8aafd8e2dc96b7ae145009939e9d8723cbb5a4b61d7b7d9bed9df478",
+      "category": "source",
+      "exportedSymbols": [
+        "Toaster"
+      ],
+      "imports": [
+        "lucide-react",
+        "next-themes",
+        "sonner"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/spinner.tsx",
+      "size": 331,
+      "sha256": "3e6e6e8d37fb4069f8e43e55318f8db06fbc36e6c8be0096da3c9337c1c798b9",
+      "category": "source",
+      "exportedSymbols": [
+        "Spinner"
+      ],
+      "imports": [
+        "lucide-react",
+        "@/lib/utils"
+      ],
+      "directCallers": [],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/switch.tsx",
+      "size": 1177,
+      "sha256": "17f2390d98e8ce4d9e90155eac1918266914d6a9ada7c276b5d1c917cef0e969",
+      "category": "source",
+      "exportedSymbols": [
+        "Switch"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-switch",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/table.tsx",
+      "size": 2434,
+      "sha256": "95e3ef5db88b3bbfb68eed12f341fb942e40ca815f4342e1d5dbc8c8d47c783d",
+      "category": "source",
+      "exportedSymbols": [
+        "Table",
+        "TableHeader",
+        "TableBody",
+        "TableFooter",
+        "TableHead",
+        "TableRow",
+        "TableCell",
+        "TableCaption"
+      ],
+      "imports": [
+        "react",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "public/vendor/pdf.worker.min.mjs",
+        "public/vendor/transformers.min.js",
+        "src/components/FixPassReport.tsx",
+        "src/components/ui/index.ts"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/tabs.tsx",
+      "size": 1969,
+      "sha256": "e8469e599381cf021ce751c27cca3d8cb06440a45665ca9c2ef2efb0acef1fd9",
+      "category": "source",
+      "exportedSymbols": [
+        "Tabs",
+        "TabsList",
+        "TabsTrigger",
+        "TabsContent"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-tabs",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/textarea.tsx",
+      "size": 759,
+      "sha256": "de4e9fb0fd8e8ed10ea2e475ffe202a922ffe77e3f3edb2c517b0781447ad1b4",
+      "category": "source",
+      "exportedSymbols": [
+        "Textarea"
+      ],
+      "imports": [
+        "react",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts",
+        "src/components/ui/input-group.tsx",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/toggle-group.tsx",
+      "size": 2300,
+      "sha256": "c63c671fe328f2c1e0d58e3df82a474e73834037c5a39a9ff566a4b3b2cf9010",
+      "category": "source",
+      "exportedSymbols": [
+        "ToggleGroup",
+        "ToggleGroupItem"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-toggle-group",
+        "class-variance-authority",
+        "@/lib/utils",
+        "@/components/ui/toggle"
+      ],
+      "directCallers": [
+        "src/components/ui/index.ts"
+      ],
+      "callees": [
+        "src/components/ui/toggle.tsx",
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/toggle.tsx",
+      "size": 1556,
+      "sha256": "ab2e52debb86451889ac9519dfe27daf3a86d70aa2833da8ed8f6cf3146197ff",
+      "category": "source",
+      "exportedSymbols": [
+        "Toggle",
+        "toggleVariants"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-toggle",
+        "class-variance-authority",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "public/vendor/pdf.min.mjs",
+        "public/vendor/pdf.worker.min.mjs",
+        "src/components/ui/index.ts",
+        "src/components/ui/sidebar.tsx",
+        "src/components/ui/toggle-group.tsx"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/components/ui/tooltip.tsx",
+      "size": 1892,
+      "sha256": "cbc12f4086448f8a307ed5fbb160f79467c84a44c48ca0dbd2c62e39a2db6f5d",
+      "category": "source",
+      "exportedSymbols": [
+        "Tooltip",
+        "TooltipTrigger",
+        "TooltipContent",
+        "TooltipProvider"
+      ],
+      "imports": [
+        "react",
+        "@radix-ui/react-tooltip",
+        "@/lib/utils"
+      ],
+      "directCallers": [
+        "src/components/ui/chart.tsx",
+        "src/components/ui/index.ts",
+        "src/components/ui/sidebar.tsx"
+      ],
+      "callees": [
+        "src/lib/utils.ts"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/data/glossary.json",
+      "size": 32439,
+      "sha256": "d9f1e11668b272b5ad4518a3d6b984172d08554b3b98e5ce59541ded27ed551e",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "note": "PARKED: duplicate 'Power' key (lines ~877/1153) — esbuild warning, harmless.",
+      "redacted": false,
+      "timestamp": "2026-08-13T11:25:44.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/data/localization/ar.json",
+      "size": 2236,
+      "sha256": "4396b2de2e398925b974ae2cd8d45edc42590c93af91b0688e5623cf8bc539b3",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-13T11:28:27.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/data/localization/bn.json",
+      "size": 2797,
+      "sha256": "5e658f9db64e08bf20181243b627f63df6b78d4b27d0dd02aae1664906d0d1aa",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-13T11:30:17.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/data/localization/de.json",
+      "size": 1802,
+      "sha256": "1b95f680921359076da9b2e56b34489e2f86836812ca58e33ba8ca22aeb2e140",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-13T11:28:43.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/data/localization/es.json",
+      "size": 1713,
+      "sha256": "16a9417db4c4101dfb65a4b14dc42e400ad8d0ddf54360405071ab97dc754d8b",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-13T11:28:43.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/data/localization/fr.json",
+      "size": 1807,
+      "sha256": "86c5218d626f7936b0a3fad86a0438ddb3452100b43f8d6c6291c16759dbbe57",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-13T11:28:43.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/data/localization/hi.json",
+      "size": 2625,
+      "sha256": "2bdbd0ee3b1bd8014cfb12aed901c2d5e053be86b6e888aa0a298b770f62175e",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-13T11:30:03.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/data/localization/id.json",
+      "size": 1738,
+      "sha256": "4f8015b09ff8b6ce1f33a614e627a70f298f4827af4875c9d6093441e2da2252",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-13T11:29:16.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/data/localization/index.ts",
+      "size": 3301,
+      "sha256": "8d679e28c2e822eaf295a770f6a3ecd9b6c66e7deb438d787f630c5b1a46af9e",
+      "category": "source",
+      "exportedSymbols": [
+        "LocalizationConfig",
+        "LOCALIZATION_LANGUAGES",
+        "getLocalizationConfig",
+        "isScriptLanguage",
+        "getBlurb"
+      ],
+      "imports": [
+        "./ur.json",
+        "./ar.json",
+        "./fr.json",
+        "./ja.json",
+        "./es.json",
+        "./hi.json",
+        "./tr.json",
+        "./zh.json",
+        "./ru.json",
+        "./ko.json",
+        "./de.json",
+        "./ks.json",
+        "./ro.json",
+        "./sw.json",
+        "./it.json",
+        "./la.json",
+        "./id.json",
+        "./ne.json",
+        "./bn.json",
+        "./pt.json"
+      ],
+      "directCallers": [
+        "convex/liveTest.ts",
+        "convex/liveTestStore.ts",
+        "convex/translateContent.ts",
+        "convex/translateQueue.ts",
+        "src/lib/translator/baseline.ts",
+        "src/lib/translator/qa.ts"
+      ],
+      "callees": [
+        "ar.json",
+        "bn.json",
+        "de.json",
+        "es.json",
+        "fr.json",
+        "hi.json",
+        "id.json",
+        "it.json",
+        "ja.json",
+        "ko.json",
+        "ks.json",
+        "la.json",
+        "ne.json",
+        "pt.json",
+        "ro.json",
+        "ru.json",
+        "sw.json",
+        "tr.json",
+        "ur.json",
+        "zh.json"
+      ],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-13T11:30:25.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/data/localization/it.json",
+      "size": 1696,
+      "sha256": "ac51edf800bd53491030ee9471eec1749fc3b09841c9f94ea0f998a30eebb9ae",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-13T11:28:58.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/data/localization/ja.json",
+      "size": 2297,
+      "sha256": "8650406b4110a3407d2af048bce5df723e4f52e2f54a0600eb9f5bb1b11f3242",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-13T11:29:34.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/data/localization/ko.json",
+      "size": 2103,
+      "sha256": "0018f059ebc233cacf40e611550fb789e09fe2f973a554da0d8b0568479e0bb4",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-13T11:30:03.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/data/localization/ks.json",
+      "size": 1945,
+      "sha256": "feebee16f7dbfeb26f6f2c23b918472ce68a63f5b63c10e1808b0004ae862ffc",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-13T11:28:28.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/data/localization/la.json",
+      "size": 1717,
+      "sha256": "a7132a44b1fa98a2d6d4843fb4e854077a14afc7e4d4cda447f34238d4d1c71b",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-13T11:29:33.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/data/localization/ne.json",
+      "size": 2508,
+      "sha256": "c576c4a8d11d8aed3ac7d8ee8d1d97544ecfd9bdfc6f539b7ea8c6c03b8076ba",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-13T11:30:16.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/data/localization/pt.json",
+      "size": 1752,
+      "sha256": "93fde546f36376df4f76f17148b69faaa0a4a15714140c10d5d0a47ce34534b0",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-13T11:28:59.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/data/localization/ro.json",
+      "size": 1718,
+      "sha256": "4167789c3cce705b8b7a374d3675cba6f98b53deaa2fcfa82cf774d3b85b52db",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-13T11:28:59.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/data/localization/ru.json",
+      "size": 2251,
+      "sha256": "55d505738d08172244b586d59878d48cb823f70f177613a448c9704d3ad2f57f",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-13T11:29:34.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/data/localization/sw.json",
+      "size": 1750,
+      "sha256": "b04732951dc5aeafeb0b9cf8793bd2d610e61ff335e11c6c01bad4f7c6be0cef",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-13T11:29:16.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/data/localization/tr.json",
+      "size": 1798,
+      "sha256": "f972c33aa0788324c4fae09f4258817f57179a51f6901448e433dc5f4c0d6d5a",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-13T11:29:16.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/data/localization/ur.json",
+      "size": 2238,
+      "sha256": "1e9f2e596f9efe78575bf1ffc3940e6d591d0b4601d5c5cfb544779401288407",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-13T11:28:27.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/data/localization/zh.json",
+      "size": 1911,
+      "sha256": "fc425afa625b05b2342b4eb7515467b3c018ec00c4a9287a04e186ef41524dcb",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-08-13T11:30:03.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/docs/PROJECT_DOCUMENTATION.json",
+      "size": 130426,
+      "sha256": "546110a599830b13c58e382ddd54e3f27b1165dc01d94e0f9f151c487ea56e8c",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "unknown",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-09-05T07:14:35.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/hooks/use-mobile.ts",
+      "size": 501,
+      "sha256": "a36965c6a3a29f3bd2258dc7ca459ceddd96f2f355340aa19e3e719e4b491e29",
+      "category": "source",
+      "exportedSymbols": [
+        "useIsMobile"
+      ],
+      "imports": [
+        "react"
+      ],
+      "directCallers": [
+        "src/components/ui/sidebar.tsx"
+      ],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-08-07T20:53:07.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/index.css",
+      "size": 8581,
+      "sha256": "ceed3229ac48e9fc82eadfee5de3f79036d6ea53f6e179808124ae59ff7f9489",
+      "category": "styles",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "note": "Dark neon theme + Phase A mobile hardening — DO NOT remove.",
+      "redacted": false,
+      "timestamp": "2026-09-09T17:30:27.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/instrumentation.tsx",
+      "size": 8489,
+      "sha256": "7208c1553a52771d1599ae8362d07ce58f0fab4fa532e5cc59460f834f856ef0",
+      "category": "source",
+      "exportedSymbols": [
+        "InstrumentationProvider"
+      ],
+      "imports": [
+        "@radix-ui/react-dialog",
+        "lucide-react",
+        "react",
+        "@/components/ui/button",
+        "@/components/ui/collapsible",
+        "@/components/ui/dialog"
+      ],
+      "directCallers": [],
+      "callees": [
+        "src/components/ui/button.tsx",
+        "src/components/ui/collapsible.tsx",
+        "src/components/ui/dialog.tsx"
+      ],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/lib/translator/arabic-reshaper.d.ts",
+      "size": 331,
+      "sha256": "d57c79964078b8be8a9aa7174d12d156e4cf0d77eee11395ad5e05a8c4e429fa",
+      "category": "types",
+      "exportedSymbols": [
+        "default"
+      ],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "pdf",
+      "note": "Type declarations for arabic-reshaper (Convex bidi pipeline, renderPdfCore.ts).",
+      "redacted": false,
+      "timestamp": "2026-08-11T20:04:09.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/lib/translator/baseline.ts",
+      "size": 10598,
+      "sha256": "172eaf355ad4137de949b794f46ed6b78d5838129fdd0ef35f4182963c2e77b6",
+      "category": "source",
+      "exportedSymbols": [
+        "BASELINE_SOURCE",
+        "BASELINE_EXPECTATIONS",
+        "BaselineResult",
+        "BaselineSummary",
+        "runBaselineTests"
+      ],
+      "imports": [
+        "../../data/localization",
+        "./qa"
+      ],
+      "directCallers": [
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "qa",
+        "src/data/localization/index.ts"
+      ],
+      "status": "working",
+      "area": "translation",
+      "note": "Client baseline tester (Translator 'Baseline' button) — working.",
+      "redacted": false,
+      "timestamp": "2026-08-14T13:21:14.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/lib/translator/cultural.ts",
+      "size": 17660,
+      "sha256": "407b9357a4c9555f2a22f3a06ca87c56615f97e5151a0d2ab757f5bc689806ac",
+      "category": "source",
+      "exportedSymbols": [
+        "CulturalRule",
+        "MarketContext",
+        "marketContexts",
+        "culturalRules",
+        "applyCulturalFilters",
+        "detectExplicitContent",
+        "getEuphemism"
+      ],
+      "imports": [],
+      "directCallers": [
+        "convex/translateContent.ts",
+        "convex/translateQueue.ts",
+        "src/lib/translator/engine.ts",
+        "src/lib/translator/qa.ts"
+      ],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-07-26T18:01:55.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/lib/translator/engine.ts",
+      "size": 38991,
+      "sha256": "4151004c1a31a558b913fa3125fb034811f4f784b9c6d311dc74e49ac37bbaa8",
+      "category": "source",
+      "exportedSymbols": [
+        "VlyUsage",
+        "hasNeuralModel",
+        "TranslationPhase",
+        "TranslationConfig",
+        "TranslationMode",
+        "TranslationResult",
+        "TranslationReport",
+        "CSVExportData",
+        "VoiceDirectorNote",
+        "TranslationProgressCallback",
+        "NeuralPipelineProgressCallback",
+        "runNeuralTranslationPipeline",
+        "AiTranslateFn",
+        "runLocalizedTranslationPipeline",
+        "runTranslationPipeline",
+        "prepareLanguageModel",
+        "releaseLanguageModel",
+        "generateSampleText"
+      ],
+      "imports": [
+        "../../data/glossary.json",
+        "./voices",
+        "./cultural",
+        "./formatters",
+        "./neural",
+        "./qa",
+        "./storage"
+      ],
+      "directCallers": [
+        "src/lib/translator/neural.ts",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "cultural",
+        "formatters",
+        "neural",
+        "qa",
+        "src/data/glossary.json",
+        "storage",
+        "voices"
+      ],
+      "status": "partial",
+      "area": "translation",
+      "note": "Pure localization fns + voices shared working; local neural/model path (hasNeuralModel, saveTerminologyBatch call site at L760) never exercised by the Convex pipeline — server translateContent.ts is the live engine.",
+      "redacted": false,
+      "timestamp": "2026-08-24T09:17:38.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/lib/translator/formatters.ts",
+      "size": 10282,
+      "sha256": "92061cc3c2a5da359d2fe0cd5f183a8f9428b43b735d9380eadd72f2ff0547c2",
+      "category": "source",
+      "exportedSymbols": [
+        "ScriptConfig",
+        "scriptConfigs",
+        "getScriptConfig",
+        "isRTL",
+        "formatDragonTelepathy",
+        "formatQuote",
+        "formatEllipse",
+        "formatDash",
+        "processRTLText",
+        "preserveLineBreaks"
+      ],
+      "imports": [],
+      "directCallers": [
+        "convex/renderPdfCore.ts",
+        "convex/translateContent.ts",
+        "convex/translateQueue.ts",
+        "scripts/testPdfFidelity.cjs",
+        "src/lib/translator/engine.ts",
+        "src/lib/translator/pdf-render.ts"
+      ],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-07-26T17:58:18.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/lib/translator/neural.ts",
+      "size": 10808,
+      "sha256": "3c0162b99092f71d93ebb07727455bb3c954e1429777f4b9c2fafba208be1f17",
+      "category": "source",
+      "exportedSymbols": [
+        "ModelEntry",
+        "hasNeuralModel",
+        "NeuralProgressCallback",
+        "loadModel",
+        "translateChunk",
+        "disposeModel",
+        "getModelState",
+        "…"
+      ],
+      "imports": [
+        "./vendor"
+      ],
+      "directCallers": [
+        "public/vendor/transformers.min.js",
+        "src/lib/translator/engine.ts"
+      ],
+      "callees": [
+        "vendor"
+      ],
+      "status": "dead",
+      "area": "translation",
+      "note": "Transformers.js local model path — public/vendor/transformers.min.js loaded only via this module; no live call path in the Convex architecture.",
+      "redacted": false,
+      "timestamp": "2026-08-11T18:15:09.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/lib/translator/pdf-render.ts",
+      "size": 14290,
+      "sha256": "34eae4cb3d697296c8c8c941915edb979a54164989a4a4bb9014717c62899d21",
+      "category": "source",
+      "exportedSymbols": [
+        "RenderTextItem",
+        "RenderPageInput",
+        "RenderProgress",
+        "buildTranslatedPdfBytes"
+      ],
+      "imports": [
+        "arabic-reshaper",
+        "pdf-lib",
+        "@pdf-lib/fontkit"
+      ],
+      "directCallers": [
+        "src/lib/translator/pdf-worker.ts",
+        "src/lib/translator/pdfGenerator.ts"
+      ],
+      "callees": [],
+      "status": "working",
+      "area": "pdf",
+      "redacted": false,
+      "timestamp": "2026-08-11T20:06:33.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/lib/translator/pdf-worker.ts",
+      "size": 1609,
+      "sha256": "acd6172255df1c558cf19065bedcc4a01db1ffe6b3bd6ea6c46fe59378f1ad16",
+      "category": "source",
+      "exportedSymbols": [],
+      "imports": [
+        "./pdf-render"
+      ],
+      "directCallers": [],
+      "callees": [
+        "pdf-render"
+      ],
+      "status": "working",
+      "area": "pdf",
+      "redacted": false,
+      "timestamp": "2026-08-11T20:04:09.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/lib/translator/pdfGenerator.ts",
+      "size": 7240,
+      "sha256": "1fa4cf630287d547157f1994cfeb6996dcda54eb85f9ab2df29493606666b342",
+      "category": "source",
+      "exportedSymbols": [
+        "PDFGenerationProgress",
+        "generateTranslatedPDF",
+        "extractPageTexts"
+      ],
+      "imports": [
+        "./pdfParser",
+        "./pdf-render"
+      ],
+      "directCallers": [
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "pdf-render",
+        "pdfParser"
+      ],
+      "status": "working",
+      "area": "pdf",
+      "note": "Client PDF fallback + ZIP regeneration path; server generatePdf.ts is the primary generator.",
+      "redacted": false,
+      "timestamp": "2026-08-11T20:05:16.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/lib/translator/pdfParser.ts",
+      "size": 12926,
+      "sha256": "4d0cfc71f2501effaf06d0ef0e3e79999102cabaa3bcbc0e6bd9ddf247ec5e7b",
+      "category": "source",
+      "exportedSymbols": [
+        "PDFTextItem",
+        "PDFPageData",
+        "PDFParseResult",
+        "PDFParseError",
+        "PDFDocumentProxyLike",
+        "PDFPageLike",
+        "PDFJSModule",
+        "getPDFJS",
+        "PARSE_BATCH_SIZE",
+        "PDFHeader",
+        "parsePDFHeader",
+        "parsePDFBatch",
+        "parsePDF",
+        "splitTextIntoChunks",
+        "validateTextForTranslation"
+      ],
+      "imports": [
+        "./vendor"
+      ],
+      "directCallers": [
+        "src/components/FixPassReport.tsx",
+        "src/lib/translator/pdfGenerator.ts",
+        "src/lib/translator/storage.ts",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "vendor"
+      ],
+      "status": "working",
+      "area": "pdf",
+      "note": "Client parsePDFHeader/parsePDFBatch live in handleFileSelect; server parsePdf.ts re-parses authoritatively.",
+      "redacted": false,
+      "timestamp": "2026-08-24T09:22:19.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/lib/translator/qa.ts",
+      "size": 27951,
+      "sha256": "11f3ff50f0981a97eafb4e800663ec77bb451af8989e428e617738cfc1999ead",
+      "category": "source",
+      "exportedSymbols": [
+        "PhaseStatus",
+        "PhaseCheck",
+        "QAReport",
+        "MemoryLockEntry",
+        "runQA"
+      ],
+      "imports": [
+        "../../data/glossary.json",
+        "../../data/localization",
+        "./cultural"
+      ],
+      "directCallers": [
+        "convex/liveTest.ts",
+        "convex/translateContent.ts",
+        "convex/translateQueue.ts",
+        "src/lib/translator/baseline.ts",
+        "src/lib/translator/engine.ts",
+        "src/lib/translator/storage.ts",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "cultural",
+        "src/data/glossary.json",
+        "src/data/localization/index.ts"
+      ],
+      "status": "partial",
+      "area": "translation",
+      "note": "runQA/QAReport live (server pipeline + client baseline tests); IndexedDB cache helper call sites dead.",
+      "redacted": false,
+      "timestamp": "2026-08-25T10:20:49.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/lib/translator/storage.ts",
+      "size": 21053,
+      "sha256": "eb2cc2572bfa0fd1109eb3d3f160e55ce3bef1f165fc8a4155b46d816d7e0aab",
+      "category": "source",
+      "exportedSymbols": [
+        "ProjectData",
+        "TranslationChunk",
+        "LanguageProgress",
+        "TranslationRecord",
+        "isIndexedDBAvailable",
+        "TerminologyEntry",
+        "saveTerminology",
+        "getTerminology",
+        "getAllTerminology",
+        "saveTerminologyBatch",
+        "saveProject",
+        "getProject",
+        "deleteProject",
+        "saveTranslationChunk",
+        "getAllTranslations",
+        "deleteTranslation",
+        "saveQAReport",
+        "saveTranslationPdf",
+        "getTranslationPdf",
+        "mergeChunkTexts",
+        "chunkPageTexts",
+        "exportAllProgress",
+        "importAllProgress",
+        "serializeProgress",
+        "deserializeProgress"
+      ],
+      "imports": [
+        "./pdfParser",
+        "./qa"
+      ],
+      "directCallers": [
+        "convex/mutations.ts",
+        "convex/queries.ts",
+        "src/lib/translator/engine.ts",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "pdfParser",
+        "qa"
+      ],
+      "status": "partial",
+      "area": "storage",
+      "note": "LIVE: saveTerminologyBatch/getAllTerminology/TerminologyEntry (engine.ts), mergeChunkTexts (dead import in Translator). DEAD: IndexedDB project/chunk persistence, exportAllProgress/importAllProgress/serialize/deserialize, PDF blob cache, chunkPageTexts, QA cache, v1→v2 migration.",
+      "redacted": false,
+      "timestamp": "2026-08-13T11:32:46.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/lib/translator/vendor.ts",
+      "size": 1896,
+      "sha256": "c9a3eb19d878f19248a03fe7c66a7ea2fe0277ed320e596971b007adaca7ff67",
+      "category": "source",
+      "exportedSymbols": [
+        "VENDOR_URLS",
+        "loadVendorModule"
+      ],
+      "imports": [
+        "/vendor/foo.mjs"
+      ],
+      "directCallers": [
+        "src/lib/translator/neural.ts",
+        "src/lib/translator/pdfParser.ts"
+      ],
+      "callees": [],
+      "status": "working",
+      "area": "pdf",
+      "note": "Runtime vendored pdfjs paths under public/vendor — loaded at runtime by the parser chain.",
+      "redacted": false,
+      "timestamp": "2026-08-11T18:13:54.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/lib/translator/voices.ts",
+      "size": 19674,
+      "sha256": "43fa8d5c3e4f4f0a27fb3ade85db42bfd20e5f65740263e3b362cca933e485f3",
+      "category": "source",
+      "exportedSymbols": [
+        "CharacterVoice",
+        "VoiceOverride",
+        "characterVoices",
+        "languageSpecificVoices",
+        "getCharacterVoice",
+        "detectCharacterInText"
+      ],
+      "imports": [],
+      "directCallers": [
+        "convex/translateContent.ts",
+        "convex/translateQueue.ts",
+        "src/lib/translator/engine.ts"
+      ],
+      "callees": [],
+      "status": "working",
+      "area": "translation",
+      "redacted": false,
+      "timestamp": "2026-07-26T18:00:34.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/lib/utils.ts",
+      "size": 169,
+      "sha256": "d1f1e0d62cb8d8d1e04c26e14de842d8a151f75812d81b046c65b5d1fe8e4b27",
+      "category": "source",
+      "exportedSymbols": [
+        "cn"
+      ],
+      "imports": [
+        "clsx",
+        "tailwind-merge"
+      ],
+      "directCallers": [
+        "public/vendor/pdf.min.mjs",
+        "public/vendor/pdf.worker.min.mjs",
+        "public/vendor/transformers.min.js",
+        "src/components/RoyalProgressPanel.tsx",
+        "src/components/ui/accordion.tsx",
+        "src/components/ui/alert-dialog.tsx",
+        "src/components/ui/alert.tsx",
+        "src/components/ui/avatar.tsx",
+        "src/components/ui/badge.tsx",
+        "src/components/ui/breadcrumb.tsx",
+        "src/components/ui/button-group.tsx",
+        "src/components/ui/button.tsx",
+        "src/components/ui/calendar.tsx",
+        "src/components/ui/card.tsx",
+        "src/components/ui/carousel.tsx",
+        "src/components/ui/chart.tsx",
+        "src/components/ui/checkbox.tsx",
+        "src/components/ui/command.tsx",
+        "src/components/ui/context-menu.tsx",
+        "src/components/ui/dialog.tsx",
+        "src/components/ui/drawer.tsx",
+        "src/components/ui/dropdown-menu.tsx",
+        "src/components/ui/empty.tsx",
+        "src/components/ui/field.tsx",
+        "src/components/ui/form.tsx",
+        "src/components/ui/hover-card.tsx",
+        "src/components/ui/input-group.tsx",
+        "src/components/ui/input-otp.tsx",
+        "src/components/ui/input.tsx",
+        "src/components/ui/item.tsx",
+        "src/components/ui/kbd.tsx",
+        "src/components/ui/label.tsx",
+        "src/components/ui/menubar.tsx",
+        "src/components/ui/navigation-menu.tsx",
+        "src/components/ui/pagination.tsx",
+        "src/components/ui/popover.tsx",
+        "src/components/ui/progress.tsx",
+        "src/components/ui/radio-group.tsx",
+        "src/components/ui/resizable.tsx",
+        "src/components/ui/scroll-area.tsx",
+        "src/components/ui/select.tsx",
+        "src/components/ui/separator.tsx",
+        "src/components/ui/sheet.tsx",
+        "src/components/ui/sidebar.tsx",
+        "src/components/ui/skeleton.tsx",
+        "src/components/ui/slider.tsx",
+        "src/components/ui/spinner.tsx",
+        "src/components/ui/switch.tsx",
+        "src/components/ui/table.tsx",
+        "src/components/ui/tabs.tsx",
+        "src/components/ui/textarea.tsx",
+        "src/components/ui/toggle-group.tsx",
+        "src/components/ui/toggle.tsx",
+        "src/components/ui/tooltip.tsx",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/lib/vly-integrations.ts",
+      "size": 294,
+      "sha256": "4e1792120a47fcff66542f58044f4c2f1aa9e4d94fcf768ad92a14891f044e5d",
+      "category": "source",
+      "exportedSymbols": [
+        "vly"
+      ],
+      "imports": [
+        "@vly-ai/integrations"
+      ],
+      "directCallers": [
+        "src/lib/translator/engine.ts",
+        "vite.config.ts",
+        "vly-toolbar-readonly.tsx"
+      ],
+      "callees": [],
+      "status": "unknown",
+      "area": "shared",
+      "note": "Platform integration shim.",
+      "redacted": false,
+      "timestamp": "2026-09-06T16:31:12.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/main.tsx",
+      "size": 3294,
+      "sha256": "4edcc5c828593ecd6b2b67f714a35ac1e954256509553ae96b16ef4438396903",
+      "category": "source",
+      "exportedSymbols": [],
+      "imports": [
+        "react",
+        "react-dom/client",
+        "convex/react",
+        "./pages/Translator.tsx",
+        "./components/DragonIntro.tsx",
+        "./pages/Overview.tsx"
+      ],
+      "directCallers": [],
+      "callees": [
+        "components/DragonIntro.tsx",
+        "pages/Overview.tsx",
+        "pages/Translator.tsx"
+      ],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-09-05T07:20:44.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/pages/Overview.tsx",
+      "size": 35452,
+      "sha256": "69e4120c476b8c8c45f85462070d2c651fb9d519010c101f5e7e2888da4c636c",
+      "category": "source",
+      "exportedSymbols": [
+        "Overview"
+      ],
+      "imports": [
+        "react",
+        "../docs/PROJECT_DOCUMENTATION.json",
+        "@/components/LiveTestPanel",
+        "@/components/FixPassReport"
+      ],
+      "directCallers": [
+        "src/components/LiveTestPanel.tsx",
+        "src/main.tsx",
+        "src/pages/Translator.tsx"
+      ],
+      "callees": [
+        "src/components/FixPassReport.tsx",
+        "src/components/LiveTestPanel.tsx",
+        "src/docs/PROJECT_DOCUMENTATION.json"
+      ],
+      "status": "working",
+      "area": "ui",
+      "redacted": false,
+      "timestamp": "2026-09-13T16:33:03.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/pages/Translator.tsx",
+      "size": 93358,
+      "sha256": "2dd96afb6cd132c71f683309fa3c93af534852d301d1630ee991e0f7d294cc03",
+      "category": "source",
+      "exportedSymbols": [
+        "Translator"
+      ],
+      "imports": [
+        "react",
+        "@/components/ui/button",
+        "@/components/ui/textarea",
+        "@/components/ui/badge",
+        "@/components/ui/scroll-area",
+        "@/components/ui/select",
+        "lucide-react",
+        "@/components/HistoryPanel",
+        "@/components/LanguageAccordion",
+        "@/components/RoyalProgressPanel",
+        "@/lib/utils",
+        "sonner",
+        "@/components/ui/sonner",
+        "@/lib/translator/engine",
+        "@/lib/translator/qa",
+        "@/lib/translator/baseline",
+        "@/lib/translator/pdfParser",
+        "@/lib/translator/pdfGenerator",
+        "@/lib/translator/storage",
+        "convex/react",
+        "../../convex/_generated/dataModel",
+        "../../convex/_generated/api",
+        "jszip"
+      ],
+      "directCallers": [
+        "convex/translateContent.ts",
+        "convex/translateQueue.ts",
+        "src/components/FixPassReport.tsx",
+        "src/lib/translator/engine.ts",
+        "src/main.tsx",
+        "src/pages/Overview.tsx"
+      ],
+      "callees": [
+        "convex/_generated/api.d.ts",
+        "convex/_generated/dataModel.d.ts",
+        "src/components/HistoryPanel.tsx",
+        "src/components/LanguageAccordion.tsx",
+        "src/components/RoyalProgressPanel.tsx",
+        "src/components/ui/badge.tsx",
+        "src/components/ui/button.tsx",
+        "src/components/ui/scroll-area.tsx",
+        "src/components/ui/select.tsx",
+        "src/components/ui/sonner.tsx",
+        "src/components/ui/textarea.tsx",
+        "src/lib/translator/baseline.ts",
+        "src/lib/translator/engine.ts",
+        "src/lib/translator/pdfGenerator.ts",
+        "src/lib/translator/pdfParser.ts",
+        "src/lib/translator/qa.ts",
+        "src/lib/translator/storage.ts",
+        "src/lib/utils.ts"
+      ],
+      "status": "partial",
+      "area": "ui",
+      "note": "MIXED: upload pipeline + Begin/queue + preview + ZIP working; dead = storePdfAction binding, mergeChunkTexts import, startTranslationCore overrides param (auto-start remnant), isJobView local view machine.",
+      "redacted": false,
+      "timestamp": "2026-09-14T10:37:20.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/types/global.d.ts",
+      "size": 261,
+      "sha256": "48eefc3b068afff10ea69c428b00551d22d4b58852e49027c937d2a2a7370b4a",
+      "category": "types",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "src/vite-env.d.ts",
+      "size": 38,
+      "sha256": "65996936fbb042915f7b74a200fcdde7e410f32a669b1ab9597cfaa4b0faddb5",
+      "category": "types",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "sst-env.d.ts",
+      "size": 195,
+      "sha256": "91712d828cd9c736ce2b848649ca3c5138a46b907135797090391d23523c4d16",
+      "category": "types",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "unknown",
+      "area": "shared",
+      "note": "Platform generated types.",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "tsconfig.app.json",
+      "size": 857,
+      "sha256": "3c011f711ebfb138c03044f18ed29d44a3a26469687913f44463ee587b318639",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-09-03T18:09:27.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "tsconfig.json",
+      "size": 193,
+      "sha256": "23c57da26bcec4996c4168f01187840c8ec08a1d60c2dd0edad6d984f5c33680",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "2026-08-21T12:59:26.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "tsconfig.node.json",
+      "size": 633,
+      "sha256": "2eeb6845218f44f33faa23c8cfde1962e47991cc34ec6aa7ff359eaaf6b14c5c",
+      "category": "data",
+      "exportedSymbols": [],
+      "imports": [],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "vite.config.ts",
+      "size": 2096,
+      "sha256": "7b6dafaf635a34f4589e25cf6d3d20b8bb2f205a4e87b9f64d60fa08029ea140",
+      "category": "source",
+      "exportedSymbols": [
+        "default"
+      ],
+      "imports": [
+        "@vly-ai/integrations",
+        "@tailwindcss/vite",
+        "@vitejs/plugin-react",
+        "path",
+        "vite"
+      ],
+      "directCallers": [],
+      "callees": [],
+      "status": "working",
+      "area": "shared",
+      "note": "Freebuff requires HMR disabled — never modify.",
+      "redacted": false,
+      "timestamp": "2026-08-11T20:09:16.000Z",
+      "gitHash": null
+    },
+    {
+      "path": "vly-toolbar-readonly.tsx",
+      "size": 14264,
+      "sha256": "d262ba9e74e7bc1de20bc9afe6d9db6438dd25d1f74775bd78c0e921a560bc08",
+      "category": "source",
+      "exportedSymbols": [
+        "FiberNode",
+        "ComponentInfo",
+        "getReactComponentHierarchy",
+        "formatReactComponentHierarchy",
+        "getSelectedElementAnnotation",
+        "getSelectedElementsPrompt",
+        "VlyToolbar",
+        "default"
+      ],
+      "imports": [
+        "react",
+        "framer-motion",
+        "lucide-react",
+        "@zumer/snapdom"
+      ],
+      "directCallers": [],
+      "callees": [],
+      "status": "unknown",
+      "area": "shared",
+      "note": "Platform file — do not modify.",
+      "redacted": false,
+      "timestamp": "1970-01-01T00:00:00.000Z",
+      "gitHash": null
+    }
+  ]
+}

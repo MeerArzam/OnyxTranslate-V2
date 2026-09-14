@@ -1,0 +1,51 @@
+{
+  "code": "ur",
+  "name": "Urdu",
+  "nativeName": "اردو",
+  "script": "Arabic",
+  "rtl": true,
+  "dialogue": { "open": "«", "close": "»", "note": "Use « » for dialogue; keep em-dash — for interruptions." },
+  "formality": {
+    "system": "adab",
+    "informal": "تو / تم",
+    "formal": "آپ",
+    "note": "Violet↔Xaden use intimate تو; General Aetos / King Tauri addressed with آپ + honorary titles."
+  },
+  "profanity": {
+    "fuck": "لعنتی",
+    "shit": "بکواس",
+    "bastard": "حرامی",
+    "damn": "لعنتی",
+    "hell": "جہنم"
+  },
+  "ranks": {
+    "Wingleader": "فوج کمانڈر",
+    "Squad Leader": "دستہ لیڈر",
+    "Cadet": "کیڈٹ",
+    "General": "جرنیل",
+    "Scribe": "کاتب",
+    "Rider": "سوار"
+  },
+  "magicSystem": "Signet = مہر؛ Wards = حراستیں؛ Conduit = ذریعہ؛ Venin = وینن؛ Empyrean = آسمانی۔ طاقت حاصل کرنے کا سلسلہ: سوار → مہر → ذریعہ → حراست، ہمیشہ اسی ترتیب سے رکھیں۔",
+  "fanNames": {},
+  "blurb": "وایلیٹ سورینگیل ایک جنگ سے بچ کر آریٹیا میں جاگتی ہے — انگلی میں شادی کی انگوٹھی اور زیدن کا ایک نوٹ: ”مجھے مت ڈھونڈو۔“ وہ سمجھتی ہے کہ اس کی شادی ہو چکی ہے، لیکن اس کا شوہر اندھیرے میں کھو چکا ہے۔ جب اژدہا، ونن اور حراستیں ٹوٹنے لگتی ہیں، وایلیٹ کو اس جھوٹ کا سامنا کرنا پڑتا ہے جس پر سلطنت قائم ہے۔",
+  "styleSheet": {
+    "register": "poetic-literate",
+    "sentenceLength": "long",
+    "gender": "gender-inflected verbs for Violet's interiority",
+    "archaic": "classical Urdu cadence in narration, modern in dialogue",
+    "numerals": "Perso-Arabic numerals (۱۲۳) preferred"
+  },
+  "names": {
+    "Violet": "وایلیٹ",
+    "Xaden": "زیدن",
+    "Tairn": "تیرن",
+    "Andarna": "اندرنا",
+    "Sgaeyl": "سگائل",
+    "Navarre": "ناوار",
+    "Tyrrendor": "ٹیرینڈور",
+    "Aretia": "آریٹیا",
+    "Poromiel": "پورومیئل",
+    "Deverelli": "دیورلی"
+  }
+}

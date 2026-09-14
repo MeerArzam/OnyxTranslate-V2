@@ -1,0 +1,51 @@
+{
+  "code": "ne",
+  "name": "Nepali",
+  "nativeName": "नेपाली",
+  "script": "Devanagari",
+  "rtl": false,
+  "dialogue": { "open": "“", "close": "”", "note": "Use “ ” for dialogue; ड्यास — for interruptions." },
+  "formality": {
+    "system": "तँ/तिमी/तपाईं",
+    "informal": "तिमी / तँ",
+    "formal": "तपाईं",
+    "note": "Violet↔Xaden use तिमी; superiors addressed with तपाईं."
+  },
+  "profanity": {
+    "fuck": "लानत",
+    "shit": "बकवास",
+    "bastard": "कमीना",
+    "damn": "धिक्कार",
+    "hell": "नर्क"
+  },
+  "ranks": {
+    "Wingleader": "विङ कमान्डर",
+    "Squad Leader": "टोली नेता",
+    "Cadet": "क्याडेट",
+    "General": "जनरल",
+    "Scribe": "लेखक",
+    "Rider": "सवार"
+  },
+  "magicSystem": "मोहर (सिग्नेट) को क्रम: सवार → मोहर → चैनल → रक्षक। रून 'रून' नै रहोस्, सामान्य मन्त्र नबनाउनुहोस्। स्वर्गीय for Empyrean; भेनिन for Venin.",
+  "fanNames": {},
+  "blurb": "वायलेट एरेटिया मा अलमल्लिँदै उठ्छे, हातमा औँठी र ज़ैडेनको एउटा नोट: \"मलाई नखोज।\" उसले बुझ्छे कि उसको विवाह भइसकेको छ, तर उसका पति अँध्यारोमा हराएका छन्। रक्षा भत्किँदै जाँदा, वायलेटले साम्राज्य टिकेको झूटसँग सामना गर्नुपर्छ।",
+  "styleSheet": {
+    "register": "literary-vivid",
+    "sentenceLength": "balanced",
+    "gender": "grammatical gender honored",
+    "archaic": "modern literary Nepali",
+    "numerals": "Devanagari numerals"
+  },
+  "names": {
+    "Violet": "वायलेट",
+    "Xaden": "ज़ैडेन",
+    "Tairn": "तैर्न",
+    "Andarna": "अन्दार्ना",
+    "Sgaeyl": "स्गेयल",
+    "Navarre": "नावार",
+    "Tyrrendor": "ताइरेन्डोर",
+    "Aretia": "एरेटिया",
+    "Poromiel": "पोरोमिएल",
+    "Deverelli": "देवेरेल्ली"
+  }
+}

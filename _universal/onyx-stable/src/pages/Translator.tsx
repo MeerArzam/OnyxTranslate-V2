@@ -25,6 +25,7 @@ import {
   ChevronRight,
   BookOpen,
   Image,
+  FileDown,
   CheckCheck,
   Copy,
   Check,
@@ -71,6 +72,11 @@ import {
   generateTranslatedPDF,
   type PDFGenerationProgress,
 } from "@/lib/translator/pdfGenerator";
+import {
+  mergeChunkTexts,
+
+  type TranslationChunk,
+} from "@/lib/translator/storage";
 import { useQuery, useMutation, useAction, useConvex } from "convex/react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { api } from "../../convex/_generated/api";
@@ -121,6 +127,7 @@ export default function Translator() {
   });
 
   // ─── Convex server-side actions ───
+  const storePdfAction = useAction(api.upload.storePdf);
   const parsePdfAction = useAction(api.parsePdf.parseUploadedPdf);
   const translateLanguageAction = useAction(api.translateContent.translateLanguage);
   const cancelTranslationAction = useAction(api.translateQueue.cancelTranslation);
@@ -537,7 +544,7 @@ export default function Translator() {
     } finally {
       setIsUploading(false);
     }
-  }, [projectId, sessionId, deleteProjectMutation, createProjectMutation, parsePdfAction]);
+  }, [projectId, sessionId, deleteProjectMutation, storePdfAction, createProjectMutation, parsePdfAction]);
 
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -550,6 +557,113 @@ export default function Translator() {
     setIsDragOver(false);
   }, []);
 
+  // ─── Export / Import Progress ───
+  const handleExportProgress = useCallback(async () => {
+    console.debug("[Onyx] Export clicked", { hasProject: !!convexProject, translations: activeTranslations.length });
+    if (!convexProject) {
+      // Phase E2: never a silent no-op. Export is gated ONLY on project
+      // existence — works mid-translation, when idle, and with zero
+      // translations. Never gated on status/isJobView/flowPhase.
+      toast.info("Nothing to export yet — start a translation first.");
+      return;
+    }
+    // FIX 6: Complete export — includes sessionId, projectId mapping,
+    // parsedPages/pageData for PDF regeneration, source chunks for
+    // round-trip completeness, and per-translation PDF fields so an
+    // import restores everything the UI needs.
+    const chunksByLang: Record<string, Array<{ chunkIndex: number; sourceText: string; translatedText: string; status: string }>> = {};
+    for (const t of activeTranslations) {
+      try {
+        const chunks = (await convexClient.query(api.queries.getChunksForLang, {
+          projectId: convexProject._id,
+          langCode: t.langCode,
+        })) as unknown as Array<{ chunkIndex: number; sourceText: string; translatedText: string; status: string }>;
+        chunksByLang[t.langCode] = chunks.map((c) => ({
+          chunkIndex: c.chunkIndex,
+          sourceText: c.sourceText,
+          translatedText: c.translatedText,
+          status: c.status,
+        }));
+      } catch (err) {
+        console.warn(`[Onyx] Export: chunk fetch failed for ${t.langCode}`, err);
+      }
+    }
+    const exportData = {
+      type: "onyx-translate-project" as const,
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      langCodes: activeTranslations.map((t) => t.langCode),
+      project: {
+        projectId: convexProject._id,
+        sessionId: convexProject.sessionId ?? sessionId,
+        fileName: convexProject.fileName,
+        pageCount: convexProject.pageCount,
+        wordCount: convexProject.wordCount,
+        fullText: convexProject.fullText,
+        status: convexProject.status,
+        parsedPages: convexProject.parsedPages,
+        pageData: convexProject.pageData ?? [],
+        zipUrl: convexProject.zipUrl ?? undefined,
+      },
+      chunks: chunksByLang,
+      translations: activeTranslations.map((t) => ({
+        langCode: t.langCode,
+        totalChunks: t.totalChunks,
+        completedChunks: t.completedChunks,
+        mergedText: t.mergedText,
+        status: t.status,
+        pdfUrl: t.pdfUrl ?? undefined,
+        pdfGenerating: t.pdfGenerating ?? false,
+        startedAt: t.startedAt ?? undefined,
+        completedAt: t.completedAt ?? undefined,
+      })),
+    };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `onyx-translate-${convexProject.fileName.replace(/\.pdf$/i, "")}-backup.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Backup downloaded.");
+  }, [convexProject, activeTranslations, sessionId, convexClient]);
+
+  const importProjectAction = useAction(api.importProject.importProject);
+  const handleImportProgress = useCallback(async () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const result = await importProjectAction({
+          sessionId,
+          exportJson: text,
+        });
+        if (result.success && result.projectId) {
+          // Switch to the imported project
+          setProjectId(result.projectId);
+          setTranslationError(null);
+          setIsTranslating(false);
+          setCurrentPreviewLangCode(null);
+          // Auto-select imported languages so Begin button is ready
+          const importedLangs = (result as any).importedLangCodes || [];
+          if (importedLangs.length > 0) {
+            setSelectedLangCodes(importedLangs);
+            setCurrentPreviewLangCode(importedLangs[0]);
+          }
+          toast.success(
+            `Imported ${(result as any).fileName || "project"} — ${importedLangs.length} language(s) ready`,
+          );
+        }
+      } catch (err) {
+        setTranslationError(`Import failed: ${err instanceof Error ? err.message : "invalid file"}`);
+      }
+    };
+    input.click();
+  }, [importProjectAction, sessionId]);
   const clearSource = useCallback(async () => {
     if (projectId) {
       await deleteProjectMutation({ projectId }).catch(() => {});
@@ -708,11 +822,20 @@ export default function Translator() {
 
   // ─── Autonomous Translation Queue ───
 
-  const startTranslation = useCallback(
-    async () => {
-    const text = sourceText;
-    const langs = selectedLangCodes.length > 0 ? selectedLangCodes : targetLanguages.map((l) => l.code);
-    const existingProjectId = projectId;
+  // Core start routine. Overridable params let PDF auto-start (which fires
+  // immediately after createProjectMutation, before state setters repaint)
+  // pass explicit values instead of reading stale closures.
+  const startTranslationCore = useCallback(
+    async (overrides?: {
+      text?: string;
+      langs?: string[];
+      existingProjectId?: Id<"projects"> | null;
+    }) => {
+    const text = overrides?.text ?? sourceText;
+    const langs = overrides?.langs ?? (selectedLangCodes.length > 0 ? selectedLangCodes : targetLanguages.map((l) => l.code));
+    const existingProjectId = overrides?.existingProjectId !== undefined
+      ? overrides.existingProjectId
+      : projectId;
     if (!text.trim()) {
       setTranslationError("No text to translate — upload a PDF or paste text first");
       return;
@@ -782,6 +905,11 @@ export default function Translator() {
       setIsTranslating(false);
     }
   }, [sourceText, projectId, sessionId, selectedLangCodes, translateLanguageAction, createProjectMutation, marketContext, isTranslating, flowPhase, pdfFileName, pdfPageCount, saveHistoryMutation]);
+
+  const startTranslation = useCallback(
+    () => startTranslationCore(),
+    [startTranslationCore],
+  );
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -1150,6 +1278,24 @@ export default function Translator() {
                 title="Translation History"
               >
                 <Clock className="size-3.5" style={{ color: '#a78bfa' }} />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 text-[9px] px-1.5 sm:text-[10px]"
+                onClick={handleExportProgress}
+                title="Export progress"
+              >
+                <FileUp className="size-3 mr-1" /> Export
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 text-[9px] px-1.5 sm:text-[10px]"
+                onClick={handleImportProgress}
+                title="Import progress"
+              >
+                <FileDown className="size-3 mr-1" /> Import
               </Button>
               <a
                 href="#/overview"

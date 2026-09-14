@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Convex Functions — Mutations, Queries, History, Import, Upload — OnyxTranslate Docs</title>
+<style>
+body{background:#0a0a0f;color:#e0e0e0;font-family:Georgia,'Times New Roman',serif;max-width:960px;margin:0 auto;padding:24px;line-height:1.6}
+h1{color:#8B5CF6;border-bottom:2px solid rgba(139,92,246,.3);padding-bottom:8px}
+h2{color:#00e5ff;margin-top:28px}
+h3{color:#fbbf24}
+a{color:#00e5ff}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#F59E0B}
+pre{background:rgba(0,0,0,.45);border:1px solid rgba(139,92,246,.25);border-radius:8px;padding:12px;overflow-x:auto}
+pre code{color:#e0e0e0;font-size:11px;line-height:1.5;white-space:pre}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border:1px solid rgba(139,92,246,.25);padding:6px 10px;text-align:left;vertical-align:top}
+th{color:#8B5CF6;background:rgba(139,92,246,.08)}
+td code{color:#00e5ff}
+.meta{color:#8b8ba0;font-size:12px;font-family:ui-monospace,monospace}
+.note{border-left:3px solid #fbbf24;background:rgba(251,191,36,.06);padding:8px 14px;font-size:13px}
+</style>
+</head>
+<body>
+<p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
+<h1>Convex Functions — Mutations, Queries, History, Import, Upload</h1>
+<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-14 10:50 UTC</p>
+<p>Files on this page: <code>convex/mutations.ts</code>, <code>convex/queries.ts</code>, <code>convex/history.ts</code>, <code>convex/importProject.ts</code>, <code>convex/upload.ts</code></p><h2>convex/mutations.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>createProject</code> — mutation</li><li><code>updateProject</code> — mutation</li><li><code>deleteProject</code> — mutation</li><li><code>upsertChunk</code> — mutation</li><li><code>updateChunk</code> — mutation</li><li><code>upsertTranslation</code> — mutation</li><li><code>updateTranslation</code> — mutation</li><li><code>deleteChunksForLang</code> — mutation</li><li><code>createJob</code> — mutation</li><li><code>saveImageTranslation</code> — mutation</li></ul></p><pre><code>import { v } from "convex/values";
+import { mutation } from "./_generated/server";
+
+export const createProject = mutation({
+  args: {
+    sessionId: v.optional(v.string()),
+    fileName: v.string(),
+    pageCount: v.number(),
+    wordCount: v.number(),
+    pdfStorageId: v.optional(v.string()),
+    pageData: v.any(),
+    fullText: v.string(),
+    parsedPages: v.number(),
+    status: v.string(),
+  },
+  handler: async (ctx, args) =&gt; {
+    return await ctx.db.insert("projects", {
+      ...args,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+export const updateProject = mutation({
+  args: {
+    projectId: v.id("projects"),
+    fileName: v.optional(v.string()),
+    pageCount: v.optional(v.number()),
+    wordCount: v.optional(v.number()),
+    pdfStorageId: v.optional(v.string()),
+    pageData: v.optional(v.any()),
+    fullText: v.optional(v.string()),
+    parsedPages: v.optional(v.number()),
+    status: v.optional(v.string()),
+    zipStorageId: v.optional(v.string()),
+    zipUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, args) =&gt; {
+    const { projectId, ...updates } = args;
+    const filtered: Record&lt;string, unknown&gt; = {};
+    for (const [k, v] of Object.entries(updates)) {
+      if (v !== undefined) filtered[k] = v;
+    }
+    await ctx.db.patch(projectId, filtered);
+  },
+});
+
+export const deleteProject = mutation({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) =&gt; {
+    // Delete all chunks for this project
+    const chunks = await ctx.db
+      .query("chunks")
+      .withIndex("by_project_status", (q) =&gt; q.eq("projectId", args.projectId))
+      .collect();
+    for (const chunk of chunks) {
+      await ctx.db.delete(chunk._id);
+    }
+
+    // Delete all translations for this project
+    const translations = await ctx.db
+      .query("translations")
+      .withIndex("by_project_lang", (q) =&gt; q.eq("projectId", args.projectId))
+      .collect();
+    for (const t of translations) {
+      await ctx.db.delete(t._id);
+    }
+
+    // Delete all jobs for this project
+    const jobs = await ctx.db
+      .query("jobs")
+      .withIndex("by_project", (q) =&gt; q.eq("projectId", args.projectId))
+      .collect();
+    for (const job of jobs) {
+      await ctx.db.delete(job._id);
+    }
+
+    // Delete the project itself
+    await ctx.db.delete(args.projectId);
+  },
+});
+
+export const upsertChunk = mutation({
+  args: {
+    projectId: v.id("projects"),
+    langCode: v.string(),
+    chunkIndex: v.number(),
+    sourceText: v.string(),
+  },
+  handler: async (ctx, args) =&gt; {
+    const existing = await ctx.db
+      .query("chunks")
+      .withIndex("by_project_lang", (q) =&gt;
+        q
+          .eq("projectId", args.projectId)
+          .eq("langCode", args.langCode)
+          .eq("chunkIndex", args.chunkIndex)
+      )
+      .first();
+    if (existing) return existing._id;
+    return await ctx.db.insert("chunks", {
+      ...args,
+      status: "pending",
+    });
+  },
+});
+
+export const updateChunk = mutation({
+  args: {
+    chunkId: v.id("chunks"),
+    translatedText: v.optional(v.string()),
+    status: v.optional(v.string()),
+    model: v.optional(v.string()),
+    usage: v.optional(v.any()),
+  },
+  handler: async (ctx, args) =&gt; {
+    const { chunkId, ...updates } = args;
+    const filtered: Record&lt;string, unknown&gt; = {};
+    for (const [k, v] of Object.entries(updates)) {
+      if (v !== undefined) filtered[k] = v;
+    }
+    await ctx.db.patch(chunkId, filtered);
+  },
+});
+
+export const upsertTranslation = mutation({
+  args: {
+    projectId: v.id("projects"),
+    langCode: v.string(),
+    totalChunks: v.number(),
+    status: v.optional(v.string()),
+    completedChunks: v.optional(v.number()),
+    mergedText: v.optional(v.string()),
+  },
+  handler: async (ctx, args) =&gt; {
+    const existing = await ctx.db
+      .query("translations")
+      .withIndex("by_project_lang", (q) =&gt;
+        q.eq("projectId", args.projectId).eq("langCode", args.langCode)
+      )
+      .first();
+    if (existing) return existing._id;
+    return await ctx.db.insert("translations", {
+      projectId: args.projectId,
+      langCode: args.langCode,
+      totalChunks: args.totalChunks,
+      status: args.status || "pending",
+      completedChunks: args.completedChunks ?? 0,
+      mergedText: args.mergedText,
+    });
+  },
+});
+
+export const updateTranslation = mutation({
+  args: {
+    translationId: v.id("translations"),
+    status: v.optional(v.string()),
+    completedChunks: v.optional(v.number()),
+    mergedText: v.optional(v.string()),
+    pdfStorageId: v.optional(v.string()),
+    pdfUrl: v.optional(v.string()),
+    pdfGenerating: v.optional(v.boolean()),
+    pdfProgress: v.optional(v.string()),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    lastChunkAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) =&gt; {
+    const { translationId, ...updates } = args;
+    const filtered: Record&lt;string, unknown&gt; = {};
+    for (const [k, v] of Object.entries(updates)) {
+      if (v !== undefined) filtered[k] = v;
+    }
+    await ctx.db.patch(translationId, filtered);
+  },
+});
+
+export const deleteChunksForLang = mutation({
+  args: {
+    projectId: v.id("projects"),
+    langCode: v.string(),
+  },
+  handler: async (ctx, args) =&gt; {
+    const chunks = await ctx.db
+      .query("chunks")
+      .withIndex("by_project_lang", (q) =&gt;
+        q
+          .eq("projectId", args.projectId)
+          .eq("langCode", args.langCode)
+      )
+      .collect();
+    for (const chunk of chunks) {
+      await ctx.db.delete(chunk._id);
+    }
+  },
+});
+
+export const createJob = mutation({
+  args: {
+    projectId: v.id("projects"),
+    type: v.string(),
+    langCode: v.optional(v.string()),
+    chunkIndex: v.optional(v.number()),
+    status: v.string(),
+    scheduledFor: v.number(),
+  },
+  handler: async (ctx, args) =&gt; {
+    return await ctx.db.insert("jobs", {
+      ...args,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+export const saveImageTranslation = mutation({
+  args: {
+    imageBase64: v.string(),
+    extractedText: v.optional(v.string()),
+    translatedText: v.optional(v.string()),
+    langCode: v.string(),
+    status: v.string(),
+  },
+  handler: async (ctx, args) =&gt; {
+    return await ctx.db.insert("imageTranslations", {
+      imageBase64: args.imageBase64,
+      extractedText: args.extractedText,
+      translatedText: args.translatedText,
+      targetLangCode: args.langCode,
+      status: args.status,
+      createdAt: Date.now(),
+    });
+  },
+});
+</code></pre><h2>convex/queries.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>getProject</code> — query</li><li><code>getLatestProject</code> — query</li><li><code>getSessionProjects</code> — query</li><li><code>getProjectTranslations</code> — query</li><li><code>getProjectRaw</code> — query</li><li><code>getTranslationsRaw</code> — query</li><li><code>getChunkProgress</code> — query</li><li><code>getChunksForLang</code> — query</li><li><code>getAllJobs</code> — query</li><li><code>getHistory</code> — query</li><li><code>getStalledLanguages</code> — query</li><li><code>getTranslationProgress</code> — query</li><li><code>getAllProjectsForWatchdog</code> — query</li><li><code>getLivePreviewText</code> — query</li></ul></p><pre><code>import { v } from "convex/values";
+import { query } from "./_generated/server";
+
+// ─── Client-facing queries (require sessionId) ───
+
+export const getProject = query({
+  args: { projectId: v.id("projects"), sessionId: v.string() },
+  handler: async (ctx, args) =&gt; {
+    const project = await ctx.db.get(args.projectId);
+    if (!project || project.sessionId !== args.sessionId) return null;
+    return project;
+  },
+});
+
+export const getLatestProject = query({
+  args: { sessionId: v.string() },
+  handler: async (ctx, args) =&gt; {
+    const projects = await ctx.db
+      .query("projects")
+      .withIndex("by_session", (q) =&gt; q.eq("sessionId", args.sessionId))
+      .order("desc")
+      .take(1);
+    return projects[0] ?? null;
+  },
+});
+
+// Phase E3: Recent jobs — compact session-scoped project cards.
+export const getSessionProjects = query({
+  args: { sessionId: v.string() },
+  handler: async (ctx, args) =&gt; {
+    return await ctx.db
+      .query("projects")
+      .withIndex("by_session", (q) =&gt; q.eq("sessionId", args.sessionId))
+      .order("desc")
+      .take(10);
+  },
+});
+
+export const getProjectTranslations = query({
+  args: { projectId: v.id("projects"), sessionId: v.string() },
+  handler: async (ctx, args) =&gt; {
+    const project = await ctx.db.get(args.projectId);
+    if (!project || project.sessionId !== args.sessionId) return [];
+    return await ctx.db
+      .query("translations")
+      .withIndex("by_project_lang", (q) =&gt; q.eq("projectId", args.projectId))
+      .collect();
+  },
+});
+
+// ─── Server-side queries (no session check — used by actions) ───
+
+export const getProjectRaw = query({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) =&gt; {
+    return await ctx.db.get(args.projectId);
+  },
+});
+
+export const getTranslationsRaw = query({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) =&gt; {
+    return await ctx.db
+      .query("translations")
+      .withIndex("by_project_lang", (q) =&gt; q.eq("projectId", args.projectId))
+      .collect();
+  },
+});
+
+// ─── Unfiltered queries (for any use) ───
+
+export const getChunkProgress = query({
+  args: { projectId: v.id("projects"), langCode: v.string() },
+  handler: async (ctx, args) =&gt; {
+    const chunks = await ctx.db
+      .query("chunks")
+      .withIndex("by_project_lang", (q) =&gt;
+        q.eq("projectId", args.projectId).eq("langCode", args.langCode)
+      )
+      .collect();
+    const done = chunks.filter((c) =&gt; c.status === "done").length;
+    return { total: chunks.length, completed: done };
+  },
+});
+
+export const getChunksForLang = query({
+  args: { projectId: v.id("projects"), langCode: v.string() },
+  handler: async (ctx, args) =&gt; {
+    return await ctx.db
+      .query("chunks")
+      .withIndex("by_project_lang", (q) =&gt;
+        q.eq("projectId", args.projectId).eq("langCode", args.langCode)
+      )
+      .collect();
+  },
+});
+
+export const getAllJobs = query({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) =&gt; {
+    return await ctx.db
+      .query("jobs")
+      .withIndex("by_project", (q) =&gt; q.eq("projectId", args.projectId))
+      .collect();
+  },
+});
+
+// ─── History ───
+
+export const getHistory = query({
+  args: { sessionId: v.string() },
+  handler: async (ctx, args) =&gt; {
+    return await ctx.db
+      .query("history")
+      .withIndex("by_session", (q) =&gt; q.eq("sessionId", args.sessionId))
+      .order("desc")
+      .collect();
+  },
+});
+
+// FIX 5a: Watchdog query — languages that were in_progress but whose last
+// chunk heartbeat is older than STALL_THRESHOLD_MS are considered stalled
+// (browser closed / action crashed / timeout). "complete" languages and
+// recently-active ones are excluded.
+export const getStalledLanguages = query({
+  args: { projectId: v.id("projects"), sessionId: v.string() },
+  handler: async (ctx, args) =&gt; {
+    const project = await ctx.db.get(args.projectId);
+    if (!project || project.sessionId !== args.sessionId) return [];
+
+    const STALL_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes without a heartbeat
+    const now = Date.now();
+
+    const translations = await ctx.db
+      .query("translations")
+      .withIndex("by_project_lang", (q) =&gt; q.eq("projectId", args.projectId))
+      .collect();
+
+    return translations
+      .filter((t) =&gt; {
+        if (t.status === "complete" || t.status === "generating_pdf") return false;
+        const lastActivity = t.lastChunkAt ?? t.startedAt ?? 0;
+        return now - lastActivity &gt; STALL_THRESHOLD_MS;
+      })
+      .map((t) =&gt; t.langCode);
+  },
+});
+
+// C2: Real-time chunk progress for a specific language
+export const getTranslationProgress = query({
+  args: { projectId: v.id("projects"), langCode: v.string() },
+  handler: async (ctx, args) =&gt; {
+    const chunks = await ctx.db
+      .query("chunks")
+      .withIndex("by_project_lang", (q) =&gt;
+        q.eq("projectId", args.projectId).eq("langCode", args.langCode)
+      )
+      .collect();
+    const completed = chunks.filter((c) =&gt; c.status === "done").length;
+    return {
+      total: chunks.length,
+      completed,
+      percentage:
+        chunks.length &gt; 0
+          ? Math.round((completed / chunks.length) * 100)
+          : 0,
+    };
+  },
+});
+
+// C3: Live preview — concatenates completed chunk translations in order
+// Watchdog: find all projects that might be stalled
+export const getAllProjectsForWatchdog = query({
+  args: {},
+  handler: async (ctx) =&gt; {
+    return await ctx.db
+      .query("projects")
+      .collect();
+  },
+});
+
+export const getLivePreviewText = query({
+  args: { projectId: v.id("projects"), langCode: v.string() },
+  handler: async (ctx, args) =&gt; {
+    const chunks = await ctx.db
+      .query("chunks")
+      .withIndex("by_project_lang", (q) =&gt;
+        q.eq("projectId", args.projectId).eq("langCode", args.langCode)
+      )
+      .order("asc")
+      .collect();
+    const completed = chunks.filter(
+      (c) =&gt; c.status === "done" &amp;&amp; c.translatedText
+    );
+    return completed.map((c) =&gt; c.translatedText).join("\n\n");
+  },
+});
+</code></pre><h2>convex/history.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>saveToHistory</code> — mutation</li><li><code>deleteHistory</code> — mutation</li></ul></p><pre><code>import { v } from "convex/values";
+import { mutation, query } from "./_generated/server";
+
+export const saveToHistory = mutation({
+  args: {
+    sessionId: v.string(),
+    projectId: v.id("projects"),
+    fileName: v.string(),
+    pageCount: v.number(),
+    wordCount: v.number(),
+    status: v.string(),
+    languagesCompleted: v.number(),
+    zipUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, args) =&gt; {
+    const existing = await ctx.db
+      .query("history")
+      .withIndex("by_session", (q) =&gt; q.eq("sessionId", args.sessionId))
+      .filter((q) =&gt; q.eq(q.field("projectId"), args.projectId))
+      .first();
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        status: args.status,
+        languagesCompleted: args.languagesCompleted,
+        zipUrl: args.zipUrl,
+        completedAt: args.status === "complete" ? Date.now() : undefined,
+      });
+    } else {
+      await ctx.db.insert("history", {
+        ...args,
+        createdAt: Date.now(),
+      });
+    }
+  },
+});
+
+export const deleteHistory = mutation({
+  args: {
+    historyId: v.id("history"),
+  },
+  handler: async (ctx, args) =&gt; {
+    await ctx.db.delete(args.historyId);
+  },
+});
+</code></pre><h2>convex/importProject.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>importProject</code> — action</li></ul></p><pre><code>"use node";
+
+import { v } from "convex/values";
+import { action } from "./_generated/server";
+import { api } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
+
+export const importProject = action({
+  args: {
+    sessionId: v.string(),
+    exportJson: v.string(),
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise&lt;{ success: boolean; projectId: Id&lt;"projects"&gt;; importedLangCodes: string[]; fileName: string }&gt; =&gt; {
+    let data: {
+      type: string;
+      version: number;
+      project: {
+        fileName: string;
+        pageCount: number;
+        wordCount: number;
+        fullText: string;
+        parsedPages?: number;
+        pageData?: unknown[];
+      };
+      translations: Array&lt;{
+        langCode: string;
+        totalChunks: number;
+        completedChunks: number;
+        mergedText?: string;
+        status: string;
+        pdfUrl?: string;
+      }&gt;;
+    };
+
+    try {
+      data = JSON.parse(args.exportJson);
+    } catch {
+      throw new Error("Invalid JSON file");
+    }
+
+    if (data.type !== "onyx-translate-project" || data.version !== 1) {
+      throw new Error(
+        "Invalid export file format — expected Onyx Translate JSON export"
+      );
+    }
+    if (!data.project || !Array.isArray(data.translations)) {
+      throw new Error(
+        "Invalid export file structure — missing project or translations"
+      );
+    }
+
+    // Create project — restore pageData/parsedPages so PDF regeneration
+    // coordinates survive an import round-trip (FIX 6).
+    const projectId: Id&lt;"projects"&gt; = await ctx.runMutation(
+      api.mutations.createProject,
+      {
+        sessionId: args.sessionId,
+        fileName: data.project.fileName,
+        pageCount: data.project.pageCount,
+        wordCount: data.project.wordCount,
+        pageData: (data.project.pageData ?? []) as object[],
+        fullText: data.project.fullText,
+        parsedPages: data.project.parsedPages ?? data.project.pageCount,
+        status: "ready",
+      }
+    );
+
+    // Create translation records for each language
+    for (const t of data.translations) {
+      await ctx.runMutation(api.mutations.upsertTranslation, {
+        projectId,
+        langCode: t.langCode,
+        totalChunks: t.totalChunks || 1,
+        status: t.status === "complete" ? "complete" : "pending",
+        completedChunks: t.completedChunks || 0,
+        mergedText: t.mergedText || "",
+      });
+    }
+
+    return {
+      success: true,
+      projectId,
+      importedLangCodes: data.translations?.map((t) =&gt; t.langCode) || [],
+      fileName: data.project.fileName,
+    };
+  },
+});
+</code></pre><h2>convex/upload.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>storePdf</code> — action</li><li><code>generatePdfUploadUrl</code> — mutation</li><li><code>finalizePdfUpload</code> — mutation</li></ul></p><pre><code>import { v } from "convex/values";
+import { action, mutation } from "./_generated/server";
+
+/**
+ * convex/upload.ts — PDF storage.
+ *
+ * FIX 2 (regression pass): Convex caps action arguments at 5MiB, so the old
+ * storePdf(pdfBase64) path silently failed for any PDF larger than ~3.7MB —
+ * which is incompatible with the "no file limits" requirement. Added the
+ * standard Convex direct-upload flow: the browser POSTs the file straight to
+ * Storage via a generated upload URL (no argument cap). storePdf is kept for
+ * backward compatibility with existing import/tests paths.
+ *
+ * This module runs on the V8 runtime because Convex only allows mutations
+ * there; storePdf decodes base64 via atob instead of Buffer accordingly.
+ */
+export const storePdf = action({
+  args: {
+    fileName: v.string(),
+    pdfBase64: v.string(),
+  },
+  handler: async (ctx, args) =&gt; {
+    const binary = atob(args.pdfBase64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i &lt; binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: "application/pdf" });
+    const storageId = await ctx.storage.store(blob);
+    return { storageId };
+  },
+});
+
+/** FIX 2: step 1 of the direct-upload flow — mint a one-time upload URL. */
+export const generatePdfUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) =&gt; {
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+/** FIX 2: step 3 of the direct-upload flow — capture the storage id + size. */
+export const finalizePdfUpload = mutation({
+  args: { storageId: v.id("_storage") },
+  handler: async (ctx, args) =&gt; {
+    const meta = await ctx.db.system.get(args.storageId);
+    return {
+      storageId: args.storageId,
+      size: meta?.size ?? null,
+      contentType: meta?.contentType ?? null,
+    };
+  },
+});
+</code></pre>
+<hr>
+<p class="meta">OnyxTranslate static documentation mirror — plain HTML, no JavaScript. Interactive version: <a href="/#/overview">/#/overview</a></p>
+</body>
+</html>

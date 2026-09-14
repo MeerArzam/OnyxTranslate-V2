@@ -1,0 +1,51 @@
+{
+  "code": "fr",
+  "name": "French",
+  "nativeName": "Français",
+  "script": "Latin",
+  "rtl": false,
+  "dialogue": { "open": "« ", "close": " »", "note": "Use « » with a space; em-dash — for speaker turns." },
+  "formality": {
+    "system": "tu/vous",
+    "informal": "tu",
+    "formal": "vous",
+    "note": "Violet↔Xaden use tu; General Aetos and King Tauri are addressed with vous."
+  },
+  "profanity": {
+    "fuck": "putain",
+    "shit": "merde",
+    "bastard": "salaud",
+    "damn": "mince",
+    "hell": "enfer"
+  },
+  "ranks": {
+    "Wingleader": "Chef d'escadrille",
+    "Squad Leader": "Chef de section",
+    "Cadet": "Cadet",
+    "General": "Général",
+    "Scribe": "Scribe",
+    "Rider": "Cavalier"
+  },
+  "magicSystem": "Sceau (Signet) as a coherent hierarchy: maîtriser (dragon rider) → puiser (draw power) → conduit → garde (ward). Rune stays 'rune', never a generic spell; Empyrean = Empyrée.",
+  "fanNames": {},
+  "blurb": "Violet se réveille à Aretia, confuse, avec une bague et un mot de Xaden : « Ne me cherche pas. » Elle réalise qu'elle est mariée, mais que son mari est perdu dans les ténèbres. Alors que les gardes vacillent et que les venins avancent, Violet doit affronter le destin tragique que la guerre lui a réservé.",
+  "styleSheet": {
+    "register": "literary-poetic",
+    "sentenceLength": "balanced",
+    "gender": "grammatical gender honored",
+    "archaic": "modern literary French, restrained archaism in court scenes",
+    "numerals": "Western Arabic numerals"
+  },
+  "names": {
+    "Violet": "Violet",
+    "Xaden": "Xaden",
+    "Tairn": "Tairn",
+    "Andarna": "Andarna",
+    "Sgaeyl": "Sgaeyl",
+    "Navarre": "Navarre",
+    "Tyrrendor": "Tyrrendor",
+    "Aretia": "Aretia",
+    "Poromiel": "Poromiel",
+    "Deverelli": "Deverelli"
+  }
+}

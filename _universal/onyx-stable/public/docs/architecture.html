@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Architecture — OnyxTranslate Docs</title>
+<style>
+body{background:#0a0a0f;color:#e0e0e0;font-family:Georgia,'Times New Roman',serif;max-width:960px;margin:0 auto;padding:24px;line-height:1.6}
+h1{color:#8B5CF6;border-bottom:2px solid rgba(139,92,246,.3);padding-bottom:8px}
+h2{color:#00e5ff;margin-top:28px}
+h3{color:#fbbf24}
+a{color:#00e5ff}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#F59E0B}
+pre{background:rgba(0,0,0,.45);border:1px solid rgba(139,92,246,.25);border-radius:8px;padding:12px;overflow-x:auto}
+pre code{color:#e0e0e0;font-size:11px;line-height:1.5;white-space:pre}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border:1px solid rgba(139,92,246,.25);padding:6px 10px;text-align:left;vertical-align:top}
+th{color:#8B5CF6;background:rgba(139,92,246,.08)}
+td code{color:#00e5ff}
+.meta{color:#8b8ba0;font-size:12px;font-family:ui-monospace,monospace}
+.note{border-left:3px solid #fbbf24;background:rgba(251,191,36,.06);padding:8px 14px;font-size:13px}
+</style>
+</head>
+<body>
+<p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
+<h1>Architecture</h1>
+<p class="meta">Schema, sessions, data flow &middot; generated 2026-09-14 10:50 UTC</p>
+
+<h2>1. Convex Schema (verbatim from convex/schema.ts)</h2>
+<table>
+<tr><th>Table</th><th>Fields (name: type)</th><th>Indexes</th></tr>
+<tr><td><strong>projects</strong></td><td><code>sessionId</code>: v.optional(v.string())<br><code>fileName</code>: v.string()<br><code>pageCount</code>: v.number()<br><code>wordCount</code>: v.number()<br><code>pdfStorageId</code>: v.optional(v.string())<br><code>pageData</code>: v.any()<br><code>fullText</code>: v.string()<br><code>parsedPages</code>: v.number()<br><code>status</code>: v.string()<br><code>zipStorageId</code>: v.optional(v.string())<br><code>zipUrl</code>: v.optional(v.string())<br><code>createdAt</code>: v.number()</td><td><code>by_session</code> ("sessionId"), <code>by_project_lang</code> ("projectId", "langCode", "chunkIndex")</td></tr>
+<tr><td><strong>chunks</strong></td><td><code>projectId</code>: v.id("projects")<br><code>langCode</code>: v.string()<br><code>chunkIndex</code>: v.number()<br><code>sourceText</code>: v.string()<br><code>translatedText</code>: v.optional(v.string())<br><code>status</code>: v.string()<br><code>model</code>: v.optional(v.string())<br><code>usage</code>: v.optional(v.any())</td><td><code>by_project_lang</code> ("projectId", "langCode", "chunkIndex"), <code>by_project_status</code> ("projectId", "status")</td></tr>
+<tr><td><strong>translations</strong></td><td><code>projectId</code>: v.id("projects")<br><code>langCode</code>: v.string()<br><code>status</code>: v.string()<br><code>totalChunks</code>: v.number()<br><code>completedChunks</code>: v.number()<br><code>mergedText</code>: v.optional(v.string())<br><code>pdfStorageId</code>: v.optional(v.string())<br><code>pdfUrl</code>: v.optional(v.string())<br><code>pdfGenerating</code>: v.optional(v.boolean())<br><code>pdfProgress</code>: v.optional(v.string())<br><code>startedAt</code>: v.optional(v.number())<br><code>completedAt</code>: v.optional(v.number()) <em>// Watchdog heartbeat: timestamp of the last completed chunk (FIX 5a)</em><br><code>lastChunkAt</code>: v.optional(v.number())</td><td><code>by_project_lang</code> ("projectId", "langCode")</td></tr>
+<tr><td><strong>imageTranslations</strong></td><td><code>projectId</code>: v.optional(v.id("projects"))<br><code>imageBase64</code>: v.string()<br><code>extractedText</code>: v.optional(v.string())<br><code>translatedText</code>: v.optional(v.string())<br><code>targetLangCode</code>: v.string()<br><code>status</code>: v.string()<br><code>createdAt</code>: v.number()</td><td><code>by_session</code> ("sessionId")</td></tr>
+<tr><td><strong>history</strong></td><td><code>sessionId</code>: v.string()<br><code>projectId</code>: v.id("projects")<br><code>fileName</code>: v.string()<br><code>pageCount</code>: v.number()<br><code>wordCount</code>: v.number()<br><code>status</code>: v.string()<br><code>languagesCompleted</code>: v.number()<br><code>createdAt</code>: v.number()<br><code>completedAt</code>: v.optional(v.number())<br><code>zipUrl</code>: v.optional(v.string())</td><td><code>by_session</code> ("sessionId"), <code>by_status_scheduled</code> ("status", "scheduledFor")</td></tr>
+<tr><td><strong>jobs</strong></td><td><code>projectId</code>: v.id("projects")<br><code>type</code>: v.string()<br><code>langCode</code>: v.optional(v.string())<br><code>chunkIndex</code>: v.optional(v.number())<br><code>status</code>: v.string()<br><code>error</code>: v.optional(v.string())<br><code>scheduledFor</code>: v.number()<br><code>createdAt</code>: v.number()</td><td><code>by_status_scheduled</code> ("status", "scheduledFor"), <code>by_project</code> ("projectId")</td></tr>
+<tr><td><strong>liveTests</strong></td><td><code>langCode</code>: v.string()<br><code>langName</code>: v.string()<br><code>nativeName</code>: v.string()<br><code>script</code>: v.string()<br><code>rtl</code>: v.boolean()<br><code>status</code>: v.string() <em>// pending | running | pass | warn | fail</em><br><code>score</code>: v.optional(v.number())<br><code>output</code>: v.optional(v.string())<br><code>qaSummary</code>: v.optional(v.array(v.string()))<br><code>issueCount</code>: v.optional(v.number())<br><code>missingNames</code>: v.optional(v.array(v.string()))<br><code>scriptIssues</code>: v.optional(v.array(v.string()))<br><code>model</code>: v.optional(v.string())<br><code>durationMs</code>: v.optional(v.number())<br><code>error</code>: v.optional(v.string())<br><code>testedAt</code>: v.number()</td><td><code>by_lang</code> ("langCode")</td></tr>
+</table>
+
+<h2>2. Session Isolation Model</h2>
+<p>Every browser tab generates a unique <code>sessionId</code> on mount
+(<code>useState(() =&gt; { ... })</code> in <code>src/pages/Translator.tsx</code> —
+persistence via <code>sessionStorage</code>). All client-facing Convex queries filter by it,
+so two tabs (or a private window) never see each other's progress. Imported projects are
+assigned the importing session's ID.</p>
+<p>The session check lives server-side in <code>convex/queries.ts</code>:</p>
+<pre><code>export const getProject = query({
+  args: { projectId: v.id("projects"), sessionId: v.string() },
+  handler: async (ctx, args) =&gt; {
+    const project = await ctx.db.get(args.projectId);
+    if (!project || project.sessionId !== args.sessionId) return null;
+    return project;
+  },
+});</code></pre>
+<p>Auto-resume uses the latest project for the session:</p>
+<pre><code>export const getLatestProject = query({
+  args: { sessionId: v.string() },
+  handler: async (ctx, args) =&gt; {
+    const projects = await ctx.db
+      .query("projects")
+      .withIndex("by_session", (q) =&gt; q.eq("sessionId", args.sessionId))
+      .order("desc")
+      .take(1);
+    return projects[0] ?? null;
+  },
+});</code></pre>
+
+<h2>3. End-to-End Data Flow</h2>
+<h3>3.1 PDF upload &amp; parse</h3>
+<ol>
+<li><code>handleFileSelect</code> (Translator.tsx) &rarr; <code>parsePDFHeader</code> reads page count
+without decoding pages.</li>
+<li><code>parsePDFBatch</code> loops in batches of <code>PARSE_BATCH_SIZE = 10</code> pages, updating
+<code>setParseProgress({ current, total })</code> after each batch (live "Page X of Y").</li>
+<li><code>storePdfAction</code> → <code>convex/upload.ts storePdf</code> stores the original PDF in
+Convex File Storage, returns <code>storageId</code>.</li>
+<li><code>parsePdfAction</code> → <code>convex/parsePdf.ts parseUploadedPdf</code> re-parses
+server-side with pdfjs-dist, groups text items into lines by Y-coordinate (2 px tolerance) —
+fixes broken words/missing letters.</li>
+<li><code>createProjectMutation</code> writes the <code>projects</code> row
+(<code>fullText</code>, <code>pageData</code>, <code>pdfStorageId</code>, <code>status: "ready"</code>).</li>
+</ol>
+<h3>3.2 Text paste</h3>
+<p><code>setSourceText(text)</code> directly; project row is created lazily inside
+<code>startTranslation</code> with <code>fileName: "Pasted Text"</code>.</p>
+<h3>3.3 Translation (Begin Translation Journey)</h3>
+<ol>
+<li><code>startTranslation</code> creates the project if needed, then calls
+<code>translateLanguageAction({ projectId, langCode: langs[0], marketContext, nextLangCode: langs[1],
+remainingLangs: langs.slice(2) })</code>.</li>
+<li><code>convex/translateContent.ts translateLanguage</code>: chunks
+<code>project.fullText</code> into 2,500-word chunks, and for each chunk runs:
+sliding-window context (last 2 sentences of previous chunk) &rarr; <strong>Bible Pass</strong>
+(glossary terms replaced by <code>__PH0__</code> placeholders) &rarr; <strong>Gemini call</strong>
+(5-key rotation, retries) &rarr; placeholder restore &rarr; cultural filters &rarr;
+dragon-telepathy formatting &rarr; RTL marker &rarr; <strong>runQA</strong> &rarr; writes the
+<code>chunks</code> row and bumps <code>translations.completedChunks</code>.</li>
+<li>After the last chunk the action merges text into <code>translations.mergedText</code>, marks
+the language <code>complete</code>, and chains the next language via
+<code>ctx.scheduler.runAfter(0, api.translateContent.translateLanguage, { ... })</code>.</li>
+<li>The browser can close at any point — the chain is server-side. Progress is read back
+through reactive queries (<code>getTranslationProgress</code>, <code>getLivePreviewText</code>).</li>
+</ol>
+<h3>3.4 PDF generation (autonomous)</h3>
+<p>When a language finishes inside the scheduler queue
+(<code>convex/translateQueue.ts processLanguage</code> &rarr; status
+<code>"generating_pdf"</code>), <code>convex/generatePdf.ts generateTranslatedPdf</code> loads the
+original PDF from storage, copies each page, whites out text using per-text-item coordinates
+(preserving images/maps), overlays the translation with Noto fonts for non-Latin scripts
+(Helvetica fallback), stores the PDF, and either chains the next language or, when none
+remain, sets <code>projects.status = "all_translated"</code> and schedules
+<code>zipAssembly.buildZip</code>.</p>
+<h3>3.5 ZIP assembly</h3>
+<p><code>convex/zipAssembly.ts buildZip</code> downloads every completed
+<code>translations.pdfStorageId</code>, bundles them (plus <code>translation_report.txt</code>)
+with JSZip, stores the ZIP, and writes <code>projects.zipStorageId</code>/<code>zipUrl</code> and
+<code>status: "complete"</code>.</p>
+<h3>3.6 Images</h3>
+<p><code>translateImageMultiLang</code> (client) downsamples to ≤1024 px JPEG
+&harr; <code>convex/translateImage.ts translateImage</code> sends the base64 image to Gemini
+multimodal for OCR + translation in one pass, saves to <code>imageTranslations</code>.</p>
+
+<h2>4. Status Enums (as written by the code)</h2>
+<table>
+<tr><th>Table</th><th>Values</th></tr>
+<tr><td>projects.status</td><td><code>ready</code> &rarr; <code>translating</code> &rarr;
+<code>all_translated</code> &rarr; <code>complete</code>; also <code>cancelled</code> (Pause button)</td></tr>
+<tr><td>chunks.status</td><td><code>pending</code>, <code>done</code></td></tr>
+<tr><td>translations.status</td><td><code>pending</code>, <code>in_progress</code>,
+<code>generating_pdf</code>, <code>complete</code>, <code>error</code></td></tr>
+<tr><td>history.status</td><td><code>in_progress</code>, <code>complete</code></td></tr>
+<tr><td>imageTranslations.status</td><td><code>pending</code>, <code>processing</code>,
+<code>complete</code>, <code>error</code></td></tr>
+</table>
+
+<hr>
+<p class="meta">OnyxTranslate static documentation mirror — plain HTML, no JavaScript. Interactive version: <a href="/#/overview">/#/overview</a></p>
+</body>
+</html>

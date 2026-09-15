@@ -20,17 +20,32 @@ import { api } from "./_generated/api";
 const MAX_PATH1_BYTES = 19 * 1024 * 1024; // 19MB — reported honestly, enforced by platform physics
 const MAX_IMPORT_BYTES = 19 * 1024 * 1024;
 
-const ALL_LANGS = [
-  "ur", "ar", "fr", "ja", "es", "hi", "tr", "zh", "ru", "ko",
-  "de", "ks", "ro", "sw", "it", "la", "id", "ne", "bn", "pt",
-];
+// PHASE 3 client-path fix: custom httpActions get NO CORS headers by default,
+// so every browser XHR (and its preflight) was blocked — invisible to the
+// server-level tests, caught by the real Chromium run. The app is public by
+// design (client-id identity, no cookies), so a permissive ACAO is correct.
+const CORS_HEADERS: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Max-Age": "86400",
+};
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    headers: { ...CORS_HEADERS, "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
 }
+
+function preflight(): Response {
+  return new Response(null, { status: 204, headers: CORS_HEADERS });
+}
+
+const ALL_LANGS = [
+  "ur", "ar", "fr", "ja", "es", "hi", "tr", "zh", "ru", "ko",
+  "de", "ks", "ro", "sw", "it", "la", "id", "ne", "bn", "pt",
+];
 
 // ─── Path 1: ONE request → uploadJob → processing scheduled ────────────────
 
@@ -165,9 +180,19 @@ http.route({
   handler: uploadAndCreateJob,
 });
 http.route({
+  path: "/uploadAndCreateJob",
+  method: "OPTIONS",
+  handler: httpAction(async () => preflight()),
+});
+http.route({
   path: "/uploadAndImport",
   method: "POST",
   handler: uploadAndImport,
+});
+http.route({
+  path: "/uploadAndImport",
+  method: "OPTIONS",
+  handler: httpAction(async () => preflight()),
 });
 
 export default http;

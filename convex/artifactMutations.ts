@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { EXPORT_KIND } from "./exportProject";
 
 /**
  * convex/artifactMutations.ts — PHASE 2: idempotent export-artifact upsert.
@@ -51,7 +52,7 @@ export const issueExportToken = mutation({
       .query("exportArtifacts")
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
       .collect();
-    const artifact = artifacts.find((a) => a.kind === "onyx-translate-project-backup");
+    const artifact = artifacts.find((a) => a.kind === EXPORT_KIND);
     if (!artifact) throw new Error("No export artifact for this project yet");
     const token = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
     const ttlMs = 10 * 60 * 1000;

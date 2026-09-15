@@ -252,13 +252,24 @@ async function stage1() {
   const exportBtn = page.getByTitle("Export JSON backup (server-built, works anytime)").first();
   const exportDisabled = await exportBtn.isDisabled().catch(() => "gone");
   step(`export button disabled=${exportDisabled}`);
+  // live diagnostics: token endpoint status + toasts, printed to the progress log
+  page.on("response", (r) => {
+    if (r.url().includes("/downloadExport") || r.url().includes("issueExportToken"))
+      step(`net: ${r.request().method()} ${new URL(r.url()).pathname} -> ${r.status()}`);
+  });
   const [dl] = await Promise.all([
     page.waitForEvent("download", { timeout: 90000 }),
     exportBtn.click(),
+    // live toast sampling — sonner dismisses in ~4s, so poll immediately
+    (async () => {
+      for (let i = 0; i < 12; i++) {
+        await page.waitForTimeout(2000).catch(() => {});
+        const t = await page.locator("[data-sonner-toast]").allInnerTexts().catch(() => []);
+        if (t.length) step(`toast[${i}]: ${JSON.stringify(t)}`);
+      }
+    })(),
   ]).catch(async (err) => {
-    // capture toasts + console to diagnose a no-download click
-    const toasts = await page.locator("[data-sonner-toast], [role=status], [role=alert]").allInnerTexts().catch(() => []);
-    __logs.push(`TOASTS: ${toasts.join(" | ")}`);
+    step(`NO-DOWNLOAD. last console: ${__logs.slice(-8).join(" || ")}`);
     throw err;
   });
   await dl.saveAs("/tmp/onyx/export-mid.json");
@@ -424,8 +435,10 @@ async function stage3() {
   await ctx2.addInitScript(uuidHook);
   const page2 = await ctx2.newPage();
   await gotoApp(page2);
-  const resumeVisible = await page2.getByText("Resume upload").isVisible({ timeout: 15000 }).catch(() => false);
-  const discardVisible = await page2.getByText("Discard").isVisible({ timeout: 5000 }).catch(() => false);
+  // NB: isVisible() never waits — use waitFor so the mount effect has time to
+  // load staging records from IndexedDB.
+  const resumeVisible = await page2.getByText("Resume upload").first().waitFor({ state: "visible", timeout: 15000 }).then(() => true).catch(() => false);
+  const discardVisible = await page2.getByText("Discard").first().waitFor({ state: "visible", timeout: 5000 }).then(() => true).catch(() => false);
   ok("T5.1", "reopen offers Resume upload / Discard (staging survived)", resumeVisible && discardVisible, `resume=${resumeVisible} discard=${discardVisible}`);
   await page2.screenshot({ path: `${SHOTS}/10-resume-offer.png` });
   let resumed = false;
@@ -439,8 +452,15 @@ async function stage3() {
   }
   ok("T5.2", "retry completes upload (Safe to close)", resumed, `resumed=${resumed}`);
   const clientId = await page2.evaluate(() => window.localStorage.getItem("onyx-client-id"));
-  const projs = await convex.query(apiAny.identity.getResumableJobs, { clientId });
-  const bigProjects = projs.filter((p) => p.fileName === "large-22mb.pdf");
+  // parse pipeline creates the project asynchronously — poll like stage 1
+  let bigProjects = [];
+  try {
+    await until(async () => {
+      const projs = await convex.query(apiAny.identity.getResumableJobs, { clientId });
+      bigProjects = projs.filter((p) => p.fileName === "large-22mb.pdf");
+      return bigProjects.length >= 1 ? bigProjects : null;
+    }, 120000, "project row after resume");
+  } catch { /* surfaced by the assertion below */ }
   ok("T5.3", "no duplicate projects after retry", bigProjects.length === 1, `projects for large-22mb.pdf on this device=${bigProjects.length}`);
   state.t5ClientId = clientId;
   await saveState();

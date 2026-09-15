@@ -134,7 +134,12 @@ export function UploadJobCard({
       {job && !failed && !cancelled && (
         <div className="mt-1 flex items-center gap-1.5 text-[9px] text-muted-foreground">
           <Circle className="size-2" style={{ color: "#34d399" }} />
-          <span>job …{String(job._id).slice(-6)} • {(job.fileSize / (1024 * 1024)).toFixed(1)}MB</span>
+          <span>
+            job …{String(job._id).slice(-6)} • {(job.fileSize / (1024 * 1024)).toFixed(1)}MB •{" "}
+            {job.uploadPath === 2 || job.fileSize > 19 * 1024 * 1024
+              ? "direct upload path (large file)"
+              : "single-request upload"}
+          </span>
         </div>
       )}
     </div>

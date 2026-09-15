@@ -526,7 +526,7 @@ export default function Translator() {
   // Unconditional: works idle, paused, mid-translation, or complete.
   const buildExportAction = useAction(api.exportProject.buildExportArtifact);
   const buildZipNowAction = useAction(api.exportProject.buildZipNow);
-  const issueExportTokenAction = useAction(api.artifactMutations.issueExportToken);
+  const issueExportToken = useMutation(api.artifactMutations.issueExportToken); // server-defined as mutation
   const [isExporting, setIsExporting] = useState(false);
   const handleExportBackup = useCallback(async () => {
     if (!projectId) {
@@ -544,7 +544,7 @@ export default function Translator() {
       const { blobUrl } = await fetchExportBlobUrl({
         projectId,
         fileName: `${(pdfFileName || "onyx-project").replace(/\.pdf$/i, "").replace(/[^a-zA-Z0-9_-]/g, "_")}_backup.json`,
-        issueToken: issueExportTokenAction,
+        issueToken: issueExportToken,
       });
       const a = document.createElement("a");
       a.href = blobUrl;
@@ -559,7 +559,7 @@ export default function Translator() {
     } finally {
       setIsExporting(false);
     }
-  }, [projectId, pdfFileName, buildExportAction, issueExportTokenAction]);
+  }, [projectId, pdfFileName, buildExportAction, issueExportToken]);
 
   // PHASE 2 IMPORT — one raw POST; server validates before any write and
   // restores the project server-side. Browser may close once the toast shows.

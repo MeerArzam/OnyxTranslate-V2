@@ -24,7 +24,7 @@ td code{color:#00e5ff}
 <body>
 <p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
 <h1>Convex Functions — Mutations, Queries, History, Upload, Identity, HTTP</h1>
-<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-14 17:32 UTC</p>
+<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-15 15:35 UTC</p>
 <p>Files on this page: <code>convex/mutations.ts</code>, <code>convex/queries.ts</code>, <code>convex/history.ts</code>, <code>convex/upload.ts</code>, <code>convex/identity.ts</code>, <code>convex/jobMutations.ts</code>, <code>convex/importJob.ts</code>, <code>convex/exportProject.ts</code>, <code>convex/artifactMutations.ts</code>, <code>convex/http.ts</code>, <code>convex/crons.ts</code></p><h2>convex/mutations.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>createProject</code> — mutation</li><li><code>updateProject</code> — mutation</li><li><code>deleteProject</code> — mutation</li><li><code>upsertChunk</code> — mutation</li><li><code>updateChunk</code> — mutation</li><li><code>upsertTranslation</code> — mutation</li><li><code>updateTranslation</code> — mutation</li><li><code>deleteChunksForLang</code> — mutation</li><li><code>createJob</code> — mutation</li><li><code>saveImageTranslation</code> — mutation</li></ul></p><pre><code>import { v } from "convex/values";
 import { mutation } from "./_generated/server";
 
@@ -530,39 +530,23 @@ export const deleteHistory = mutation({
     await ctx.db.delete(args.historyId);
   },
 });
-</code></pre><h2>convex/upload.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>storePdf</code> — action</li><li><code>generatePdfUploadUrl</code> — mutation</li><li><code>finalizePdfUpload</code> — mutation</li><li><code>finalizeUploadedPdf</code> — mutation</li><li><code>beginProcessing</code> — mutation</li></ul></p><pre><code>import { v } from "convex/values";
-import { action, mutation } from "./_generated/server";
+</code></pre><h2>convex/upload.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>generatePdfUploadUrl</code> — mutation</li><li><code>finalizePdfUpload</code> — mutation</li><li><code>finalizeUploadedPdf</code> — mutation</li><li><code>beginProcessing</code> — mutation</li></ul></p><pre><code>import { v } from "convex/values";
+import { mutation } from "./_generated/server";
 import { api } from "./_generated/api";
 
 /**
  * convex/upload.ts — PDF storage.
  *
- * FIX 2 (regression pass): Convex caps action arguments at 5MiB, so the old
- * storePdf(pdfBase64) path silently failed for any PDF larger than ~3.7MB —
- * which is incompatible with the "no file limits" requirement. Added the
- * standard Convex direct-upload flow: the browser POSTs the file straight to
- * Storage via a generated upload URL (no argument cap). storePdf is kept for
- * backward compatibility with existing import/tests paths.
+ * Convex caps action arguments at 5MiB, so a base64 upload path could never
+ * carry a large PDF. All file bytes flow through the Convex direct-upload
+ * flow (generatePdfUploadUrl → browser POST → finalize) or the Phase 2 HTTP
+ * actions — there is no base64 file-arg path anywhere in live code.
  *
  * This module runs on the V8 runtime because Convex only allows mutations
- * there; storePdf decodes base64 via atob instead of Buffer accordingly.
+ * there.
  */
-export const storePdf = action({
-  args: {
-    fileName: v.string(),
-    pdfBase64: v.string(),
-  },
-  handler: async (ctx, args) =&gt; {
-    const binary = atob(args.pdfBase64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i &lt; binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    const blob = new Blob([bytes], { type: "application/pdf" });
-    const storageId = await ctx.storage.store(blob);
-    return { storageId };
-  },
-});
 
-/** FIX 2: step 1 of the direct-upload flow — mint a one-time upload URL. */
+/** Step 1 of the direct-upload flow — mint a one-time upload URL. */
 export const generatePdfUploadUrl = mutation({
   args: {},
   handler: async (ctx) =&gt; {
@@ -570,7 +554,7 @@ export const generatePdfUploadUrl = mutation({
   },
 });
 
-/** FIX 2: step 3 of the direct-upload flow — capture the storage id + size. */
+/** Step 3 of the direct-upload flow — capture the storage id + size. */
 export const finalizePdfUpload = mutation({
   args: { storageId: v.id("_storage") },
   handler: async (ctx, args) =&gt; {
@@ -601,6 +585,7 @@ export const finalizeUploadedPdf = mutation({
 
     await ctx.db.patch(args.uploadJobId, {
       storageId: args.storageId,
+      uploadPath: 2, // PHASE 3: honest observability — direct Storage POST path
       heartbeatAt: Date.now(),
       updatedAt: Date.now(),
     });
@@ -709,6 +694,7 @@ export const createUploadJob = mutation({
     storageId: v.optional(v.id("_storage")),
     idempotencyKey: v.optional(v.string()),
     langCodes: v.optional(v.array(v.string())),
+    uploadPath: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   },
@@ -728,6 +714,7 @@ export const createUploadJob = mutation({
       storageId: args.storageId,
       idempotencyKey: args.idempotencyKey,
       langCodes: args.langCodes,
+      uploadPath: args.uploadPath ?? 1,
       status: "uploaded",
       stageSeq: 0,
       heartbeatAt: Date.now(),
@@ -784,6 +771,7 @@ export const createPendingUploadWithPath = mutation({
       fileSize: args.fileSize,
       langCodes: args.langCodes,
       idempotencyKey: args.idempotencyKey,
+      uploadPath: 2, // staging row implies the direct Storage POST path
       status: "uploaded",
       stageSeq: 0,
       heartbeatAt: now,
@@ -1336,8 +1324,9 @@ export const buildZipNow = action({
     return { ok: true, url: project?.zipUrl ?? undefined };
   },
 });
-</code></pre><h2>convex/artifactMutations.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>upsertExportArtifact</code> — mutation</li></ul></p><pre><code>import { v } from "convex/values";
-import { mutation } from "./_generated/server";
+</code></pre><h2>convex/artifactMutations.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>upsertExportArtifact</code> — mutation</li><li><code>issueExportToken</code> — mutation</li><li><code>consumeExportToken</code> — query</li></ul></p><pre><code>import { v } from "convex/values";
+import { mutation, query } from "./_generated/server";
+import { EXPORT_KIND } from "./exportProject";
 
 /**
  * convex/artifactMutations.ts — PHASE 2: idempotent export-artifact upsert.
@@ -1375,6 +1364,48 @@ export const upsertExportArtifact = mutation({
     return { artifactId, replaced: false as const };
   },
 });
+
+/**
+ * PHASE 3 client-path fix: the export token — projectId bound to its artifact's
+ * storageId, single-use-safe (read-only, short TTL). The download httpAction
+ * uses it to serve the JSON with a Content-Disposition filename; browsers honor
+ * that on cross-origin URLs (the plain anchor+download attribute is ignored).
+ */
+export const issueExportToken = mutation({
+  args: { projectId: v.id("projects"), fileName: v.string() },
+  handler: async (ctx, args) =&gt; {
+    const artifacts = await ctx.db
+      .query("exportArtifacts")
+      .withIndex("by_project", (q) =&gt; q.eq("projectId", args.projectId))
+      .collect();
+    const artifact = artifacts.find((a) =&gt; a.kind === EXPORT_KIND);
+    if (!artifact) throw new Error("No export artifact for this project yet");
+    const token = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    const ttlMs = 10 * 60 * 1000;
+    await ctx.db.insert("exportTokens", {
+      token,
+      projectId: args.projectId,
+      storageId: artifact.storageId,
+      fileName: args.fileName,
+      expiresAt: Date.now() + ttlMs,
+    });
+    return { token };
+  },
+});
+
+/** Used by the download httpAction to resolve + lazily expire tokens. */
+export const consumeExportToken = query({
+  args: { token: v.string() },
+  handler: async (ctx, args) =&gt; {
+    const row = await ctx.db
+      .query("exportTokens")
+      .withIndex("by_token", (q) =&gt; q.eq("token", args.token))
+      .first();
+    if (!row) return null;
+    if (row.expiresAt &lt; Date.now()) return null;
+    return row;
+  },
+});
 </code></pre><h2>convex/http.ts — full real source</h2><p><strong>Exports:</strong><ul></ul></p><pre><code>import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { api } from "./_generated/api";
@@ -1397,17 +1428,62 @@ import { api } from "./_generated/api";
 const MAX_PATH1_BYTES = 19 * 1024 * 1024; // 19MB — reported honestly, enforced by platform physics
 const MAX_IMPORT_BYTES = 19 * 1024 * 1024;
 
-const ALL_LANGS = [
-  "ur", "ar", "fr", "ja", "es", "hi", "tr", "zh", "ru", "ko",
-  "de", "ks", "ro", "sw", "it", "la", "id", "ne", "bn", "pt",
-];
+// PHASE 3 client-path fix: custom httpActions get NO CORS headers by default,
+// so every browser XHR (and its preflight) was blocked — invisible to the
+// server-level tests, caught by the real Chromium run. The app is public by
+// design (client-id identity, no cookies), so a permissive ACAO is correct.
+const CORS_HEADERS: Record&lt;string, string&gt; = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Max-Age": "86400",
+};
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    headers: { ...CORS_HEADERS, "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
 }
+
+// ─── PHASE 3: export download with an honest filename ──────────────────────
+// Browsers IGNORE the anchor `download` attribute on cross-origin URLs, so the
+// direct storage link either navigated away or opened inline and no download
+// event ever fired (caught by the real Chromium client-path run). Exports are
+// now served here with Content-Disposition. Token-bound: the client can only
+// download the artifact its own project produced.
+export const downloadExport = httpAction(async (ctx, request) =&gt; {
+  try {
+    const url = new URL(request.url);
+    const token = url.searchParams.get("t") ?? "";
+    if (!token) return json({ ok: false, error: "Missing token" }, 400);
+    const row = await ctx.runQuery(api.artifactMutations.consumeExportToken, { token });
+    if (!row) return json({ ok: false, error: "Export link expired or invalid" }, 404);
+    const blob = await ctx.storage.get(row.storageId);
+    if (!blob) return json({ ok: false, error: "Artifact bytes missing" }, 404);
+    const safeName = row.fileName.replace(/[^a-zA-Z0-9_.-]/g, "_") || "onyx_backup.json";
+    return new Response(blob, {
+      status: 200,
+      headers: {
+        ...CORS_HEADERS,
+        "Content-Type": "application/json",
+        "Content-Disposition": `attachment; filename="${safeName}"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  } catch (err) {
+    return json({ ok: false, error: err instanceof Error ? err.message : String(err) }, 500);
+  }
+});
+
+function preflight(): Response {
+  return new Response(null, { status: 204, headers: CORS_HEADERS });
+}
+
+const ALL_LANGS = [
+  "ur", "ar", "fr", "ja", "es", "hi", "tr", "zh", "ru", "ko",
+  "de", "ks", "ro", "sw", "it", "la", "id", "ne", "bn", "pt",
+];
 
 // ─── Path 1: ONE request → uploadJob → processing scheduled ────────────────
 
@@ -1455,6 +1531,7 @@ export const uploadAndCreateJob = httpAction(async (ctx, request) =&gt; {
       storageId,
       idempotencyKey,
       langCodes: langCodes &amp;&amp; langCodes.length &gt; 0 ? langCodes : ALL_LANGS,
+      uploadPath: 1,
       createdAt: now,
       updatedAt: now,
     });
@@ -1542,9 +1619,24 @@ http.route({
   handler: uploadAndCreateJob,
 });
 http.route({
+  path: "/uploadAndCreateJob",
+  method: "OPTIONS",
+  handler: httpAction(async () =&gt; preflight()),
+});
+http.route({
   path: "/uploadAndImport",
   method: "POST",
   handler: uploadAndImport,
+});
+http.route({
+  path: "/uploadAndImport",
+  method: "OPTIONS",
+  handler: httpAction(async () =&gt; preflight()),
+});
+http.route({
+  path: "/downloadExport",
+  method: "GET",
+  handler: downloadExport,
 });
 
 export default http;

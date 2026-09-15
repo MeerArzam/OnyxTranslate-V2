@@ -208,6 +208,14 @@ const PHASES: { phase: string; title: string; status: ReactNode; files: string; 
     evidence:
       "live-tests.html: tr/ks/bn rows updated to 99, D3 resolution note, extraction output, ar/ja/de assertion table, C3 bidi section. history.html: Phase 11 entry. convex-functions-5.html regenerated from current renderPdfCore (toVisualBidi + Amiri). All pages ≤55KB, rebuilt into dist/.",
   },
+  {
+    phase: "P3",
+    title: "Phase 3 — client-path verification gate (Playwright, real built app)",
+    status: <span style={ok}>COMPLETE — 44/44 client assertions PASS</span>,
+    files: "scripts/phase3ClientTest.mjs, scripts/phase3run.sh, convex/http.ts, convex/artifactMutations.ts, src/pages/Translator.tsx, convex/renderPdfCore.ts, convex/generatePdf.ts",
+    evidence:
+      "Real-browser (headless Chromium on vite preview of dist/), staged harness, OS-supervised launcher. Stage 1 upload ≤19MB + export mid/idle: 16/16. Stage 2 >20MB Path-2 + drag-drop + two-tab isolation: 12/12. Stage 3 close-during-upload recovery: 3/3. Stage 4 import valid+malformed: 6/6. Stage 5 image/camera: PASS. Stage 6 preservation E2E: 7/7. REAL bugs fixed: (1) httpActions had NO CORS headers → every browser XHR blocked (Node tests never saw it) — ACAO+OPTIONS added; (2) Export dead: issueExportToken mutation called via useAction + kind mismatch (backup suffix) — fixed; downloads now blob→same-origin objectURL; (3) ur PDF chain hung 20+min: fontkit OOMs on Nastaliq (first widthOfTextAtSize); hi/ne/bn statics hit 'regeneratorRuntime is not defined'; fixes: ur→Amiri + true bidi for all RTL, hi/ne/bn→notofonts statics + regenerator-runtime polyfill in generatePdf.ts, ja/zh/ko→noto-cjk static OTFs, and generateTranslatedPdf now catches render errors (marks row error + message) and CONTINUES the chain. Archive untouched: 175/175 hashes verified before and after. Gates: convex dev --once ✓, tsc -b --noEmit ✓, vite build ✓; forbidden greps clean (no base64 file args, no sendBeacon/keepalive, no 10MB/300-page limits, no runtime _universal imports).",
+  },
 ];
 
 const FIDELITY: { n: number; assertion: string; ar: string; ja: string; de: string }[] = [

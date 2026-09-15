@@ -6,7 +6,7 @@ STAGE="$1"
 BUDGET="$2"   # seconds
 LOG="/tmp/onyx/stage${STAGE}.out"
 rm -f "$LOG"
-setsid node scripts/phase3ClientTest.mjs --stage="$STAGE" > "$LOG" 2>&1 &
+WATCHDOG_MS=$(( (BUDGET - 40) * 1000 )) setsid node scripts/phase3ClientTest.mjs --stage="$STAGE" > "$LOG" 2>&1 &
 WPID=$!
 ELAPSED=0
 while kill -0 $WPID 2>/dev/null; do

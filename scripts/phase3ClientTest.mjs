@@ -56,7 +56,7 @@ function ok(id, name, cond, evidence = "") {
 }
 
 // HARD watchdog — no silent hangs: dump progress + exit non-zero.
-const WATCHDOG_MS = 240000; // 240s — well under the command cap
+const WATCHDOG_MS = parseInt(process.env.WATCHDOG_MS ?? "240000", 10); // overridable via env (stage 6 polls long chains)
 const watchdog = setTimeout(() => {
   step("WATCHDOG fired — stage exceeded budget");
   persistResults();

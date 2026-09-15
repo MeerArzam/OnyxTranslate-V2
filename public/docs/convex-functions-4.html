@@ -24,7 +24,7 @@ td code{color:#00e5ff}
 <body>
 <p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
 <h1>Convex Functions — PDF Parse, PDF Generate, ZIP</h1>
-<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-14 17:32 UTC</p>
+<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-15 15:35 UTC</p>
 <p>Files on this page: <code>convex/parsePdf.ts</code>, <code>convex/generatePdf.ts</code>, <code>convex/zipAssembly.ts</code></p><h2>convex/parsePdf.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>parseUploadedPdf</code> — action</li></ul></p><pre><code>"use node";
 
 import { v } from "convex/values";
@@ -233,6 +233,13 @@ export const parseUploadedPdf = action({
 });
 </code></pre><h2>convex/generatePdf.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>generateTranslatedPdf</code> — action</li></ul></p><pre><code>"use node";
 
+// fontkit's UMD bundle contains transpiled async GSUB code (Devanagari/Bengali
+// substitution paths) that expects a global regeneratorRuntime — provide it
+// BEFORE fontkit is ever imported. Verified: hi measures 201 widths in 746ms
+// with the polyfill; without it fontkit throws "regeneratorRuntime is not
+// defined".
+import "regenerator-runtime/runtime";
+
 import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { api } from "./_generated/api";
@@ -324,40 +331,58 @@ export const generateTranslatedPdf = action({
 
     // 2. Render via the shared production core (identical code path as the
     // fidelity tests): copy pages → per-item whiteout → block overlay
-
+    //
+    // CHAIN-SAFETY: a render crash here used to kill the whole remaining
+    // language chain (the chain continues INSIDE this action). Now the error
+    // is surfaced honestly on the translation row (status "error" + message
+    // in pdfProgress) and the chain CONTINUES to the next language.
     const pageData = (project.pageData || []) as NonNullable&lt;
       Parameters&lt;typeof renderTranslatedPdf&gt;[0]["pageData"]
     &gt;;
 
-    const { bytes: resultBytes, stats: pdfFit } = await renderTranslatedPdf({
-      srcBytes: pdfBytes,
-      pageData,
-      mergedText: args.mergedText,
-      langCode: args.langCode,
-      getFontBytes,
-    });
+    let storageId: string | undefined;
+    let url: string | undefined;
+    try {
+      const { bytes: resultBytes, stats: pdfFit } = await renderTranslatedPdf({
+        srcBytes: pdfBytes,
+        pageData,
+        mergedText: args.mergedText,
+        langCode: args.langCode,
+        getFontBytes,
+      });
 
-    console.log(
-      `[generatePdf] ${args.langCode} pdfFit: blocks=${pdfFit.pagesUsingBlocks} fallback=${pdfFit.pagesFallback} paraMatched=${pdfFit.paragraphsMatchedPages} minFont=${pdfFit.minFontSize === 999 ? 0 : pdfFit.minFontSize}pt`,
-    );
+      console.log(
+        `[generatePdf] ${args.langCode} pdfFit: blocks=${pdfFit.pagesUsingBlocks} fallback=${pdfFit.pagesFallback} paraMatched=${pdfFit.paragraphsMatchedPages} minFont=${pdfFit.minFontSize === 999 ? 0 : pdfFit.minFontSize}pt`,
+      );
 
-    // 3. Store in Convex Storage
-    const resultBlob = new Blob(
-      [new Uint8Array(resultBytes).buffer as ArrayBuffer],
-      { type: "application/pdf" },
-    );
-    const storageId = await ctx.storage.store(resultBlob);
-    const url = (await ctx.storage.getUrl(storageId)) ?? undefined;
+      // 3. Store in Convex Storage
+      const resultBlob = new Blob(
+        [new Uint8Array(resultBytes).buffer as ArrayBuffer],
+        { type: "application/pdf" },
+      );
+      storageId = await ctx.storage.store(resultBlob);
+      url = (await ctx.storage.getUrl(storageId)) ?? undefined;
 
-    // 4. Update translation record
-    await ctx.runMutation(api.mutations.updateTranslation, {
-      translationId: args.translationId,
-      pdfStorageId: storageId,
-      pdfUrl: url,
-      status: "complete",
-      pdfGenerating: false,
-      completedAt: Date.now(),
-    });
+      // 4. Update translation record
+      await ctx.runMutation(api.mutations.updateTranslation, {
+        translationId: args.translationId,
+        pdfStorageId: storageId,
+        pdfUrl: url,
+        status: "complete",
+        pdfGenerating: false,
+        completedAt: Date.now(),
+      });
+    } catch (renderErr) {
+      const message = renderErr instanceof Error ? renderErr.message : String(renderErr);
+      console.error(`[generatePdf] ${args.langCode} RENDER FAILED: ${message}`);
+      await ctx.runMutation(api.mutations.updateTranslation, {
+        translationId: args.translationId,
+        status: "error",
+        pdfGenerating: false,
+        pdfProgress: `pdf_render_failed: ${message.slice(0, 300)}`,
+        completedAt: Date.now(),
+      });
+    }
 
     // 5. UNIFIED chain: next language comes from the args set by
     // translateContent (nextLangCode + remainingLangs). If none remain,
@@ -382,7 +407,7 @@ export const generateTranslatedPdf = action({
       });
     }
 
-    return { storageId, url };
+    return { storageId: storageId ?? undefined, url, renderFailed: !storageId };
   },
 });
 </code></pre><h2>convex/zipAssembly.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>buildZip</code> — action</li></ul></p><pre><code>"use node";

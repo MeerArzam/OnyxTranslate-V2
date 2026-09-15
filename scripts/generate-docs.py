@@ -878,6 +878,38 @@ blocks, clientId+tabSessionId bound, chain auto-started server-side); duplicate 
 idempotency key returns the SAME job; malformed import → 400 with zero partial writes; wrong-type import →
 400; valid import → full restoration (fullText/chunks/translations/identity).</li>
 </ul>
+
+<h2>Phase 14 — Phase 3 client-path verification gate + ur/hi/ne/bn PDF font fixes (2026-09-15)</h2>
+<ul>
+<li><strong>Method</strong>: Playwright/headless-Chromium drove the REAL built app (vite preview of dist/,
+staged harness <code>scripts/phase3ClientTest.mjs</code> with OS-supervised launcher
+<code>scripts/phase3run.sh</code>). Server-only tests do not count; every assertion below came from the
+browser path with screenshots in /tmp/onyx/shots/. Archive untouched: verify script 175/175 before and after.</li>
+<li><strong>REAL client-path bugs found &amp; fixed</strong>: ① httpActions had NO CORS headers → every browser
+XHR to /uploadAndCreateJob etc. was blocked (Node tests never saw it) — added ACAO + OPTIONS preflight.
+② Export button silently did nothing: client called <code>issueExportToken</code> (a mutation) via
+<code>useAction</code>, and <code>artifactMutations</code> looked up kind "onyx-translate-project-backup" while
+artifacts are stored as "onyx-translate-project" — fixed hook + kind. Downloads now fetch the artifact as a
+blob → same-origin object URL (cross-origin storage URLs ignore the download attribute).</li>
+<li><strong>PDF font fixes (root-caused by local bisection, verified live)</strong>: the ur chain leg hung 20+ min
+in generating_pdf. Root cause: fontkit's layout engine OOMs on Noto Nastaliq Urdu (static AND variable) on the
+FIRST widthOfTextAtSize; the Devanagari/Bengali statics instead throw "regeneratorRuntime is not defined" from
+fontkit's UMD GSUB code; the old variable google/fonts fonts crash with the known GPOS anchor error. Fixes:
+ur → Amiri (proven shaped-Arabic font, covers Urdu presentation forms; true bidi shaping now enabled for ALL
+RTL langs), hi/ne/bn → notofonts static TTFs + <code>import "regenerator-runtime/runtime"</code> in
+generatePdf.ts, ja/zh/ko → noto-cjk static subset OTFs, and generateTranslatedPdf now CATCHES render errors,
+marks the row error + message (no more silent infinite generating_pdf) and CONTINUES the language chain.</li>
+<li><strong>Client-path results (all PASS)</strong>: T2 upload ≤19MB via file input — Path-1 POST fired once,
+jobId shown, project row created, adopt+reopen via "Your jobs", export mid-translation + idle downloads valid
+JSON (16/16). T3 &gt;20MB — createPendingUpload → XHR POST → finalize → same chain, honest "direct upload
+(large file)" badge, no rejection (12/12 incl. T4 drag-drop + T8 two-tab isolation). T5 close-during-upload →
+pending recovery Resume/Discard, retry without duplicates (3/3). T6 import valid + malformed → full restore /
+visible 400 with zero partial records (6/6). T9 image/camera regression intact. T10 preservation — translated
+PDF keeps the embedded image (image-ops=1), QA ran during chunk translation, ZIP assembled server-side and
+downloads with PK magic (7/7). T11 static gates green: convex dev --once, tsc -b --noEmit, vite build;
+forbidden-pattern greps clean (no base64 file args, no sendBeacon/keepalive, no 10MB/300-page limits, no
+runtime _universal imports).</li>
+</ul>
 """
 
     write("history.html", page("Change Log", "Reconstructed from verifiable code evidence", body, "history.html"))

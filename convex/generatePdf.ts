@@ -1,5 +1,12 @@
 "use node";
 
+// fontkit's UMD bundle contains transpiled async GSUB code (Devanagari/Bengali
+// substitution paths) that expects a global regeneratorRuntime — provide it
+// BEFORE fontkit is ever imported. Verified: hi measures 201 widths in 746ms
+// with the polyfill; without it fontkit throws "regeneratorRuntime is not
+// defined".
+import "regenerator-runtime/runtime";
+
 import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { api } from "./_generated/api";
@@ -91,40 +98,58 @@ export const generateTranslatedPdf = action({
 
     // 2. Render via the shared production core (identical code path as the
     // fidelity tests): copy pages → per-item whiteout → block overlay
-
+    //
+    // CHAIN-SAFETY: a render crash here used to kill the whole remaining
+    // language chain (the chain continues INSIDE this action). Now the error
+    // is surfaced honestly on the translation row (status "error" + message
+    // in pdfProgress) and the chain CONTINUES to the next language.
     const pageData = (project.pageData || []) as NonNullable<
       Parameters<typeof renderTranslatedPdf>[0]["pageData"]
     >;
 
-    const { bytes: resultBytes, stats: pdfFit } = await renderTranslatedPdf({
-      srcBytes: pdfBytes,
-      pageData,
-      mergedText: args.mergedText,
-      langCode: args.langCode,
-      getFontBytes,
-    });
+    let storageId: string | undefined;
+    let url: string | undefined;
+    try {
+      const { bytes: resultBytes, stats: pdfFit } = await renderTranslatedPdf({
+        srcBytes: pdfBytes,
+        pageData,
+        mergedText: args.mergedText,
+        langCode: args.langCode,
+        getFontBytes,
+      });
 
-    console.log(
-      `[generatePdf] ${args.langCode} pdfFit: blocks=${pdfFit.pagesUsingBlocks} fallback=${pdfFit.pagesFallback} paraMatched=${pdfFit.paragraphsMatchedPages} minFont=${pdfFit.minFontSize === 999 ? 0 : pdfFit.minFontSize}pt`,
-    );
+      console.log(
+        `[generatePdf] ${args.langCode} pdfFit: blocks=${pdfFit.pagesUsingBlocks} fallback=${pdfFit.pagesFallback} paraMatched=${pdfFit.paragraphsMatchedPages} minFont=${pdfFit.minFontSize === 999 ? 0 : pdfFit.minFontSize}pt`,
+      );
 
-    // 3. Store in Convex Storage
-    const resultBlob = new Blob(
-      [new Uint8Array(resultBytes).buffer as ArrayBuffer],
-      { type: "application/pdf" },
-    );
-    const storageId = await ctx.storage.store(resultBlob);
-    const url = (await ctx.storage.getUrl(storageId)) ?? undefined;
+      // 3. Store in Convex Storage
+      const resultBlob = new Blob(
+        [new Uint8Array(resultBytes).buffer as ArrayBuffer],
+        { type: "application/pdf" },
+      );
+      storageId = await ctx.storage.store(resultBlob);
+      url = (await ctx.storage.getUrl(storageId)) ?? undefined;
 
-    // 4. Update translation record
-    await ctx.runMutation(api.mutations.updateTranslation, {
-      translationId: args.translationId,
-      pdfStorageId: storageId,
-      pdfUrl: url,
-      status: "complete",
-      pdfGenerating: false,
-      completedAt: Date.now(),
-    });
+      // 4. Update translation record
+      await ctx.runMutation(api.mutations.updateTranslation, {
+        translationId: args.translationId,
+        pdfStorageId: storageId,
+        pdfUrl: url,
+        status: "complete",
+        pdfGenerating: false,
+        completedAt: Date.now(),
+      });
+    } catch (renderErr) {
+      const message = renderErr instanceof Error ? renderErr.message : String(renderErr);
+      console.error(`[generatePdf] ${args.langCode} RENDER FAILED: ${message}`);
+      await ctx.runMutation(api.mutations.updateTranslation, {
+        translationId: args.translationId,
+        status: "error",
+        pdfGenerating: false,
+        pdfProgress: `pdf_render_failed: ${message.slice(0, 300)}`,
+        completedAt: Date.now(),
+      });
+    }
 
     // 5. UNIFIED chain: next language comes from the args set by
     // translateContent (nextLangCode + remainingLangs). If none remain,
@@ -149,6 +174,6 @@ export const generateTranslatedPdf = action({
       });
     }
 
-    return { storageId, url };
+    return { storageId: storageId ?? undefined, url, renderFailed: !storageId };
   },
 });

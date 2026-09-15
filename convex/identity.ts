@@ -61,6 +61,7 @@ export const createUploadJob = mutation({
     storageId: v.optional(v.id("_storage")),
     idempotencyKey: v.optional(v.string()),
     langCodes: v.optional(v.array(v.string())),
+    uploadPath: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   },
@@ -80,6 +81,7 @@ export const createUploadJob = mutation({
       storageId: args.storageId,
       idempotencyKey: args.idempotencyKey,
       langCodes: args.langCodes,
+      uploadPath: args.uploadPath ?? 1,
       status: "uploaded",
       stageSeq: 0,
       heartbeatAt: Date.now(),
@@ -136,6 +138,7 @@ export const createPendingUploadWithPath = mutation({
       fileSize: args.fileSize,
       langCodes: args.langCodes,
       idempotencyKey: args.idempotencyKey,
+      uploadPath: 2, // staging row implies the direct Storage POST path
       status: "uploaded",
       stageSeq: 0,
       heartbeatAt: now,

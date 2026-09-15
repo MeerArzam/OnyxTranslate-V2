@@ -106,6 +106,9 @@ export default defineSchema({
     status: v.string(),
     // parsed → chunked → translating → generating_pdf → assembling_zip → complete
     processStage: v.optional(v.string()),
+    // PHASE 3: which browser→server transport created this job (1 = single
+    // HTTP action ≤19MB, 2 = direct Storage POST). Honest observability.
+    uploadPath: v.optional(v.number()),
     // monotonic counter: a scheduled stage run is only valid if stageSeq matches
     stageSeq: v.optional(v.number()),
     heartbeatAt: v.optional(v.number()),
@@ -145,6 +148,18 @@ export default defineSchema({
     sizeBytes: v.optional(v.number()),
     createdAt: v.number(),
   }).index("by_project", ["projectId"]),
+
+  // ══ PHASE 3: short-TTL download tokens for export artifacts ══
+  // Browsers ignore the anchor `download` attribute on cross-origin URLs, so
+  // exports are served through /downloadExport with a Content-Disposition
+  // filename. The token keeps projectId → storageId resolution server-side.
+  exportTokens: defineTable({
+    token: v.string(),
+    projectId: v.id("projects"),
+    storageId: v.id("_storage"),
+    fileName: v.string(),
+    expiresAt: v.number(),
+  }).index("by_token", ["token"]),
 
   // LIVE TEST: per-language live verification results (one row per language,
   // upserted by the saveLiveTest mutation after each Gemini round-trip).

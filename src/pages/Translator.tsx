@@ -83,6 +83,7 @@ import {
   uploadLargeFile,
   uploadAndImport,
   PATH1_MAX_BYTES,
+  fetchExportBlobUrl,
 } from "@/lib/translator/serverUpload";
 
 const targetLanguages = [
@@ -525,6 +526,7 @@ export default function Translator() {
   // Unconditional: works idle, paused, mid-translation, or complete.
   const buildExportAction = useAction(api.exportProject.buildExportArtifact);
   const buildZipNowAction = useAction(api.exportProject.buildZipNow);
+  const issueExportTokenAction = useAction(api.artifactMutations.issueExportToken);
   const [isExporting, setIsExporting] = useState(false);
   const handleExportBackup = useCallback(async () => {
     if (!projectId) {
@@ -533,16 +535,23 @@ export default function Translator() {
     }
     setIsExporting(true);
     try {
-      const res = await buildExportAction({ projectId });
-      if (res.url) {
-        const a = document.createElement("a");
-        a.href = res.url;
-        a.download = `${(pdfFileName || "onyx-project").replace(/\.pdf$/i, "").replace(/[^a-zA-Z0-9_-]/g, "_")}_backup.json`;
-        a.click();
-        toast.success("Export ready — JSON backup downloaded.");
-      } else {
-        throw new Error("Export artifact URL missing");
-      }
+      // PHASE 3 client-path fix: browsers ignore the anchor `download`
+      // attribute on cross-origin URLs, so the old direct-storage anchor
+      // never produced a download event. Build server-side, then fetch through
+      // the token endpoint and save from a same-origin blob URL.
+      const artifact = await buildExportAction({ projectId });
+      if (!artifact.ok) throw new Error("Server failed to assemble the export artifact");
+      const { blobUrl } = await fetchExportBlobUrl({
+        projectId,
+        fileName: `${(pdfFileName || "onyx-project").replace(/\.pdf$/i, "").replace(/[^a-zA-Z0-9_-]/g, "_")}_backup.json`,
+        issueToken: issueExportTokenAction,
+      });
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `${(pdfFileName || "onyx-project").replace(/\.pdf$/i, "").replace(/[^a-zA-Z0-9_-]/g, "_")}_backup.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+      toast.success("Export ready — JSON backup downloaded.");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error("[Onyx] export failed:", message);
@@ -550,7 +559,7 @@ export default function Translator() {
     } finally {
       setIsExporting(false);
     }
-  }, [projectId, pdfFileName, buildExportAction]);
+  }, [projectId, pdfFileName, buildExportAction, issueExportTokenAction]);
 
   // PHASE 2 IMPORT — one raw POST; server validates before any write and
   // restores the project server-side. Browser may close once the toast shows.
@@ -1337,6 +1346,16 @@ export default function Translator() {
                 <Badge variant="outline" className="text-[10px]" style={{ borderColor: 'rgba(52,211,153,0.4)', color: '#34d399' }}>
                   <CloudUpload className="size-2.5 mr-1" /> Continues even if you close this page — reopen anytime
                 </Badge>
+                {/* PHASE 3: honest transport observability — which path carried
+                    this file to the server (visible even after the upload card
+                    auto-hides; independent of no-artificial-limits policy) */}
+                {activeUploadJob && (
+                  <Badge variant="outline" className="text-[10px]" style={{ borderColor: 'rgba(0,229,255,0.35)', color: '#00e5ff' }}>
+                    {activeUploadJob.uploadPath === 2 || (activeUploadJob.fileSize ?? 0) > 19 * 1024 * 1024
+                      ? `Large file (${((activeUploadJob.fileSize ?? 0) / (1024 * 1024)).toFixed(1)} MB) — direct upload path`
+                      : `Single-request upload (${((activeUploadJob.fileSize ?? 0) / (1024 * 1024)).toFixed(1)} MB)`}
+                  </Badge>
+                )}
                 <Button
                   variant="outline"
                   size="sm"

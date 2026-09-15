@@ -25,6 +25,34 @@ const CONVEX_HTTP_URL: string =
 
 export const PATH1_MAX_BYTES = 19 * 1024 * 1024; // mirrors convex/http.ts
 
+/**
+ * PHASE 3 client-path fix: download the server-built export JSON through the
+ * /downloadExport endpoint (Content-Disposition filename) and hand the caller a
+ * same-origin blob URL. Browsers ignore the anchor `download` attribute on
+ * cross-origin URLs — the old direct-storage anchor never produced a download
+ * event in a real browser (caught by the Chromium client-path run).
+ */
+export async function fetchExportBlobUrl(opts: {
+  projectId: Id<"projects">;
+  fileName: string;
+  issueToken: (args: { projectId: Id<"projects">; fileName: string }) => Promise<{ token: string }>;
+}): Promise<{ blobUrl: string; sizeBytes: number | null }> {
+  const { token } = await opts.issueToken({ projectId: opts.projectId, fileName: opts.fileName });
+  const res = await fetch(`${convexHttpBase()}/downloadExport?t=${encodeURIComponent(token)}`);
+  if (!res.ok) {
+    let msg = `Export download failed (HTTP ${res.status})`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body?.error) msg = body.error;
+    } catch {
+      /* non-JSON error body — keep the generic message */
+    }
+    throw new Error(msg);
+  }
+  const blob = await res.blob();
+  return { blobUrl: URL.createObjectURL(blob), sizeBytes: blob.size };
+}
+
 export interface UploadJobHandle {
   uploadJobId: Id<"uploadJobs">;
   path: 1 | 2;

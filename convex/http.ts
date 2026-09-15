@@ -38,6 +38,36 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+// ─── PHASE 3: export download with an honest filename ──────────────────────
+// Browsers IGNORE the anchor `download` attribute on cross-origin URLs, so the
+// direct storage link either navigated away or opened inline and no download
+// event ever fired (caught by the real Chromium client-path run). Exports are
+// now served here with Content-Disposition. Token-bound: the client can only
+// download the artifact its own project produced.
+export const downloadExport = httpAction(async (ctx, request) => {
+  try {
+    const url = new URL(request.url);
+    const token = url.searchParams.get("t") ?? "";
+    if (!token) return json({ ok: false, error: "Missing token" }, 400);
+    const row = await ctx.runQuery(api.artifactMutations.consumeExportToken, { token });
+    if (!row) return json({ ok: false, error: "Export link expired or invalid" }, 404);
+    const blob = await ctx.storage.get(row.storageId);
+    if (!blob) return json({ ok: false, error: "Artifact bytes missing" }, 404);
+    const safeName = row.fileName.replace(/[^a-zA-Z0-9_.-]/g, "_") || "onyx_backup.json";
+    return new Response(blob, {
+      status: 200,
+      headers: {
+        ...CORS_HEADERS,
+        "Content-Type": "application/json",
+        "Content-Disposition": `attachment; filename="${safeName}"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  } catch (err) {
+    return json({ ok: false, error: err instanceof Error ? err.message : String(err) }, 500);
+  }
+});
+
 function preflight(): Response {
   return new Response(null, { status: 204, headers: CORS_HEADERS });
 }
@@ -93,6 +123,7 @@ export const uploadAndCreateJob = httpAction(async (ctx, request) => {
       storageId,
       idempotencyKey,
       langCodes: langCodes && langCodes.length > 0 ? langCodes : ALL_LANGS,
+      uploadPath: 1,
       createdAt: now,
       updatedAt: now,
     });
@@ -193,6 +224,11 @@ http.route({
   path: "/uploadAndImport",
   method: "OPTIONS",
   handler: httpAction(async () => preflight()),
+});
+http.route({
+  path: "/downloadExport",
+  method: "GET",
+  handler: downloadExport,
 });
 
 export default http;

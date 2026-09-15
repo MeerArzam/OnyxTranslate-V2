@@ -53,6 +53,7 @@ export const finalizeUploadedPdf = mutation({
 
     await ctx.db.patch(args.uploadJobId, {
       storageId: args.storageId,
+      uploadPath: 2, // PHASE 3: honest observability — direct Storage POST path
       heartbeatAt: Date.now(),
       updatedAt: Date.now(),
     });

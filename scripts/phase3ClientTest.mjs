@@ -346,7 +346,13 @@ async function stage2() {
     await page2.waitForTimeout(1500);
     const body2 = await page2.locator("body").innerText();
     const ident = await deviceIdentity(page2);
-    const deviceJobs = await convex.query(apiAny.identity.getResumableJobs, { clientId: ident.clientId });
+    // Project row materializes seconds after the upload ACK — poll, don't guess.
+    let deviceJobs = [];
+    for (let i = 0; i < 25; i++) {
+      deviceJobs = await convex.query(apiAny.identity.getResumableJobs, { clientId: ident.clientId });
+      if (deviceJobs.some((p) => p.fileName === "iso-tab1.pdf")) break;
+      await page2.waitForTimeout(1000);
+    }
     ok("T8.1", "tab2 does NOT show tab1's active job (C1 isolation)", !body2.includes("iso-tab1.pdf"), `tab2 shows iso file=${body2.includes("iso-tab1.pdf")}`);
     ok("T8.2", "device-level Your jobs DOES contain it", deviceJobs.some((p) => p.fileName === "iso-tab1.pdf"), `device jobs=${deviceJobs.map((p) => p.fileName).join(",")}`);
     const body1 = await page1.locator("body").innerText();
@@ -383,11 +389,11 @@ async function stage2() {
     await page.screenshot({ path: `${SHOTS}/09-large-safe.png` });
     ok("T3.2", ">20MB → finalize + Safe to close", bigAck.safe || bigAck.jid || bigAck.chips >= 1, `domSafe=${bigAck.safe} jobSuffix=${bigAck.jid} chips=${bigAck.chips}`);
     const bodyText = await page.locator("body").innerText();
-    ok("T3.3", ">20MB → no dump, honest large-file label", !bodyText.includes("Large Novel — Page") && bodyText.includes("direct upload (large file)"), `label=${bodyText.includes("direct upload (large file)")}`);
+    ok("T3.3", ">20MB → no dump, honest large-file label", !bodyText.includes("Large Novel — Page") && bodyText.includes("direct upload path"), `label=${bodyText.includes("direct upload path")}`);
     const ident = await deviceIdentity(page);
     const jobs = await convex.query(apiAny.identity.getUploadJobs, { clientId: ident.clientId });
     const big = jobs.find((j) => j.fileName === "large-22mb.pdf");
-    ok("T3.4", ">20MB → path==2, size intact", !!big && big.path === 2 && big.fileSize > 20 * 1024 * 1024, `path=${big?.path} size=${big?.fileSize} status=${big?.status}`);
+    ok("T3.4", ">20MB → path==2, size intact", !!big && big.uploadPath === 2 && big.fileSize > 20 * 1024 * 1024, `path=${big?.uploadPath} size=${big?.fileSize} status=${big?.status}`);
     state.bigClientId = ident.clientId;
     state.bigJobId = big?._id ?? null;
     state.bigProjectId = big?.projectId ?? null;

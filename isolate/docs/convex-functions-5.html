@@ -24,7 +24,7 @@ td code{color:#00e5ff}
 <body>
 <p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
 <h1>Convex Functions — PDF Layout Cores (x-gap merge + block render)</h1>
-<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-14 17:32 UTC</p>
+<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-15 15:35 UTC</p>
 <p>Files on this page: <code>convex/pdfLayout.ts</code>, <code>convex/renderPdfCore.ts</code></p><h2>convex/pdfLayout.ts — full real source</h2><p><strong>Exports:</strong><ul></ul></p><pre><code>/**
  * convex/pdfLayout.ts — Pure PDF text-layout helpers (NO Convex imports).
  *
@@ -673,20 +673,34 @@ export interface RenderStats {
 }
 
 export const RENDER_FONT_URLS: RenderFontUrls = {
-  ur: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notonastaliqurdu/NotoNastaliqUrdu[wght].ttf",
+  // ALL fonts are STATIC instances. The VARIABLE fonts (Noto* [wght].ttf from
+  // google/fonts) crash fontkit's GPOS anchor parser on real shaped text
+  // ("Cannot destructure 'xCoordinate' from null" / "Cannot read properties
+  // of null (reading 'xCoordinate')") — the same crash class already fixed
+  // for ar/ks with static Amiri (verified against full production text).
+  // Statics verified HTTP-200: notofonts.github.io (TTFs) + noto-cjk (OTFs).
+  // ur: Noto NastaliqUrdu (static AND variable) CRASHES fontkit's layout
+  // engine — a single widthOfTextAtSize OOMs the process (reproduced locally
+  // against the real font: embed OK, first measurement OOM). Amiri covers the
+  // Urdu Arabic-block presentation forms and measures cleanly (200 widths in
+  // 524ms, verified) — ur joins ar/ks on Amiri with TRUE bidi shaping.
+  ur: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/amiri/Amiri-Regular.ttf",
   // C3: ar/ks use Amiri (STATIC classical Naskh with full Unicode
-  // presentation-form coverage). The VARIABLE Noto Sans Arabic crashes in
-  // fontkit's GPOS anchor parser on real shaped text (null anchor in a
-  // variable-glyph combination) — Amiri embeds+draws the identical text
+  // presentation-form coverage). Amiri embeds+draws the identical text
   // cleanly (verified against the full production translation).
   ar: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/amiri/Amiri-Regular.ttf",
   ks: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/amiri/Amiri-Regular.ttf",
-  ja: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansjp/NotoSansJP[wght].ttf",
-  zh: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanssc/NotoSansSC[wght].ttf",
-  ko: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanskr/NotoSansKR[wght].ttf",
-  hi: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansdevanagari/NotoSansDevanagari[wdth,wght].ttf",
-  ne: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansdevanagari/NotoSansDevanagari[wdth,wght].ttf",
-  bn: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansbengali/NotoSansBengali[wdth,wght].ttf",
+  // hi/ne/bn: the notofonts STATIC Devanagari/Bengali TTFs trigger a
+  // different fontkit bug ("regeneratorRuntime is not defined" inside the
+  // UMD bundle's GSUB code) — fixed by importing regenerator-runtime/runtime
+  // in the action module. The old VARIABLE google/fonts URLs also crashed
+  // fontkit (same class as ar). Statics verified HTTP-200 + measured OK.
+  hi: "https://notofonts.github.io/devanagari/fonts/NotoSansDevanagari/hinted/ttf/NotoSansDevanagari-Regular.ttf",
+  ne: "https://notofonts.github.io/devanagari/fonts/NotoSansDevanagari/hinted/ttf/NotoSansDevanagari-Regular.ttf",
+  bn: "https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io/fonts/NotoSansBengali/hinted/ttf/NotoSansBengali-Regular.ttf",
+  ja: "https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/JP/NotoSansJP-Regular.otf",
+  zh: "https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf",
+  ko: "https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/KR/NotoSansKR-Regular.otf",
 };
 
 const RTL_LANGS = new Set(["ar", "ur", "ks"]);
@@ -729,11 +743,10 @@ export async function renderTranslatedPdf(opts: {
   }
 
   const isRTL = RTL_LANGS.has(langCode);
-  // C3: TRUE bidi+shaping only where the embedded font carries the Unicode
-  // presentation forms the reshaper emits (verified cmap coverage):
-  //   ar/ks → Noto Sans Arabic (full coverage)  → bidi + reshape
-  //   ur    → Noto Nastaliq Urdu (NO coverage)  → word-reversal fallback
-  const useBidiShaping = isRTL &amp;&amp; (langCode === "ar" || langCode === "ks");
+  // C3: TRUE bidi+shaping for ALL RTL langs — the fonts in RENDER_FONT_URLS
+  // (Amiri for ar/ur/ks) carry the Unicode presentation forms the reshaper
+  // emits (Amiri verified with real Urdu text: 200 width measurements clean).
+  const useBidiShaping = isRTL;
   const fontUrl = RENDER_FONT_URLS[langCode];
   let font: PDFFont;
   try {

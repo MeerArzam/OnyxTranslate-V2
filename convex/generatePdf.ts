@@ -103,7 +103,14 @@ export const generateTranslatedPdf = action({
     // language chain (the chain continues INSIDE this action). Now the error
     // is surfaced honestly on the translation row (status "error" + message
     // in pdfProgress) and the chain CONTINUES to the next language.
-    const pageData = (project.pageData || []) as NonNullable<
+    // FIX (1MiB limit): if pageData was offloaded to Storage (empty on the
+    // row with a ref present), resolve the real coordinates before rendering.
+    let pageDataRaw: unknown = project.pageData;
+    if (Array.isArray(pageDataRaw) && pageDataRaw.length === 0 && (project as { pageDataStorageId?: string }).pageDataStorageId) {
+      const blob = await ctx.storage.get((project as { pageDataStorageId: string }).pageDataStorageId);
+      if (blob) pageDataRaw = JSON.parse(await blob.text());
+    }
+    const pageData = (pageDataRaw || []) as NonNullable<
       Parameters<typeof renderTranslatedPdf>[0]["pageData"]
     >;
 

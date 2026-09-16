@@ -43,9 +43,27 @@ export const buildExportArtifact = action({
         pageCount: project.pageCount,
         wordCount: project.wordCount,
         status: project.status,
-        fullText: project.fullText,
+        // FIX (1MiB limit): resolve offloaded source values so the export is
+        // always complete and re-importable, exactly as before the offload.
+        fullText: await (async () => {
+          if (project.fullText) return project.fullText;
+          if (project.fullTextStorageId) {
+            const blob = await ctx.storage.get(project.fullTextStorageId);
+            if (blob) return (JSON.parse(await blob.text()) as string) ?? "";
+          }
+          return "";
+        })(),
         parsedPages: project.parsedPages,
-        pageData: project.pageData, // coordinates — required for PDF re-render
+        // Coordinates — required for PDF re-render (resolved if offloaded).
+        pageData: await (async () => {
+          const inline = (project.pageData ?? []) as unknown[];
+          if (Array.isArray(inline) && inline.length > 0) return inline;
+          if (project.pageDataStorageId) {
+            const blob = await ctx.storage.get(project.pageDataStorageId);
+            if (blob) return (JSON.parse(await blob.text()) as unknown[]) ?? [];
+          }
+          return inline;
+        })(),
         pdfStorageId: project.pdfStorageId ?? null,
       },
       chunks: (chunks as Array<{

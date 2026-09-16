@@ -2,6 +2,7 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { api } from "./_generated/api";
+import { isOversized } from "./sourceData";
 
 /**
  * convex/jobProcessing.ts — PHASE 2 server-first processing.
@@ -59,16 +60,34 @@ export const processUploadedPdf = action({
           wordCount: number;
         };
 
+        // FIX (1MiB limit): values over Convex's document cap are stored in
+        // Blob Storage here (the action holds the bytes); the row keeps stubs
+        // plus the refs. Small PDFs behave exactly as before.
+        const pageDataStorageId = isOversized(parsed.pageData)
+          ? await ctx.storage.store(
+              new Blob([JSON.stringify(parsed.pageData)], { type: "application/json" })
+            )
+          : undefined;
+        const fullTextStorageId = isOversized(parsed.fullText)
+          ? await ctx.storage.store(
+              new Blob([JSON.stringify(parsed.fullText)], { type: "application/json" })
+            )
+          : undefined;
+
         projectId = await ctx.runMutation(api.mutations.createProject, {
           sessionId: firstJob.tabSessionId,
           fileName: firstJob.fileName,
           pageCount: parsed.pageCount,
           wordCount: parsed.wordCount,
           pdfStorageId: firstJob.storageId,
-          pageData: parsed.pageData,
-          fullText: parsed.fullText,
+          // FIX (1MiB limit): when offloaded, the row gets stubs — nothing
+          // oversized crosses the mutation-argument boundary either.
+          pageData: pageDataStorageId ? [] : parsed.pageData,
+          fullText: fullTextStorageId ? "" : parsed.fullText,
           parsedPages: parsed.pageCount,
           status: "ready",
+          pageDataStorageId: pageDataStorageId as string | undefined,
+          fullTextStorageId: fullTextStorageId as string | undefined,
         });
         await ctx.runMutation(api.jobMutations.setProjectIdentity, {
           projectId,

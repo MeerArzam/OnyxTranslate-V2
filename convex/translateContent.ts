@@ -686,8 +686,15 @@ export const translateLanguage = action({
     });
 
     if (existingChunks.length === 0) {
+      // FIX (1MiB limit): if fullText was offloaded to Storage (empty on the
+      // row with a ref present), read it back before chunking.
+      let sourceText = project.fullText;
+      if (!sourceText && project.fullTextStorageId) {
+        const blob = await ctx.storage.get(project.fullTextStorageId);
+        if (blob) sourceText = (JSON.parse(await blob.text()) as string) ?? "";
+      }
       // First run for this language: chunk ONCE from fullText (paragraph-aware)
-      const sourceChunks = chunkText(project.fullText, CHUNK_SIZE);
+      const sourceChunks = chunkText(sourceText, CHUNK_SIZE);
       for (let i = 0; i < sourceChunks.length; i++) {
         await ctx.runMutation(api.mutations.upsertChunk, {
           projectId: args.projectId,

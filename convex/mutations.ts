@@ -1,5 +1,20 @@
 import { v } from "convex/values";
 import { mutation } from "./_generated/server";
+import { isOversized } from "./sourceData";
+
+// FIX (1MiB document limit): project docs can exceed Convex's 1MiB per-value
+// cap once a large PDF is parsed (pageData coordinates / fullText). Mutations
+// cannot write to Storage, so createProject accepts optional storage refs
+// (pageDataStorageId / fullTextStorageId) from the ACTIONS that hold the bytes
+// and swaps in empty stubs on the row. Values under the cap behave identically
+// to before.
+
+/** FIX (1MiB limit): mint a direct-to-Storage upload URL (no bytes in args). */
+export const generateUploadUrl = mutation({
+  args: {},
+  returns: v.string(),
+  handler: (ctx) => ctx.storage.generateUploadUrl(),
+});
 
 export const createProject = mutation({
   args: {
@@ -12,10 +27,21 @@ export const createProject = mutation({
     fullText: v.string(),
     parsedPages: v.number(),
     status: v.string(),
+    // FIX (1MiB limit): refs written by the calling action for values too big
+    // to inline (additive only — never required).
+    pageDataStorageId: v.optional(v.id("_storage")),
+    fullTextStorageId: v.optional(v.id("_storage")),
   },
   handler: async (ctx, args) => {
+    const { pageDataStorageId, fullTextStorageId, ...rest } = args;
     return await ctx.db.insert("projects", {
-      ...args,
+      ...rest,
+      // Oversized values ride in Storage; the row keeps harmless stubs so every
+      // existing reader still sees a valid pageData/fullText shape.
+      pageData: isOversized(args.pageData) ? [] : args.pageData,
+      fullText: isOversized(args.fullText) ? "" : args.fullText,
+      pageDataStorageId: pageDataStorageId,
+      fullTextStorageId: fullTextStorageId,
       createdAt: Date.now(),
     });
   },

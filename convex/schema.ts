@@ -20,6 +20,12 @@ export default defineSchema({
     zipUrl: v.optional(v.string()),
     // PHASE 2: pending-upload staging (set at uploadJob creation, cleared at parse)
     uploadJobId: v.optional(v.id("uploadJobs")),
+    // FIX (1MiB limit): when parsed pageData exceeds Convex's 1MiB document
+    // value cap, createProject stores it in Storage and records the ref here
+    // (pageData on the row is then the empty fallback). Always additive.
+    pageDataStorageId: v.optional(v.id("_storage")),
+    // FIX (1MiB limit): same offload mechanism for very large fullText.
+    fullTextStorageId: v.optional(v.id("_storage")),
     createdAt: v.number(),
   })
     .index("by_session", ["sessionId"])

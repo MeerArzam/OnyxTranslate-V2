@@ -2,6 +2,7 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { api } from "./_generated/api";
+import { isOversized } from "./sourceData";
 
 /**
  * convex/importJob.ts — PHASE 2 server-side import.
@@ -81,6 +82,15 @@ export const uploadAndImportFromData = action({
     }
 
     // ── Project row (identity = current device + NEW tab session) ──
+    // FIX (1MiB limit): oversized pageData/fullText are stored in Blob Storage
+    // here (the action holds the bytes) and only their refs ride the mutation.
+    const pageDataVal = (p.pageData as never) ?? [];
+    const pageDataStorageId = isOversized(pageDataVal)
+      ? await ctx.storage.store(new Blob([JSON.stringify(pageDataVal)], { type: "application/json" }))
+      : undefined;
+    const fullTextStorageId = isOversized(p.fullText)
+      ? await ctx.storage.store(new Blob([JSON.stringify(p.fullText)], { type: "application/json" }))
+      : undefined;
     const projectId = await ctx.runMutation(api.mutations.createProject, {
       sessionId: args.sessionId,
       fileName: typeof p.fileName === "string" && p.fileName ? p.fileName : "Imported project",
@@ -89,8 +99,10 @@ export const uploadAndImportFromData = action({
         typeof p.wordCount === "number"
           ? p.wordCount
           : p.fullText.split(/\s+/).filter(Boolean).length,
-      pageData: (p.pageData as never) ?? [],
-      fullText: p.fullText,
+      // FIX (1MiB limit): when offloaded, the row gets stubs — nothing
+      // oversized crosses the mutation-argument boundary either.
+      pageData: pageDataStorageId ? [] : pageDataVal,
+      fullText: fullTextStorageId ? "" : p.fullText,
       parsedPages: typeof p.parsedPages === "number" ? p.parsedPages : 1,
       // Preserve the exported pipeline state; "ready" for untouched exports.
       status:
@@ -99,6 +111,8 @@ export const uploadAndImportFromData = action({
             ? "all_translated"
             : p.status
           : "ready",
+      pageDataStorageId: pageDataStorageId as string | undefined,
+      fullTextStorageId: fullTextStorageId as string | undefined,
     });
 
     await ctx.runMutation(api.jobMutations.setProjectIdentity, {

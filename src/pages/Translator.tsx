@@ -359,15 +359,51 @@ export default function Translator() {
   // ─── Auto-load project on mount via Convex ───
   useEffect(() => {
     if (!latestProject) return;
-    // Auto-restore project state — no Resume button needed
-    setProjectId(latestProject._id);
-    setSourceText(latestProject.fullText);
-    setPdfFileName(latestProject.fileName);
-    setPdfPageCount(latestProject.pageCount);
-    setPageData(latestProject.pageData);
-    setOriginalPageTexts(latestProject.pageData.map((p: any) => p.text));
-    setParsePhase("done");
-  }, [latestProject]);
+    // FIX (1MiB limit): if pageData/fullText were offloaded to Storage, fetch
+    // them from their storage URLs before restoring (small projects: identical
+    // synchronous restore, unchanged).
+    const p = latestProject as typeof latestProject & {
+      pageDataStorageId?: string;
+      fullTextStorageId?: string;
+    };
+    const applyProject = (fullText: string, pageData: any[]) => {
+      setProjectId(latestProject._id);
+      setSourceText(fullText);
+      setPdfFileName(latestProject.fileName);
+      setPdfPageCount(latestProject.pageCount);
+      setPageData(pageData);
+      setOriginalPageTexts(pageData.map((pg: any) => pg.text));
+      setParsePhase("done");
+    };
+    const inlinePageData = (latestProject.pageData ?? []) as any[];
+    const needsFetch =
+      (!latestProject.fullText && p.fullTextStorageId) ||
+      (inlinePageData.length === 0 && p.pageDataStorageId);
+    if (!needsFetch) {
+      applyProject(latestProject.fullText, inlinePageData);
+      return;
+    }
+    (async () => {
+      try {
+        let fullText = latestProject.fullText || "";
+        let pageData = inlinePageData;
+        if (p.fullTextStorageId && !fullText) {
+          const r = await convexClient.query(api.sourceData.getSourceDataUrls, { projectId: latestProject._id });
+          const url = (r as { fullTextUrl?: string | null }).fullTextUrl;
+          if (url) fullText = (JSON.parse(await (await fetch(url)).text()) as string) ?? "";
+        }
+        if (p.pageDataStorageId && pageData.length === 0) {
+          const r = await convexClient.query(api.sourceData.getSourceDataUrls, { projectId: latestProject._id });
+          const url = (r as { pageDataUrl?: string | null }).pageDataUrl;
+          if (url) pageData = (JSON.parse(await (await fetch(url)).text()) as unknown[]) ?? [];
+        }
+        applyProject(fullText, pageData);
+      } catch (err) {
+        console.error("[Onyx] source-data fetch failed, restoring inline only:", err);
+        applyProject(latestProject.fullText, inlinePageData);
+      }
+    })();
+  }, [latestProject, convexClient]);
 
   // Phase E2: land on the Job view whenever this session has a job running
   // or finished (not a fresh "ready" upload the user hasn't started yet).

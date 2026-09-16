@@ -25,6 +25,7 @@ import type * as parsePdf from "../parsePdf.js";
 import type * as pdfLayout from "../pdfLayout.js";
 import type * as queries from "../queries.js";
 import type * as renderPdfCore from "../renderPdfCore.js";
+import type * as sourceData from "../sourceData.js";
 import type * as translateContent from "../translateContent.js";
 import type * as translateImage from "../translateImage.js";
 import type * as translateQueue from "../translateQueue.js";
@@ -55,6 +56,7 @@ declare const fullApi: ApiFromModules<{
   pdfLayout: typeof pdfLayout;
   queries: typeof queries;
   renderPdfCore: typeof renderPdfCore;
+  sourceData: typeof sourceData;
   translateContent: typeof translateContent;
   translateImage: typeof translateImage;
   translateQueue: typeof translateQueue;

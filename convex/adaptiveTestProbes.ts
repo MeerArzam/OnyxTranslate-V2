@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalMutation } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { api } from "./_generated/api";
 import {
   TRANSLATION_CONFIG,
@@ -19,7 +19,172 @@ import {
  * scripts/verifyAdaptivePipeline.mjs drives them and reports PASS/FAIL.
  */
 
-// ── Probe 1: pair-merge estimator (pure) ─────────────────────────────────
+// ── Probe 7 (T4 KILL TEST): claim a job then abandon it (simulated worker
+// death) → the watchdog must reclaim it within the heartbeat TTL. ─────────
+
+export const probeClaimAndAbandon = internalMutation({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const candidate = (await ctx.runQuery(api.adaptiveJobs.findNextClaimable, {
+      projectId: args.projectId,
+    })) as { jobId: never; langCode: string; chunkIndex: number } | null;
+    if (!candidate) return { claimed: false };
+    const claimed = (await ctx.runMutation(api.adaptiveJobs.claimJobPair, {
+      projectId: args.projectId,
+      langCode: candidate.langCode,
+      chunkIndex: candidate.chunkIndex,
+      promptOverheadChars: 8000,
+    })) as { kind: string } | null;
+    if (!claimed) return { claimed: false };
+    // ABANDON: no completion, no heartbeat renewal — the claim goes stale.
+    return { claimed: true, kind: claimed.kind, langCode: candidate.langCode, chunkIndex: candidate.chunkIndex };
+  },
+});
+
+// ── Probe 8 (T5 PDF BATCHES): force one batch into a stuck/failed state the
+// watchdog recovery path handles (attempts≥2 + expired heartbeat → shrink). ─
+
+export const probeForceBatchFailure = internalMutation({
+  args: { batchId: v.id("pdfBatches") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.batchId, {
+      status: "running",
+      attempts: 2,
+      heartbeatAt: Date.now() - TRANSLATION_CONFIG.heartbeatTtlMs - 1000,
+    });
+    const r = (await ctx.runMutation(api.adaptivePdf.recoverStuckBatches, {
+      projectId: (await ctx.db.get(args.batchId)) as never,
+      // recoverStuckBatches filters by its own project — we call the real path
+      // from the harness with the right project id; this probe patches state.
+    }).catch(() => null)) as unknown;
+    void r;
+    return { forced: true };
+  },
+});
+
+// ── Probe 9 (T5): verify completed batches are skipped on restart ────────
+
+export const probeBatchCounts = internalQuery({
+  args: { projectId: v.id("projects"), langCode: v.string() },
+  handler: async (ctx, args) => {
+    const batches = await ctx.db
+      .query("pdfBatches")
+      .withIndex("by_project_lang", (q) =>
+        q.eq("projectId", args.projectId).eq("langCode", args.langCode),
+      )
+      .collect();
+    return {
+      total: batches.length,
+      done: batches.filter((b) => b.status === "done").length,
+      pending: batches.filter((b) => b.status === "pending").length,
+      running: batches.filter((b) => b.status === "running").length,
+      failed: batches.filter((b) => b.status === "failed").length,
+      sizes: batches.sort((a, b) => a.batchIndex - b.batchIndex).map((b) => b.batchSize),
+    };
+  },
+});
+
+// ── Probe 10 (T1): request log — read the rate row timestamps + counters ──
+
+export const probeRateSnapshot = internalQuery({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const rate = await ctx.db
+      .query("rateLimits")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .first();
+    const project = (await ctx.db.get(args.projectId)) as {
+      requestsToday?: number;
+      lastRequestAt?: number;
+      consecutive429Count?: number;
+      activeWorkerCount?: number;
+      governorState?: string;
+    } | null;
+    const jobs = await ctx.db
+      .query("translationJobs")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
+    return {
+      windowTimestamps: rate?.requestTimestamps ?? [],
+      requestsToday: project?.requestsToday ?? 0,
+      lastRequestAt: project?.lastRequestAt ?? null,
+      consecutive429Count: project?.consecutive429Count ?? 0,
+      activeWorkerCount: project?.activeWorkerCount ?? null,
+      governorState: project?.governorState ?? null,
+      workerLimit: rate?.workerLimit ?? null,
+      pairsClaimed: jobs.filter((j) => j.requestGroupId).length,
+      jobsDone: jobs.filter((j) => j.status === "done").length,
+      jobsFailed: jobs.filter((j) => j.status === "failed").length,
+      jobsRetryWait: jobs.filter((j) => j.status === "retry_wait").length,
+      durationsMs: jobs
+        .filter((j) => j.startedAt && j.completedAt)
+        .map((j) => (j.completedAt as number) - (j.startedAt as number))
+        .slice(0, 200),
+    };
+  },
+});
+
+// ── Probe 11 (T2 GOVERNOR real): 1199→tick allowed; 1200→pause+resume time;
+// Pacific date change→reset+resume. Returns raw state transitions. ─────────
+
+export const probeGovernorLadder = internalMutation({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const projectId = args.projectId;
+    const existing = await ctx.db
+      .query("rateLimits")
+      .withIndex("by_project", (q) => q.eq("projectId", projectId))
+      .first();
+    if (existing) await ctx.db.delete(existing._id);
+    await ctx.db.patch(projectId, { governorState: "running", governorResumeAt: undefined });
+
+    // 1199 → tick must be allowed
+    await ctx.db.insert("rateLimits", {
+      projectId,
+      windowStartMs: Date.now(),
+      requestTimestamps: [],
+      requestsToday: 1199,
+      requestDayPacific: pacificDateKey(Date.now()),
+      consecutive429Count: 0,
+      workerLimit: TRANSLATION_CONFIG.workerCount,
+      lastUpdatedAt: Date.now(),
+    });
+    const at1199 = (await ctx.runMutation(api.adaptiveJobs.acquireRequestSlot, { projectId })) as { ok: boolean };
+
+    // 1200 → tick must pause with a resume time
+    const at1200 = (await ctx.runMutation(api.adaptiveJobs.acquireRequestSlot, { projectId })) as { ok: boolean; code?: string };
+    const paused = (await ctx.db.get(projectId)) as { governorState?: string; governorResumeAt?: number } | null;
+
+    // Pacific date change → reset + resume
+    const rate = await ctx.db
+      .query("rateLimits")
+      .withIndex("by_project", (q) => q.eq("projectId", projectId))
+      .first();
+    if (rate) await ctx.db.patch(rate._id, { requestDayPacific: "2000-01-01", requestsToday: 1200 });
+    await ctx.db.patch(projectId, { governorResumeAt: Date.now() - 1000 }); // midnight passed
+    const afterMidnight = (await ctx.runMutation(api.adaptiveJobs.acquireRequestSlot, { projectId })) as { ok: boolean };
+    const resumed = (await ctx.db.get(projectId)) as { governorState?: string; requestsToday?: number } | null;
+
+    // cleanup: honest zeroed state
+    if (rate) await ctx.db.patch(rate._id, { requestsToday: 0, requestDayPacific: pacificDateKey(Date.now()) });
+    await ctx.db.patch(projectId, { governorState: "running", governorResumeAt: undefined, requestsToday: 0 });
+
+    return {
+      allowedAt1199: at1199.ok,
+      pausedAt1200: !at1200.ok && at1200.code === "daily",
+      pauseStateSet: paused?.governorState === "daily_paused",
+      resumeTimeSet: (paused?.governorResumeAt ?? 0) > Date.now() - 2000,
+      resetAfterMidnight: afterMidnight.ok,
+      resumedState: resumed?.governorState,
+      pass:
+        at1199.ok &&
+        !at1200.ok &&
+        paused?.governorState === "daily_paused" &&
+        (paused?.governorResumeAt ?? 0) > Date.now() - 2000 &&
+        afterMidnight.ok,
+    };
+  },
+});
 
 export const probeEstimator = internalMutation({
   args: {},

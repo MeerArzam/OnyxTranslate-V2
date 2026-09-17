@@ -238,6 +238,57 @@ export const shrinkOrSplitFromWatchdog = internalMutation({
   },
 });
 
+// ─── Batch paragraph slice: EXACT mirror of the renderer's greedy walk ───
+// renderPdfCore distributes translatedParagraphs across pages by positional
+// word share (srcWordsPerPage[i] / totalSrcWords × totalWords), draining all
+// remaining paragraphs on the LAST page. Mirroring it here guarantees a
+// per-batch render is identical to the whole-book render for those pages.
+type PageDataLite = { num?: number; text?: string; textItems?: Array<{ str: string }> };
+
+function wordCount(s: string): number {
+  return s.split(/\s+/).filter(Boolean).length;
+}
+
+export function computeBatchParagraphSlice(
+  pageData: PageDataLite[],
+  mergedText: string,
+  pageStart: number,
+  pageEnd: number,
+  totalPages: number,
+): string {
+  const paragraphs = mergedText
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const totalWords = wordCount(mergedText);
+  const wordsPerPage = pageData.map((p) => {
+    const text = p.text ?? (p.textItems || []).map((it) => it.str).join(" ");
+    return Math.max(wordCount(text), 1);
+  });
+  const totalSrcWords = Math.max(wordsPerPage.reduce((a, b) => a + b, 0), 1);
+
+  const ranges: Array<[number, number]> = [];
+  let paraIdx = 0;
+  for (let i = 0; i < totalPages; i++) {
+    const share = (wordsPerPage[i] ?? 1) / totalSrcWords;
+    const targetWords = Math.floor(share * totalWords);
+    const startIdx = paraIdx;
+    let pageParaWords = 0;
+    while (
+      paraIdx < paragraphs.length &&
+      (pageParaWords + wordCount(paragraphs[paraIdx]) <= targetWords || i === totalPages - 1)
+    ) {
+      pageParaWords += wordCount(paragraphs[paraIdx]);
+      paraIdx++;
+      if (i < totalPages - 1 && pageParaWords >= targetWords) break;
+    }
+    ranges.push([startIdx, paraIdx]);
+  }
+  const first = ranges[Math.min(pageStart - 1, ranges.length - 1)] ?? [0, paragraphs.length];
+  const last = ranges[Math.min(pageEnd - 1, ranges.length - 1)] ?? [0, paragraphs.length];
+  return paragraphs.slice(first[0], Math.max(last[1], first[1])).join("\n\n");
+}
+
 // ─── Action: render one batch through the PRODUCTION render core ─────────
 
 export const renderNextBatch = internalAction({
@@ -284,43 +335,45 @@ export const renderNextBatch = internalAction({
         const bytes = await resp.arrayBuffer();
         fontCache.set(url, bytes);
         return bytes;
-      };
-
-      // Slice the mergedText to the paragraphs on this page range (the render
-      // core maps merged text onto pageData blocks; batching the TEXT by page
-      // keeps per-batch renders identical to whole-book rendering).
+      };      // Load merged text for this language, then slice BOTH the text and the
+      // source pages to this batch using the renderer's own distribution walk
+      // (computeBatchParagraphSlice mirrors renderPdfCore exactly).
       const translation = (await ctx.runQuery(api.queries.getTranslationsRaw, {
         projectId: args.projectId,
-      })) as Array<{ langCode: string; mergedText?: string; _id: string }>;
+      })) as Array<{ langCode: string; mergedText?: string }>;
       const merged = translation.find((t) => t.langCode === args.langCode)?.mergedText ?? "";
-      const pageBlocks = (pageData as Array<unknown>[]).slice(
-        batch.pageStart - 1,
+      const pages = pageData as PageDataLite[];
+      const sliceText = computeBatchParagraphSlice(
+        pages,
+        merged,
+        batch.pageStart,
         batch.pageEnd,
+        project.pageCount,
       );
-      const blockCount = pageBlocks.reduce((n, p) => n + (Array.isArray(p) ? p.length : 0), 0);
-      const allParagraphs = merged.split(/\n{2,}/).filter(Boolean);
-      const totalBlocks = (pageData as Array<unknown>[]).reduce(
-        (n, p) => n + (Array.isArray(p) ? p.length : 0),
-        0,
-      );
-      const per = totalBlocks > 0 ? allParagraphs.length / totalBlocks : 0;
-      const sliceParagraphs =
-        per > 0
-          ? allParagraphs.slice(
-              Math.floor(
-                (pageData as Array<unknown>[]).slice(0, batch.pageStart - 1).reduce(
-                  (n, p) => n + (Array.isArray(p) ? p.length : 0),
-                  0,
-                ) * per,
-              ),
-              Math.ceil(blockCount * per) || allParagraphs.length,
-            )
-          : allParagraphs;
+      const slicePageData = pages.slice(batch.pageStart - 1, batch.pageEnd);
+
+      // Per-batch source slice: renumber pages 1..N so the renderer's
+      // pageData.num lookups resolve inside this batch.
+      const { PDFDocument: PDFDocCls } = (await import("pdf-lib")) as unknown as {
+        PDFDocument: typeof import("pdf-lib").PDFDocument;
+      };
+      const srcDoc = await PDFDocCls.load(new Uint8Array(await pdfBlob.arrayBuffer()), {
+        ignoreEncryption: true,
+      });
+      const sliceDoc = await PDFDocCls.create();
+      const sliceIndices: number[] = [];
+      for (let p = batch.pageStart - 1; p <= Math.min(batch.pageEnd - 1, srcDoc.getPageCount() - 1); p++) {
+        sliceIndices.push(p);
+      }
+      const copiedSlice = await sliceDoc.copyPages(srcDoc, sliceIndices);
+      for (const cp of copiedSlice) sliceDoc.addPage(cp);
+      const sliceBytes = await sliceDoc.save();
+      const renumbered = slicePageData.map((p, i) => ({ ...p, num: i + 1 }));
 
       const { bytes } = await renderTranslatedPdf({
-        srcBytes: new Uint8Array(await pdfBlob.arrayBuffer()),
-        pageData,
-        mergedText: sliceParagraphs.join("\n\n"),
+        srcBytes: new Uint8Array(sliceBytes),
+        pageData: renumbered,
+        mergedText: sliceText,
         langCode: args.langCode,
         getFontBytes,
       } as never);
@@ -458,6 +511,14 @@ export const finalizeLanguagePdfs = internalMutation({
                 .join(", ")}`
             : `pdf complete: ${batches.length} batches`,
       });
+      // Assemble the FINAL language PDF from done batches (for ZIP + UI). If
+      // any batch failed, keep the error status — partial PDFs are honest.
+      if (failedBatches.length === 0) {
+        await ctx.scheduler.runAfter(0, api.adaptivePdf.assembleLanguagePdf, {
+          projectId: args.projectId,
+          langCode: t.langCode,
+        });
+      }
       await ctx.db.patch(args.projectId, {
         pdfGenerationState: failedBatches.length > 0 ? "partial_error" : "complete",
       });
@@ -465,6 +526,86 @@ export const finalizeLanguagePdfs = internalMutation({
     // ZIP check runs through the adaptive finalizer (never duplicates ZIPs).
     await ctx.runMutation(api.adaptiveJobs.zipFinalizeIfDone, {
       projectId: args.projectId,
+    });
+    return { ok: true };
+  },
+});
+
+// ─── Action: merge done batch PDFs into the FINAL language PDF ──────────
+// (Translations need translations.pdfStorageId/pdfUrl for ZIP + preview to
+// keep working — identical end state to the whole-book renderer.)
+
+export const assembleLanguagePdf = internalAction({
+  args: { projectId: v.id("projects"), langCode: v.string() },
+  handler: async (ctx, args) => {
+    const batches = (await ctx.runQuery(api.adaptivePdf.getLanguageBatches, {
+      projectId: args.projectId,
+      langCode: args.langCode,
+    })) as { batches: BatchDoc[] };
+    const done = batches.batches
+      .filter((b) => b.status === "done" && b.storageId)
+      .sort((a, b) => a.batchIndex - b.batchIndex);
+    if (done.length === 0) return { assembled: false, reason: "no_done_batches" };
+
+    const { PDFDocument: PDFDocCls } = (await import("pdf-lib")) as unknown as {
+      PDFDocument: typeof import("pdf-lib").PDFDocument;
+    };
+    const outDoc = await PDFDocCls.create();
+    let pageCount = 0;
+    for (const b of done) {
+      const blob = await ctx.storage.get(b.storageId as never);
+      if (!blob) continue;
+      const part = await PDFDocCls.load(new Uint8Array(await blob.arrayBuffer()), {
+        ignoreEncryption: true,
+      });
+      const copied = await outDoc.copyPages(part, part.getPageIndices());
+      for (const p of copied) {
+        outDoc.addPage(p);
+        pageCount++;
+      }
+    }
+    const bytes = await outDoc.save();
+    const blob = new Blob([new Uint8Array(bytes).buffer as ArrayBuffer], {
+      type: "application/pdf",
+    });
+    const storageId = await ctx.storage.store(blob);
+    const url = (await ctx.storage.getUrl(storageId)) ?? undefined;
+    await ctx.runMutation(api.adaptivePdf.setLanguagePdf, {
+      projectId: args.projectId,
+      langCode: args.langCode,
+      storageId,
+      url,
+      pageCount,
+    });
+    return { assembled: true, batches: done.length, pageCount };
+  },
+});
+
+export const setLanguagePdf = internalMutation({
+  args: {
+    projectId: v.id("projects"),
+    langCode: v.string(),
+    storageId: v.id("_storage"),
+    url: v.optional(v.string()),
+    pageCount: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const translations = (await ctx.db
+      .query("translations")
+      .withIndex("by_project_lang", (q) =>
+        q.eq("projectId", args.projectId).eq("langCode", args.langCode),
+      )
+      .collect()) as Array<{ _id: Id<"translations">; status: string }>;
+    const t = translations[0];
+    if (!t) return { ok: false };
+    await ctx.db.patch(t._id, {
+      pdfStorageId: args.storageId,
+      pdfUrl: args.url,
+      pdfGenerating: false,
+      pdfProgress: `assembled from batches: ${args.pageCount} pages`,
+    });
+    await ctx.db.patch(args.projectId, {
+      pdfGenerationState: "complete",
     });
     return { ok: true };
   },

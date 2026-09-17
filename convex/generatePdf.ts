@@ -52,6 +52,11 @@ export const generateTranslatedPdf = action({
     nextLangCode: v.optional(v.string()),
     remainingLangs: v.optional(v.array(v.string())),
     marketContext: v.optional(v.string()),
+    // ADAPTIVE PIPELINE (additive, default true): when false, this action
+    // renders + stores the PDF and updates the translation row but does NOT
+    // run the legacy finalize (all_translated + buildZip) — the adaptive
+    // dispatcher owns end-of-project finalization via zipFinalizeIfDone.
+    finalizeChain: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
 
@@ -69,6 +74,9 @@ export const generateTranslatedPdf = action({
         pdfGenerating: false,
         completedAt: Date.now(),
       });
+      if (args.finalizeChain === false) {
+        return { skipped: true, url: undefined, storageId: undefined };
+      }
       if (args.nextLangCode) {
         const rest = args.remainingLangs || [];
         await ctx.scheduler.runAfter(0, api.translateContent.translateLanguage, {
@@ -161,6 +169,10 @@ export const generateTranslatedPdf = action({
     // 5. UNIFIED chain: next language comes from the args set by
     // translateContent (nextLangCode + remainingLangs). If none remain,
     // all languages are done — mark project and build the ZIP.
+    // (Skipped entirely when finalizeChain === false — adaptive path.)
+    if (args.finalizeChain === false) {
+      return { storageId: storageId ?? undefined, url, renderFailed: !storageId };
+    }
     if (args.nextLangCode) {
       const rest = args.remainingLangs || [];
       await ctx.scheduler.runAfter(0, api.translateContent.translateLanguage, {

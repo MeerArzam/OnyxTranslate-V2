@@ -24,7 +24,7 @@ td code{color:#00e5ff}
 <body>
 <p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
 <h1>Convex Functions — PDF Parse, PDF Generate, ZIP</h1>
-<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-15 15:35 UTC</p>
+<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-17 15:17 UTC</p>
 <p>Files on this page: <code>convex/parsePdf.ts</code>, <code>convex/generatePdf.ts</code>, <code>convex/zipAssembly.ts</code></p><h2>convex/parsePdf.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>parseUploadedPdf</code> — action</li></ul></p><pre><code>"use node";
 
 import { v } from "convex/values";
@@ -285,6 +285,11 @@ export const generateTranslatedPdf = action({
     nextLangCode: v.optional(v.string()),
     remainingLangs: v.optional(v.array(v.string())),
     marketContext: v.optional(v.string()),
+    // ADAPTIVE PIPELINE (additive, default true): when false, this action
+    // renders + stores the PDF and updates the translation row but does NOT
+    // run the legacy finalize (all_translated + buildZip) — the adaptive
+    // dispatcher owns end-of-project finalization via zipFinalizeIfDone.
+    finalizeChain: v.optional(v.boolean()),
   },
   handler: async (ctx, args) =&gt; {
 
@@ -302,6 +307,9 @@ export const generateTranslatedPdf = action({
         pdfGenerating: false,
         completedAt: Date.now(),
       });
+      if (args.finalizeChain === false) {
+        return { skipped: true, url: undefined, storageId: undefined };
+      }
       if (args.nextLangCode) {
         const rest = args.remainingLangs || [];
         await ctx.scheduler.runAfter(0, api.translateContent.translateLanguage, {
@@ -336,7 +344,14 @@ export const generateTranslatedPdf = action({
     // language chain (the chain continues INSIDE this action). Now the error
     // is surfaced honestly on the translation row (status "error" + message
     // in pdfProgress) and the chain CONTINUES to the next language.
-    const pageData = (project.pageData || []) as NonNullable&lt;
+    // FIX (1MiB limit): if pageData was offloaded to Storage (empty on the
+    // row with a ref present), resolve the real coordinates before rendering.
+    let pageDataRaw: unknown = project.pageData;
+    if (Array.isArray(pageDataRaw) &amp;&amp; pageDataRaw.length === 0 &amp;&amp; (project as { pageDataStorageId?: string }).pageDataStorageId) {
+      const blob = await ctx.storage.get((project as { pageDataStorageId: string }).pageDataStorageId);
+      if (blob) pageDataRaw = JSON.parse(await blob.text());
+    }
+    const pageData = (pageDataRaw || []) as NonNullable&lt;
       Parameters&lt;typeof renderTranslatedPdf&gt;[0]["pageData"]
     &gt;;
 
@@ -387,6 +402,10 @@ export const generateTranslatedPdf = action({
     // 5. UNIFIED chain: next language comes from the args set by
     // translateContent (nextLangCode + remainingLangs). If none remain,
     // all languages are done — mark project and build the ZIP.
+    // (Skipped entirely when finalizeChain === false — adaptive path.)
+    if (args.finalizeChain === false) {
+      return { storageId: storageId ?? undefined, url, renderFailed: !storageId };
+    }
     if (args.nextLangCode) {
       const rest = args.remainingLangs || [];
       await ctx.scheduler.runAfter(0, api.translateContent.translateLanguage, {

@@ -204,7 +204,7 @@ function buildSystemPrompt(langCode: string, marketContext = "standard"): string
 
 // FIX 2a: paragraph-aware chunking (identical logic to translateContent.ts so
 // both paths produce the same boundaries — never mid-sentence).
-function chunkText(text: string, maxWords: number): string[] {
+export function chunkText(text: string, maxWords: number): string[] {
   const normalized = text.replace(/\r\n/g, "\n").trim();
   if (!normalized) return [];
   const paragraphs = normalized.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);

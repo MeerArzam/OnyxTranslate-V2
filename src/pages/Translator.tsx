@@ -142,6 +142,10 @@ export default function Translator() {
   const translateLanguageAction = useAction(api.translateContent.translateLanguage);
   const cancelTranslationAction = useAction(api.translateQueue.cancelTranslation);
   const translateImageAction = useAction(api.translateImage.translateImage);
+  // ADAPTIVE PARALLEL PIPELINE (feature flag routing): Begin uses the
+  // adaptive dispatcher (parallel, rate-limited, resumable, quota-aware);
+  // on a verified failure the user can fall back to the legacy chain.
+  const startAdaptiveAction = useAction(api.adaptiveJobs.startAdaptiveTranslation);
 
   const convexClient = useConvex();
 
@@ -158,6 +162,11 @@ export default function Translator() {
   const convexProject = useQuery(
     api.queries.getProject,
     projectId ? { projectId, sessionId } : "skip"
+  );
+  // ADAPTIVE PIPELINE: honest pipeline-state strip (governor, quota, workers)
+  const adaptiveRateRow = useQuery(
+    api.queries.getProjectRateSummary,
+    projectId ? { projectId } : "skip"
   );
   const convexTranslations = useQuery(
     api.queries.getProjectTranslations,
@@ -913,15 +922,40 @@ export default function Translator() {
       }
 
 
-      // UNIFIED: One action call kicks off the chain — each language chains to the next via scheduler
-      console.debug("[Onyx] translateLanguage started", { projectId: activeProjectId, langs });
-      await translateLanguageAction({
-        projectId: activeProjectId,
-        langCode: langs[0],
-        marketContext,
-        nextLangCode: langs.length > 1 ? langs[1] : undefined,
-        remainingLangs: langs.length > 2 ? langs.slice(2) : undefined,
-      });
+      // ── ADAPTIVE PARALLEL PIPELINE (default): one action enqueues every
+      // (language, chunk) as an idempotent job and starts the server-side
+      // dispatcher — parallel, rate-limited, resumable, quota-aware. The
+      // browser can close; the server continues.
+      try {
+        const adaptive = await startAdaptiveAction({
+          projectId: activeProjectId,
+          langCodes: langs,
+        });
+        if (!adaptive.started) {
+          throw new Error("adaptive_start_failed");
+        }
+        console.debug("[Onyx] adaptive dispatcher started", {
+          projectId: activeProjectId,
+          jobs: adaptive.totalJobs,
+        });
+      } catch (adaptiveErr) {
+        // Fallback (visible in console + toast): legacy scheduler chain.
+        console.warn(
+          "[Onyx] adaptive start failed — falling back to legacy chain",
+          adaptiveErr
+        );
+        toast.error(
+          "Adaptive pipeline unavailable — using legacy chain. " +
+            (adaptiveErr instanceof Error ? adaptiveErr.message : "")
+        );
+        await translateLanguageAction({
+          projectId: activeProjectId,
+          langCode: langs[0],
+          marketContext,
+          nextLangCode: langs.length > 1 ? langs[1] : undefined,
+          remainingLangs: langs.length > 2 ? langs.slice(2) : undefined,
+        });
+      }
 
       // Phase E2: job starts → land on the Job view
       setView("job");
@@ -943,7 +977,7 @@ export default function Translator() {
       );
       setIsTranslating(false);
     }
-  }, [sourceText, projectId, sessionId, selectedLangCodes, translateLanguageAction, createProjectMutation, marketContext, isTranslating, flowPhase, pdfFileName, pdfPageCount, saveHistoryMutation]);
+  }, [sourceText, projectId, sessionId, selectedLangCodes, translateLanguageAction, startAdaptiveAction, createProjectMutation, marketContext, isTranslating, flowPhase, pdfFileName, pdfPageCount, saveHistoryMutation]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -976,6 +1010,19 @@ export default function Translator() {
   const resumeStalled = useCallback(async () => {
     if (!projectId || isTranslating) return;
     try {
+      // ADAPTIVE projects: a kick to startAdaptiveTranslation resumes the
+      // dispatcher directly (idempotent enqueue — completed chunks are never
+      // re-translated; pending/failed jobs continue where they stopped).
+      const isAdaptive = (convexProject as { translationMode?: string } | undefined)
+        ?.translationMode === "adaptive_parallel";
+      if (isAdaptive) {
+        const langs = activeTranslations.map((t) => t.langCode);
+        setIsTranslating(true);
+        setTranslationError(null);
+        await startAdaptiveAction({ projectId, langCodes: langs });
+        toast.success("Resumed adaptive pipeline — server continues even if you close this page.");
+        return;
+      }
       const stalled = (await convexClient.query(api.queries.getStalledLanguages, {
         projectId,
         sessionId,
@@ -1004,7 +1051,7 @@ export default function Translator() {
       setTranslationError(err instanceof Error ? err.message : "Resume failed");
       setIsTranslating(false);
     }
-  }, [projectId, isTranslating, sessionId, activeTranslations, translateLanguageAction, marketContext, convexClient]);
+  }, [projectId, isTranslating, sessionId, activeTranslations, translateLanguageAction, startAdaptiveAction, convexProject, marketContext, convexClient]);
 
   const handleRetranslate = useCallback(
     async (langCode: string) => {
@@ -2114,6 +2161,20 @@ export default function Translator() {
                   onDownload={handleDownloadAllZIP}
                   onStartFresh={clearSource}
                 />
+                {/* ADAPTIVE PIPELINE: honest server-state strip (no fake progress) */}
+                {adaptiveRateRow && adaptiveRateRow.translationMode === "adaptive_parallel" && (
+                  <div className="mx-4 mb-3 px-3 py-2 rounded-lg text-[10px]" style={{ background: "rgba(0,229,255,0.04)", border: "1px solid rgba(0,229,255,0.10)" }}>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span style={{ color: "#00e5ff" }}>{adaptiveRateRow.jobsDone}/{adaptiveRateRow.jobsTotal} jobs</span>
+                      {adaptiveRateRow.jobsWaiting > 0 && <span style={{ color: "#fbbf24" }}>{adaptiveRateRow.jobsWaiting} waiting (backoff)</span>}
+                      {adaptiveRateRow.jobsFailed > 0 && <span className="text-red-400">{adaptiveRateRow.jobsFailed} failed</span>}
+                      <span className="text-muted-foreground">workers {adaptiveRateRow.workerLimit} · target {adaptiveRateRow.targetRpm} req/min · {adaptiveRateRow.requestsToday}/{adaptiveRateRow.dailyBudget} requests today</span>
+                      {adaptiveRateRow.governorState === "daily_paused" && adaptiveRateRow.governorResumeAt && <span style={{ color: "#fbbf24" }}>quota reached — auto-resumes {new Date(adaptiveRateRow.governorResumeAt).toLocaleTimeString()} · progress saved, safe to close</span>}
+                      {adaptiveRateRow.governorState === "waiting_retry" && <span style={{ color: "#fbbf24" }}>Waiting for Gemini quota — progress is saved.</span>}
+                      {adaptiveRateRow.governorState !== "daily_paused" && adaptiveRateRow.governorState !== "waiting_retry" && adaptiveRateRow.jobsPending + adaptiveRateRow.jobsClaimed > 0 && <span style={{ color: "#34d399" }}>safe to close — server continues</span>}
+                    </div>
+                  </div>
+                )}
                 {translationError && !isTranslating && (
                   <div className="mx-4 mb-4 flex items-start gap-1.5 p-1.5 rounded bg-red-500/5 border border-red-500/20 text-[10px]">
                     <XCircle className="size-2.5 text-red-500 shrink-0 mt-0.5" />

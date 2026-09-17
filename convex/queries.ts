@@ -3,6 +3,49 @@ import { query } from "./_generated/server";
 
 // ─── Client-facing queries (require sessionId) ───
 
+// ══ ADAPTIVE PIPELINE: honest pipeline-state summary for the status strip ══
+// Returns governor state, daily usage, worker/RPM target, retry pressure and
+// job counters — the UI shows real state only (no fake progress).
+export const getProjectRateSummary = query({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const project = await ctx.db.get(args.projectId);
+    if (!project) return null;
+    const rate = (await ctx.db
+      .query("rateLimits")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .first()) as { requestsToday?: number; workerLimit?: number } | null;
+    const jobs = await ctx.db
+      .query("translationJobs")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
+    const done = jobs.filter((j) => j.status === "done").length;
+    const failed = jobs.filter((j) => j.status === "failed").length;
+    const waiting = jobs.filter((j) => j.status === "retry_wait").length;
+    const claimed = jobs.filter(
+      (j) => j.status === "claimed" || j.status === "running",
+    ).length;
+    const pending = jobs.filter((j) => j.status === "pending").length;
+    return {
+      translationMode: project.translationMode ?? null,
+      governorState: project.governorState ?? null,
+      governorResumeAt: project.governorResumeAt ?? null,
+      requestsToday: rate?.requestsToday ?? 0,
+      dailyBudget: 1200,
+      workerLimit: rate?.workerLimit ?? 2,
+      targetRpm: 10,
+      consecutive429Count: project.consecutive429Count ?? 0,
+      jobsTotal: jobs.length,
+      jobsDone: done,
+      jobsFailed: failed,
+      jobsWaiting: waiting,
+      jobsClaimed: claimed,
+      jobsPending: pending,
+      lastDispatcherAt: project.lastDispatcherAt ?? null,
+    };
+  },
+});
+
 export const getProject = query({
   args: { projectId: v.id("projects"), sessionId: v.string() },
   handler: async (ctx, args) => {

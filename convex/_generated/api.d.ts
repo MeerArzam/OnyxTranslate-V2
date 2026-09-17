@@ -8,6 +8,11 @@
  * @module
  */
 
+import type * as adaptiveDispatcher from "../adaptiveDispatcher.js";
+import type * as adaptiveJobs from "../adaptiveJobs.js";
+import type * as adaptivePdf from "../adaptivePdf.js";
+import type * as adaptiveTestProbes from "../adaptiveTestProbes.js";
+import type * as adaptiveWatchdog from "../adaptiveWatchdog.js";
 import type * as artifactMutations from "../artifactMutations.js";
 import type * as crons from "../crons.js";
 import type * as exportProject from "../exportProject.js";
@@ -29,6 +34,7 @@ import type * as sourceData from "../sourceData.js";
 import type * as translateContent from "../translateContent.js";
 import type * as translateImage from "../translateImage.js";
 import type * as translateQueue from "../translateQueue.js";
+import type * as translationConfig from "../translationConfig.js";
 import type * as upload from "../upload.js";
 import type * as zipAssembly from "../zipAssembly.js";
 
@@ -39,6 +45,11 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  adaptiveDispatcher: typeof adaptiveDispatcher;
+  adaptiveJobs: typeof adaptiveJobs;
+  adaptivePdf: typeof adaptivePdf;
+  adaptiveTestProbes: typeof adaptiveTestProbes;
+  adaptiveWatchdog: typeof adaptiveWatchdog;
   artifactMutations: typeof artifactMutations;
   crons: typeof crons;
   exportProject: typeof exportProject;
@@ -60,6 +71,7 @@ declare const fullApi: ApiFromModules<{
   translateContent: typeof translateContent;
   translateImage: typeof translateImage;
   translateQueue: typeof translateQueue;
+  translationConfig: typeof translationConfig;
   upload: typeof upload;
   zipAssembly: typeof zipAssembly;
 }>;

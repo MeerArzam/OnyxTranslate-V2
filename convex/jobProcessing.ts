@@ -75,6 +75,8 @@ export const processUploadedPdf = action({
           : undefined;
 
         projectId = await ctx.runMutation(api.mutations.createProject, {
+          // ADAPTIVE PIPELINE: new server-pipeline projects start in adaptive
+          // mode (feature flag). Legacy projects keep their original mode.
           sessionId: firstJob.tabSessionId,
           fileName: firstJob.fileName,
           pageCount: parsed.pageCount,

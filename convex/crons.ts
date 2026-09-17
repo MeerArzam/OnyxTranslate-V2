@@ -18,4 +18,14 @@ crons.hourly(
   {},
 );
 
+// ══ ADAPTIVE PIPELINE: watchdog every 3 minutes (Phase 9) ══
+// Reclaims stale claims, revives retryable jobs, recovers stuck PDF batches,
+// and re-kicks a missing dispatcher lease — the chain never dies silently.
+crons.interval(
+  "adaptive watchdog",
+  { minutes: 3 },
+  api.adaptiveWatchdog.watchdogTick,
+  {},
+);
+
 export default crons;

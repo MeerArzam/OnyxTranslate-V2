@@ -26,6 +26,26 @@ export default defineSchema({
     pageDataStorageId: v.optional(v.id("_storage")),
     // FIX (1MiB limit): same offload mechanism for very large fullText.
     fullTextStorageId: v.optional(v.id("_storage")),
+    // ══ ADAPTIVE PARALLEL PIPELINE (additive — legacy fields untouched) ══
+    pipelineVersion: v.optional(v.string()),
+    // "legacy" (original scheduler chain) | "adaptive_parallel" (dispatcher)
+    translationMode: v.optional(v.string()),
+    totalTranslationJobs: v.optional(v.number()),
+    completedTranslationJobs: v.optional(v.number()),
+    failedTranslationJobs: v.optional(v.number()),
+    // Daily governor: Pacific-date-keyed counter of requests actually SENT.
+    requestsToday: v.optional(v.number()),
+    requestDayPacific: v.optional(v.string()),
+    lastRequestAt: v.optional(v.number()),
+    // running | daily_paused | waiting_retry | complete | failed
+    governorState: v.optional(v.string()),
+    governorResumeAt: v.optional(v.number()),
+    activeWorkerCount: v.optional(v.number()),
+    consecutive429Count: v.optional(v.number()),
+    lastDispatcherAt: v.optional(v.number()),
+    lastSuccessfulActivityAt: v.optional(v.number()),
+    pdfGenerationState: v.optional(v.string()),
+    zipState: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index("by_session", ["sessionId"])
@@ -166,6 +186,90 @@ export default defineSchema({
     fileName: v.string(),
     expiresAt: v.number(),
   }).index("by_token", ["token"]),
+
+  // ══ ADAPTIVE PARALLEL PIPELINE: durable per-unit translation jobs ══
+  // One row per (project, language, chunk). The dispatcher claims these
+  // transactionally (claimToken), workers heartbeat, results are written back
+  // into the existing chunks table (status done + translatedText) so merge,
+  // PDF generation, ZIP, export and preview all keep working unchanged.
+  translationJobs: defineTable({
+    projectId: v.id("projects"),
+    clientId: v.optional(v.string()),
+    tabSessionId: v.optional(v.string()),
+    langCode: v.string(),
+    chunkIndex: v.number(),
+    chunkCount: v.number(),
+    sourceText: v.string(),
+    sourceStartOffset: v.optional(v.number()),
+    sourceEndOffset: v.optional(v.number()),
+    // pending | claimed | running | done | retry_wait | failed
+    status: v.string(),
+    resultText: v.optional(v.string()),
+    attempts: v.number(),
+    reclaimCount: v.optional(v.number()),
+    lastError: v.optional(v.string()),
+    lastHttpStatus: v.optional(v.number()),
+    claimedAt: v.optional(v.number()),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    heartbeatAt: v.optional(v.number()),
+    nextRetryAt: v.optional(v.number()),
+    claimToken: v.optional(v.string()),
+    // pair merging: requestGroupId groups the 2 rows sharing one Gemini call
+    requestGroupId: v.optional(v.string()),
+    mergedWithChunkIndex: v.optional(v.number()),
+    splitValidated: v.optional(v.boolean()),
+    pairFailureCount: v.optional(v.number()),
+    // raw model output saved when pair parsing fails (diagnostics)
+    rawModelOutput: v.optional(v.string()),
+    idempotencyKey: v.string(),
+    pipelineVersion: v.string(),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_project_status", ["projectId", "status"])
+    .index("by_project_lang_chunk", ["projectId", "langCode", "chunkIndex"])
+    .index("by_idempotencyKey", ["idempotencyKey"]),
+
+  // ══ ADAPTIVE PIPELINE: project-level rate limiter (ONE pool — the five
+  // Gemini keys share one Google project quota). Rolling 60s timestamp ring
+  // + Pacific daily counter. Never scan jobs for this — one compact row.
+  rateLimits: defineTable({
+    projectId: v.id("projects"),
+    windowStartMs: v.number(),
+    requestTimestamps: v.array(v.number()),
+    requestsToday: v.number(),
+    requestDayPacific: v.string(),
+    consecutive429Count: v.number(),
+    workerLimit: v.number(),
+    // per-language pair-merge circuit breaker (set on repeated malformed pairs)
+    pairMergeDisabledLangs: v.optional(v.array(v.string())),
+    lastUpdatedAt: v.number(),
+  }).index("by_project", ["projectId"]),
+
+  // ══ ADAPTIVE PIPELINE: PDF page batches (spec Phase 8) ══
+  // 50 → 25 → 10 page shrink on failure; a failed 10-page batch fails ONLY
+  // that batch (exact page range + error), never the whole project.
+  pdfBatches: defineTable({
+    projectId: v.id("projects"),
+    langCode: v.string(),
+    translationId: v.optional(v.id("translations")),
+    batchIndex: v.number(),
+    pageStart: v.number(),
+    pageEnd: v.number(),
+    batchSize: v.number(),
+    // pending | running | done | failed
+    status: v.string(),
+    storageId: v.optional(v.id("_storage")),
+    checksum: v.optional(v.string()),
+    attempts: v.number(),
+    error: v.optional(v.string()),
+    heartbeatAt: v.optional(v.number()),
+    idempotencyKey: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_project_lang", ["projectId", "langCode"])
+    .index("by_status", ["status"])
+    .index("by_idempotencyKey", ["idempotencyKey"]),
 
   // LIVE TEST: per-language live verification results (one row per language,
   // upserted by the saveLiveTest mutation after each Gemini round-trip).

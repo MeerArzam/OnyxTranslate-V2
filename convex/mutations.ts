@@ -31,6 +31,8 @@ export const createProject = mutation({
     // to inline (additive only — never required).
     pageDataStorageId: v.optional(v.id("_storage")),
     fullTextStorageId: v.optional(v.id("_storage")),
+    // ADAPTIVE PIPELINE (additive): "legacy" | "adaptive_parallel" feature flag
+    translationMode: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { pageDataStorageId, fullTextStorageId, ...rest } = args;
@@ -60,6 +62,13 @@ export const updateProject = mutation({
     status: v.optional(v.string()),
     zipStorageId: v.optional(v.string()),
     zipUrl: v.optional(v.string()),
+    // ADAPTIVE PIPELINE (additive): pipeline identity + governor fields
+    translationMode: v.optional(v.string()),
+    pipelineVersion: v.optional(v.string()),
+    governorState: v.optional(v.string()),
+    governorResumeAt: v.optional(v.number()),
+    activeWorkerCount: v.optional(v.number()),
+    lastDispatcherAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const { projectId, ...updates } = args;

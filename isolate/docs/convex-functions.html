@@ -24,9 +24,24 @@ td code{color:#00e5ff}
 <body>
 <p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
 <h1>Convex Functions — Mutations, Queries, History, Upload, Identity, HTTP</h1>
-<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-15 15:35 UTC</p>
-<p>Files on this page: <code>convex/mutations.ts</code>, <code>convex/queries.ts</code>, <code>convex/history.ts</code>, <code>convex/upload.ts</code>, <code>convex/identity.ts</code>, <code>convex/jobMutations.ts</code>, <code>convex/importJob.ts</code>, <code>convex/exportProject.ts</code>, <code>convex/artifactMutations.ts</code>, <code>convex/http.ts</code>, <code>convex/crons.ts</code></p><h2>convex/mutations.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>createProject</code> — mutation</li><li><code>updateProject</code> — mutation</li><li><code>deleteProject</code> — mutation</li><li><code>upsertChunk</code> — mutation</li><li><code>updateChunk</code> — mutation</li><li><code>upsertTranslation</code> — mutation</li><li><code>updateTranslation</code> — mutation</li><li><code>deleteChunksForLang</code> — mutation</li><li><code>createJob</code> — mutation</li><li><code>saveImageTranslation</code> — mutation</li></ul></p><pre><code>import { v } from "convex/values";
+<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-17 15:17 UTC</p>
+<p>Files on this page: <code>convex/mutations.ts</code>, <code>convex/queries.ts</code>, <code>convex/history.ts</code>, <code>convex/upload.ts</code>, <code>convex/identity.ts</code>, <code>convex/jobMutations.ts</code>, <code>convex/importJob.ts</code>, <code>convex/exportProject.ts</code>, <code>convex/artifactMutations.ts</code>, <code>convex/http.ts</code>, <code>convex/crons.ts</code></p><h2>convex/mutations.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>generateUploadUrl</code> — mutation</li><li><code>createProject</code> — mutation</li><li><code>updateProject</code> — mutation</li><li><code>deleteProject</code> — mutation</li><li><code>upsertChunk</code> — mutation</li><li><code>updateChunk</code> — mutation</li><li><code>upsertTranslation</code> — mutation</li><li><code>updateTranslation</code> — mutation</li><li><code>deleteChunksForLang</code> — mutation</li><li><code>createJob</code> — mutation</li><li><code>saveImageTranslation</code> — mutation</li></ul></p><pre><code>import { v } from "convex/values";
 import { mutation } from "./_generated/server";
+import { isOversized } from "./sourceData";
+
+// FIX (1MiB document limit): project docs can exceed Convex's 1MiB per-value
+// cap once a large PDF is parsed (pageData coordinates / fullText). Mutations
+// cannot write to Storage, so createProject accepts optional storage refs
+// (pageDataStorageId / fullTextStorageId) from the ACTIONS that hold the bytes
+// and swaps in empty stubs on the row. Values under the cap behave identically
+// to before.
+
+/** FIX (1MiB limit): mint a direct-to-Storage upload URL (no bytes in args). */
+export const generateUploadUrl = mutation({
+  args: {},
+  returns: v.string(),
+  handler: (ctx) =&gt; ctx.storage.generateUploadUrl(),
+});
 
 export const createProject = mutation({
   args: {
@@ -39,10 +54,23 @@ export const createProject = mutation({
     fullText: v.string(),
     parsedPages: v.number(),
     status: v.string(),
+    // FIX (1MiB limit): refs written by the calling action for values too big
+    // to inline (additive only — never required).
+    pageDataStorageId: v.optional(v.id("_storage")),
+    fullTextStorageId: v.optional(v.id("_storage")),
+    // ADAPTIVE PIPELINE (additive): "legacy" | "adaptive_parallel" feature flag
+    translationMode: v.optional(v.string()),
   },
   handler: async (ctx, args) =&gt; {
+    const { pageDataStorageId, fullTextStorageId, ...rest } = args;
     return await ctx.db.insert("projects", {
-      ...args,
+      ...rest,
+      // Oversized values ride in Storage; the row keeps harmless stubs so every
+      // existing reader still sees a valid pageData/fullText shape.
+      pageData: isOversized(args.pageData) ? [] : args.pageData,
+      fullText: isOversized(args.fullText) ? "" : args.fullText,
+      pageDataStorageId: pageDataStorageId,
+      fullTextStorageId: fullTextStorageId,
       createdAt: Date.now(),
     });
   },
@@ -61,6 +89,13 @@ export const updateProject = mutation({
     status: v.optional(v.string()),
     zipStorageId: v.optional(v.string()),
     zipUrl: v.optional(v.string()),
+    // ADAPTIVE PIPELINE (additive): pipeline identity + governor fields
+    translationMode: v.optional(v.string()),
+    pipelineVersion: v.optional(v.string()),
+    governorState: v.optional(v.string()),
+    governorResumeAt: v.optional(v.number()),
+    activeWorkerCount: v.optional(v.number()),
+    lastDispatcherAt: v.optional(v.number()),
   },
   handler: async (ctx, args) =&gt; {
     const { projectId, ...updates } = args;
@@ -258,10 +293,53 @@ export const saveImageTranslation = mutation({
     });
   },
 });
-</code></pre><h2>convex/queries.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>getProject</code> — query</li><li><code>getLatestProject</code> — query</li><li><code>getSessionProjects</code> — query</li><li><code>getProjectTranslations</code> — query</li><li><code>getProjectRaw</code> — query</li><li><code>getTranslationsRaw</code> — query</li><li><code>getChunkProgress</code> — query</li><li><code>getChunksForLang</code> — query</li><li><code>getAllJobs</code> — query</li><li><code>getChunksForProjectRaw</code> — query</li><li><code>getUploadJobRaw</code> — query</li><li><code>getExportArtifactsRaw</code> — query</li><li><code>getHistory</code> — query</li><li><code>getStalledLanguages</code> — query</li><li><code>getTranslationProgress</code> — query</li><li><code>getAllProjectsForWatchdog</code> — query</li><li><code>getLivePreviewText</code> — query</li></ul></p><pre><code>import { v } from "convex/values";
+</code></pre><h2>convex/queries.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>getProjectRateSummary</code> — query</li><li><code>getProject</code> — query</li><li><code>getLatestProject</code> — query</li><li><code>getSessionProjects</code> — query</li><li><code>getProjectTranslations</code> — query</li><li><code>getProjectRaw</code> — query</li><li><code>getTranslationsRaw</code> — query</li><li><code>getChunkProgress</code> — query</li><li><code>getChunksForLang</code> — query</li><li><code>getAllJobs</code> — query</li><li><code>getChunksForProjectRaw</code> — query</li><li><code>getUploadJobRaw</code> — query</li><li><code>getExportArtifactsRaw</code> — query</li><li><code>getHistory</code> — query</li><li><code>getStalledLanguages</code> — query</li><li><code>getTranslationProgress</code> — query</li><li><code>getAllProjectsForWatchdog</code> — query</li><li><code>getLivePreviewText</code> — query</li></ul></p><pre><code>import { v } from "convex/values";
 import { query } from "./_generated/server";
 
 // ─── Client-facing queries (require sessionId) ───
+
+// ══ ADAPTIVE PIPELINE: honest pipeline-state summary for the status strip ══
+// Returns governor state, daily usage, worker/RPM target, retry pressure and
+// job counters — the UI shows real state only (no fake progress).
+export const getProjectRateSummary = query({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) =&gt; {
+    const project = await ctx.db.get(args.projectId);
+    if (!project) return null;
+    const rate = (await ctx.db
+      .query("rateLimits")
+      .withIndex("by_project", (q) =&gt; q.eq("projectId", args.projectId))
+      .first()) as { requestsToday?: number; workerLimit?: number } | null;
+    const jobs = await ctx.db
+      .query("translationJobs")
+      .withIndex("by_project", (q) =&gt; q.eq("projectId", args.projectId))
+      .collect();
+    const done = jobs.filter((j) =&gt; j.status === "done").length;
+    const failed = jobs.filter((j) =&gt; j.status === "failed").length;
+    const waiting = jobs.filter((j) =&gt; j.status === "retry_wait").length;
+    const claimed = jobs.filter(
+      (j) =&gt; j.status === "claimed" || j.status === "running",
+    ).length;
+    const pending = jobs.filter((j) =&gt; j.status === "pending").length;
+    return {
+      translationMode: project.translationMode ?? null,
+      governorState: project.governorState ?? null,
+      governorResumeAt: project.governorResumeAt ?? null,
+      requestsToday: rate?.requestsToday ?? 0,
+      dailyBudget: 1200,
+      workerLimit: rate?.workerLimit ?? 2,
+      targetRpm: 10,
+      consecutive429Count: project.consecutive429Count ?? 0,
+      jobsTotal: jobs.length,
+      jobsDone: done,
+      jobsFailed: failed,
+      jobsWaiting: waiting,
+      jobsClaimed: claimed,
+      jobsPending: pending,
+      lastDispatcherAt: project.lastDispatcherAt ?? null,
+    };
+  },
+});
 
 export const getProject = query({
   args: { projectId: v.id("projects"), sessionId: v.string() },
@@ -1062,6 +1140,7 @@ export const setProjectStatus = mutation({
 import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { api } from "./_generated/api";
+import { isOversized } from "./sourceData";
 
 /**
  * convex/importJob.ts — PHASE 2 server-side import.
@@ -1141,6 +1220,15 @@ export const uploadAndImportFromData = action({
     }
 
     // ── Project row (identity = current device + NEW tab session) ──
+    // FIX (1MiB limit): oversized pageData/fullText are stored in Blob Storage
+    // here (the action holds the bytes) and only their refs ride the mutation.
+    const pageDataVal = (p.pageData as never) ?? [];
+    const pageDataStorageId = isOversized(pageDataVal)
+      ? await ctx.storage.store(new Blob([JSON.stringify(pageDataVal)], { type: "application/json" }))
+      : undefined;
+    const fullTextStorageId = isOversized(p.fullText)
+      ? await ctx.storage.store(new Blob([JSON.stringify(p.fullText)], { type: "application/json" }))
+      : undefined;
     const projectId = await ctx.runMutation(api.mutations.createProject, {
       sessionId: args.sessionId,
       fileName: typeof p.fileName === "string" &amp;&amp; p.fileName ? p.fileName : "Imported project",
@@ -1149,8 +1237,10 @@ export const uploadAndImportFromData = action({
         typeof p.wordCount === "number"
           ? p.wordCount
           : p.fullText.split(/\s+/).filter(Boolean).length,
-      pageData: (p.pageData as never) ?? [],
-      fullText: p.fullText,
+      // FIX (1MiB limit): when offloaded, the row gets stubs — nothing
+      // oversized crosses the mutation-argument boundary either.
+      pageData: pageDataStorageId ? [] : pageDataVal,
+      fullText: fullTextStorageId ? "" : p.fullText,
       parsedPages: typeof p.parsedPages === "number" ? p.parsedPages : 1,
       // Preserve the exported pipeline state; "ready" for untouched exports.
       status:
@@ -1159,6 +1249,8 @@ export const uploadAndImportFromData = action({
             ? "all_translated"
             : p.status
           : "ready",
+      pageDataStorageId: pageDataStorageId as string | undefined,
+      fullTextStorageId: fullTextStorageId as string | undefined,
     });
 
     await ctx.runMutation(api.jobMutations.setProjectIdentity, {
@@ -1256,9 +1348,27 @@ export const buildExportArtifact = action({
         pageCount: project.pageCount,
         wordCount: project.wordCount,
         status: project.status,
-        fullText: project.fullText,
+        // FIX (1MiB limit): resolve offloaded source values so the export is
+        // always complete and re-importable, exactly as before the offload.
+        fullText: await (async () =&gt; {
+          if (project.fullText) return project.fullText;
+          if (project.fullTextStorageId) {
+            const blob = await ctx.storage.get(project.fullTextStorageId);
+            if (blob) return (JSON.parse(await blob.text()) as string) ?? "";
+          }
+          return "";
+        })(),
         parsedPages: project.parsedPages,
-        pageData: project.pageData, // coordinates — required for PDF re-render
+        // Coordinates — required for PDF re-render (resolved if offloaded).
+        pageData: await (async () =&gt; {
+          const inline = (project.pageData ?? []) as unknown[];
+          if (Array.isArray(inline) &amp;&amp; inline.length &gt; 0) return inline;
+          if (project.pageDataStorageId) {
+            const blob = await ctx.storage.get(project.pageDataStorageId);
+            if (blob) return (JSON.parse(await blob.text()) as unknown[]) ?? [];
+          }
+          return inline;
+        })(),
         pdfStorageId: project.pdfStorageId ?? null,
       },
       chunks: (chunks as Array&lt;{
@@ -1657,6 +1767,16 @@ crons.hourly(
   "sweep orphaned uploads",
   { minuteUTC: 7 },
   api.identity.sweepStaleUploads,
+  {},
+);
+
+// ══ ADAPTIVE PIPELINE: watchdog every 3 minutes (Phase 9) ══
+// Reclaims stale claims, revives retryable jobs, recovers stuck PDF batches,
+// and re-kicks a missing dispatcher lease — the chain never dies silently.
+crons.interval(
+  "adaptive watchdog",
+  { minutes: 3 },
+  api.adaptiveWatchdog.watchdogTick,
   {},
 );
 

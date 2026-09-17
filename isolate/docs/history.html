@@ -24,7 +24,7 @@ td code{color:#00e5ff}
 <body>
 <p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
 <h1>Change Log</h1>
-<p class="meta">Reconstructed from verifiable code evidence &middot; generated 2026-09-15 15:35 UTC</p>
+<p class="meta">Reconstructed from verifiable code evidence &middot; generated 2026-09-17 15:17 UTC</p>
 
 <p class="note">Provenance: the original audit/report .md files (AUDIT_REPORT,
 EXHAUSTIVE_AUDIT_REPORT, VERIFICATION_REPORT, MIGRATION_REGRESSION_REPORT, …) were removed
@@ -288,6 +288,54 @@ PDF keeps the embedded image (image-ops=1), QA ran during chunk translation, ZIP
 downloads with PK magic (7/7). T11 static gates green: convex dev --once, tsc -b --noEmit, vite build;
 forbidden-pattern greps clean (no base64 file args, no sendBeacon/keepalive, no 10MB/300-page limits, no
 runtime _universal imports).</li>
+</ul>
+
+<h2>Phase 15 — Adaptive Parallel Translation Pipeline (quota-aware dispatcher, 2026-09-17)</h2>
+<ul>
+<li><strong>Why</strong>: the legacy chain was strictly sequential (1 chunk in flight) with fixed 10s sleeps per
+429 attempt across 5 keys (up to ~150s dead sleep per chunk) and any thrown error silently killed the language
+chain — hence ~40 min per chunk. All five Gemini keys share ONE Google project, so throughput cannot be
+multiplied by keys; the pipeline now adapts to measured quota instead of assuming it.</li>
+<li><strong>Central config</strong> (<code>convex/translationConfig.ts</code>): targetRpm 10 (ceiling 12),
+dailyRequestBudget 1200 (Pacific-date keyed), workers 2, heartbeatTtl 3m, action safety deadline 20s, watchdog
+every 3m, dispatcher tick 15s, maxAttempts 6, backoff 2s→120s with 25% jitter + Retry-After floor, pair merge
+cap 6000 estimated tokens (+20% headroom, 4 chars/token), PDF batches 50→25→10 pages, claim budget 2/tick,
+50 DB writes/action cap. These are OnyxTranslate's SAFE OPERATING TARGETS — not Google-official limits.</li>
+<li><strong>Job model</strong>: <code>translationJobs</code> rows keyed <code>projectId:langCode:chunkIndex</code>
+(idempotent — duplicate starts create zero new jobs), statuses pending→claimed→done/retry_wait/failed,
+transactional claimToken claims (late workers with stale tokens lose), stale claims reclaimed after heartbeat
+TTL, results written back into the EXISTING chunks/translations tables so merge → PDF → ZIP → export → preview
+all keep working unchanged. <code>rateLimits</code> holds ONE rolling-60s window per project (all five keys = one
+quota pool), slots counted ONLY when a request is actually sent. <code>pdfBatches</code> makes PDF generation
+idempotent per page range.</li>
+<li><strong>Dispatcher</strong> (<code>adaptiveJobs.ts</code> + <code>adaptiveDispatcher.ts</code>): bounded
+self-rescheduling ticks (exit before the 20s action deadline), one Gemini request per claim, adjacent chunks
+pair-merged when the safe token estimate fits (never truncated; oversized → single). 429 ladder: backoff with
+jitter → worker reduction (3×429 → −1 worker, floor 1) → waiting_retry. 5xx/timeout retry with backoff;
+401/403 rotate keys; malformed pairs save raw output, requeue both chunks as singles, circuit-break pairing per
+language after 2 failures. Bible Pass (glossary lock) runs BEFORE the request — placeholders restored after,
+identical to legacy. runQA + English-echo gate rejects wrong-language/garbage output (retry, never silently
+done).</li>
+<li><strong>Daily governor</strong>: at 1200 requests → governorState=daily_paused, all jobs preserved, auto-resume
+after midnight Pacific (nominal gap computed server-side, counter resets on the Pacific date change). The UI
+shows the honest state: "quota reached — auto-resumes HH:MM · progress saved, safe to close". Never reported as
+a failure.</li>
+<li><strong>PDF batching + watchdog</strong>: whole-book render stays default (proven fidelity); oversized books
+that fail get idempotent 50→25→10-page batches (retry-then-shrink; a failed 10-page batch fails ONLY that batch
+with its exact page range; restarts skip completed batches; stuck batches recovered by watchdog). A 3-min cron
+watchdog promotes retryable jobs, reclaims expired claims, recovers stuck batches, and re-kicks a missing
+dispatcher lease — the chain never dies silently. Stage progression stays monotonic (never backward).</li>
+<li><strong>Feature flag + UI</strong>: <code>translationMode</code> legacy|adaptive_parallel on every project;
+Begin runs adaptive first with a VISIBLE legacy fallback (console + toast); Resume is adaptive-aware; completed
+chunks are never re-translated. Honest status strip: jobs done/total, waiting/failed counts, workers, RPM
+target, requests today vs budget, quota-paused + auto-resume time, safe-to-close after server ACK — no fake
+progress anywhere.</li>
+<li><strong>Gates + honest limits</strong>: convex dev --once ✓ every phase, tsc -b --noEmit ✓, vite build ✓;
+archive 175/175 SHA-256 verified before AND after; zero runtime _universal imports; no secrets in logs or
+reports. Quota-free probes (estimator, pair parser, backoff, limiter refusal at target, governor stop/reset,
+idempotent enqueue) ship in <code>adaptiveTestProbes.ts</code> + <code>scripts/verifyAdaptivePipeline.mjs</code>.
+Measured RPM/429/retry counts and the honest 92×20 projection (1,840 calls ≈ 184 min floor at 10 rpm; pair
+merge can roughly halve it; 2–4h plausible, NOT guaranteed) require a real run — pending deployment resume.</li>
 </ul>
 
 <hr>

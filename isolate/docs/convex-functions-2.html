@@ -24,7 +24,7 @@ td code{color:#00e5ff}
 <body>
 <p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
 <h1>Convex Functions — translateContent.ts (Unified Translation Action)</h1>
-<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-17 16:29 UTC</p>
+<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-18 09:23 UTC</p>
 <p>Files on this page: <code>convex/translateContent.ts</code></p><h2>convex/translateContent.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>translateLanguage</code> — action</li></ul></p><pre><code>"use node";
 /**
  * convex/translateContent.ts — Unified translation action.
@@ -35,6 +35,7 @@ td code{color:#00e5ff}
  */
 import { action } from "./_generated/server";
 import { v } from "convex/values";
+import { filterGeneratedArtifacts, normalizePunctuationForLanguage } from "./languageRules";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 
@@ -647,6 +648,16 @@ export const postProcessTranslationForTest = (
   out = stripMetaCommentary(out, langCode);
   out = out.replace(/\s*[\u3010\[](?:\s*)Paragraph(?:\s*#?\s*\d+)?[\u3011\]]\s*/gi, "\n");
   out = out.replace(/\s*\u3010\s*\d+\s*\u3011\s*/g, "\n");
+  // P4: central language-quality layer — evidence-logged artifact filter +
+  // per-language punctuation normalization (kills 「」 pollution in non-CJK).
+  const filtered = filterGeneratedArtifacts(out);
+  if (filtered.removals.length &gt; 0) {
+    console.log(
+      `[languageRules] ${langCode}: removed ${filtered.removals.length} artifact(s):` +
+        filtered.removals.slice(0, 5).map((r) =&gt; ` ${r.kind}("${r.sample}")`).join(","),
+    );
+  }
+  out = normalizePunctuationForLanguage(filtered.text, langCode);
   out = applyCulturalFilters(out, langCode, marketContext);
   out = out.replace(/\*([^*]+)\*/g, (_: string, thought: string) =&gt;
     formatDragonTelepathy(thought, langCode)

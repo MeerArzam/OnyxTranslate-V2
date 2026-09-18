@@ -30,6 +30,11 @@ export default defineSchema({
     pipelineVersion: v.optional(v.string()),
     // "legacy" (original scheduler chain) | "adaptive_parallel" (dispatcher)
     translationMode: v.optional(v.string()),
+    // Thin Motherboard Phase 3: translation-intelligence contract flag.
+    // "legacy_postprocess" = pre-migration behavior (Bible Pass wrapping +
+    // code post-processing). "gemini_contract" = canonical prompt with strict
+    // JSON response contract; code validates but never rewrites prose.
+    translationIntelligenceMode: v.optional(v.string()),
     totalTranslationJobs: v.optional(v.number()),
     completedTranslationJobs: v.optional(v.number()),
     failedTranslationJobs: v.optional(v.number()),
@@ -66,6 +71,10 @@ export default defineSchema({
     status: v.string(),
     model: v.optional(v.string()),
     usage: v.optional(v.any()),
+    // Thin Motherboard Phase 3: which intelligence contract produced this
+    // chunk (undefined = legacy, pre-migration). Assembly reads this to pick
+    // pure concatenation (contract) vs boundary-repair sweep (legacy).
+    translationIntelligenceMode: v.optional(v.string()),
   })
     .index("by_project_lang", ["projectId", "langCode", "chunkIndex"])
     .index("by_project_status", ["projectId", "status"]),
@@ -230,6 +239,19 @@ export default defineSchema({
     rawModelOutput: v.optional(v.string()),
     idempotencyKey: v.string(),
     pipelineVersion: v.string(),
+    // Thin Motherboard Migration Phase 1: which canonical prompt version
+    // produced this job (buildTranslationPrompt.ts PROMPT_VERSION).
+    promptVersion: v.optional(v.string()),
+    // Thin Motherboard Phase 3: per-job intelligence mode stamp (resolved from
+    // the project at enqueue; legacy rows predate it → treated as legacy).
+    translationIntelligenceMode: v.optional(v.string()),
+    // Thin Motherboard Phase 2: contract-validation state. needs_review jobs
+    // are terminal-but-flagged: never claimed, never overwritten, never
+    // silently saved as done. Evidence preserved for postmortems.
+    needsReview: v.optional(v.boolean()),
+    reviewReason: v.optional(v.string()),
+    // Set when the strict-retry (once) path already ran for this job.
+    contractRetried: v.optional(v.boolean()),
   })
     .index("by_project", ["projectId"])
     .index("by_project_status", ["projectId", "status"])

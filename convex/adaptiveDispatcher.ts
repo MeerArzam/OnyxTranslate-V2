@@ -10,8 +10,17 @@ import {
   looksLikeEnglishEcho,
   isLatinTarget,
 } from "./translationConfig";
+// Thin Motherboard Phase 1: dispatcher uses THE canonical prompt builder
+// (Phase 3 flag decides plain vs JSON contract per job).
+import { buildTranslationPrompt } from "./buildTranslationPrompt";
+// Thin Motherboard Phase 2: the minimal ECC layer — parse + validate, never rewrite.
 import {
-  buildSystemPromptForTest as buildSystemPrompt,
+  parseContractResponse,
+  validateChunkResponse,
+  validatePairItems,
+  lockedTermsForChunk,
+} from "./translationContract";
+import {
   applyBiblePassForTest as applyBiblePassServer,
   postProcessTranslationForTest,
 } from "./translateContent";
@@ -41,8 +50,12 @@ type JobLite = {
   _id: string;
   langCode: string;
   chunkIndex: number;
+  chunkCount?: number;
   sourceText: string;
   claimToken?: string;
+  // Thin Motherboard Phase 2: strict-retry budget already spent?
+  contractRetried?: boolean;
+  translationIntelligenceMode?: string;
 };
 
 type Claimed =
@@ -68,10 +81,35 @@ function getKeys(): string[] {
   ].filter((k): k is string => !!k);
 }
 
-
-
 /** Latin-ratio heuristic: catches untranslated English echo fast. */
 
+/**
+ * Thin Motherboard Phase 2 — strict retry: ONE re-ask with harder
+ * instructions, then needs_review. Never a silent rewrite of the failed
+ * output; the original raw reply is preserved as diagnostics.
+ */
+async function strictRetry(
+  keys: string[],
+  langCode: string,
+  sourceText: string,
+  chunkIndex: number,
+  totalChunks: number,
+  deadline: number,
+): Promise<string | null> {
+  const built = buildTranslationPrompt({
+    sourceLanguage: "en",
+    targetLanguage: langCode,
+    langCode,
+    marketContext: "standard",
+    contract: "json",
+    sourceText,
+    chunkIndex,
+    totalChunks,
+    strict: true,
+  });
+  const resp = await callWithKeyRotation(keys, built.system, built.user, deadline);
+  return resp.ok ? resp.text : null;
+}
 
 /**
  * QA gate (decision ladder: wrong-language / garbage / empty output).
@@ -324,6 +362,10 @@ export const dispatcherTickInner = internalAction({
     let pairCalls = 0;
     let singleCalls = 0;
     let malformedPairs = 0;
+    // Thin Motherboard Phase 2 telemetry (returned per tick for /overview)
+    let contractAccepted = 0;
+    let contractStrictRetries = 0;
+    let contractNeedsReview = 0;
     let nextTickDelay = TRANSLATION_CONFIG.dispatcherIntervalMs;
 
     // ── 3. Claim-and-translate loop (bounded by deadline AND job budget) ──
@@ -382,7 +424,21 @@ export const dispatcherTickInner = internalAction({
       else singleCalls++;
 
       const langCode = jobs[0].langCode;
-      const systemPrompt = buildSystemPrompt(langCode);
+      // Thin Motherboard Phase 3: per-job contract — legacy rows produced
+      // before the migration carry no stamp → legacy_postprocess. Both
+      // branches use the SAME canonical prompt builder (Phase 1).
+      const geminiContractMode =
+        (jobs[0] as { translationIntelligenceMode?: string })
+          .translationIntelligenceMode === "gemini_contract";
+      const contractMode: "plain" | "json" = geminiContractMode ? "json" : "plain";
+      const systemPrompt = buildTranslationPrompt({
+        sourceLanguage: "en",
+        targetLanguage: langCode,
+        langCode,
+        marketContext: "standard",
+        contract: contractMode,
+        sourceText: "",
+      }).system;
 
       // ── Bible Pass BEFORE the request (production flow, same as legacy):
       // lock glossary terms → send locked text → restore placeholders after.
@@ -401,37 +457,205 @@ export const dispatcherTickInner = internalAction({
 
         if (claimed.kind === "single") {
           const job = claimed.job;
-          const translated = postProcessTranslationForTest(
-            resp.text,
-            langCode,
-            "standard",
-            locked[0].placeholders,
-          );
-          const reject = qaRejectReason(langCode, job.sourceText, translated);
-          if (reject) {
-            sawOtherError++;
-            await ctx.runMutation(api.adaptiveJobs.failJobForRetry, {
-              jobId: job._id as never,
-              claimToken: job.claimToken ?? "",
-              error: `quality gate — ${reject}`.slice(0, 500),
+          if (geminiContractMode) {
+            // ═══ Thin Motherboard Phase 2: CONTRACT PATH ═══
+            // Validate → strict retry ONCE → needs_review. No rewriting.
+            const parse = parseContractResponse(resp.text);
+            const verdict = validateChunkResponse({
+              parse,
+              langCode,
+              sourceText: job.sourceText,
+              lockedTerms: lockedTermsForChunk(langCode, job.sourceText),
+              alreadyRetried: job.contractRetried === true,
             });
-            nextTickDelay = Math.max(nextTickDelay, 5000);
-            continue;
+            if (verdict.action === "accept") {
+              contractAccepted++;
+              completions.push({
+                jobId: job._id,
+                claimToken: job.claimToken ?? "",
+                resultText: verdict.translation,
+              });
+              results.push({
+                langCode,
+                chunkIndex: job.chunkIndex,
+                sourceText: job.sourceText,
+                translatedText: verdict.translation,
+                model: GEMINI_MODEL,
+              });
+            } else if (verdict.action === "retry_strict" && job.contractRetried !== true) {
+              contractStrictRetries++;
+              await ctx.runMutation(api.adaptiveJobs.recordContractRetry, {
+                jobId: job._id as never,
+                claimToken: job.claimToken ?? "",
+                reason: verdict.reason,
+                diagnostics: verdict.diagnostics,
+              });
+              const strictText = await strictRetry(
+                keys, langCode, job.sourceText, job.chunkIndex,
+                job.chunkCount ?? 1, deadline,
+              );
+              if (strictText) {
+                const strictParse = parseContractResponse(strictText);
+                const strictVerdict = validateChunkResponse({
+                  parse: strictParse,
+                  langCode,
+                  sourceText: job.sourceText,
+                  lockedTerms: lockedTermsForChunk(langCode, job.sourceText),
+                  alreadyRetried: true,
+                });
+                if (strictVerdict.action === "accept") {
+                  contractAccepted++;
+                  completions.push({
+                    jobId: job._id,
+                    claimToken: job.claimToken ?? "",
+                    resultText: strictVerdict.translation,
+                  });
+                  results.push({
+                    langCode,
+                    chunkIndex: job.chunkIndex,
+                    sourceText: job.sourceText,
+                    translatedText: strictVerdict.translation,
+                    model: GEMINI_MODEL,
+                  });
+                } else {
+                  contractNeedsReview++;
+                  await ctx.runMutation(api.adaptiveJobs.markNeedsReview, {
+                    jobId: job._id as never,
+                    claimToken: job.claimToken ?? "",
+                    reason: strictVerdict.reason,
+                    diagnostics: strictVerdict.diagnostics,
+                  });
+                }
+              } else {
+                // Strict retry request itself failed (network/5xx) →
+                // ordinary transport retry; contract state stays armed.
+                sawOtherError++;
+                await ctx.runMutation(api.adaptiveJobs.failJobForRetry, {
+                  jobId: job._id as never,
+                  claimToken: job.claimToken ?? "",
+                  error: "strict retry transport failure",
+                });
+                nextTickDelay = Math.max(nextTickDelay, 5000);
+              }
+            } else if (verdict.action === "needs_review") {
+              contractNeedsReview++;
+              await ctx.runMutation(api.adaptiveJobs.markNeedsReview, {
+                jobId: job._id as never,
+                claimToken: job.claimToken ?? "",
+                reason: verdict.reason,
+                diagnostics: verdict.diagnostics,
+              });
+            } else {
+              // retry_strict but the single bounded retry already spent →
+              // straight to needs_review (never an unbounded retry loop).
+              contractNeedsReview++;
+              await ctx.runMutation(api.adaptiveJobs.markNeedsReview, {
+                jobId: job._id as never,
+                claimToken: job.claimToken ?? "",
+                reason: verdict.reason,
+                diagnostics: verdict.diagnostics,
+              });
+            }
+          } else {
+            // ═══ LEGACY PATH (byte-compatible pre-migration behavior) ═══
+            const translated = postProcessTranslationForTest(
+              resp.text,
+              langCode,
+              "standard",
+              locked[0].placeholders,
+            );
+            const reject = qaRejectReason(langCode, job.sourceText, translated);
+            if (reject) {
+              sawOtherError++;
+              await ctx.runMutation(api.adaptiveJobs.failJobForRetry, {
+                jobId: job._id as never,
+                claimToken: job.claimToken ?? "",
+                error: `quality gate — ${reject}`.slice(0, 500),
+              });
+              nextTickDelay = Math.max(nextTickDelay, 5000);
+              continue;
+            }
+            completions.push({
+              jobId: job._id,
+              claimToken: job.claimToken ?? "",
+              resultText: translated,
+            });
+            results.push({
+              langCode,
+              chunkIndex: job.chunkIndex,
+              sourceText: job.sourceText,
+              translatedText: translated,
+              model: GEMINI_MODEL,
+            });
           }
-          completions.push({
-            jobId: job._id,
-            claimToken: job.claimToken ?? "",
-            resultText: translated,
-          });
-          results.push({
-            langCode,
-            chunkIndex: job.chunkIndex,
-            sourceText: job.sourceText,
-            translatedText: translated,
-            model: GEMINI_MODEL,
-          });
         } else {
           const [a, b] = claimed.jobs;
+          if (geminiContractMode) {
+            // ═══ Thin Motherboard Phase 2: CONTRACT PAIR PATH ═══
+            // Strict JSON items[] envelope. Parse/validate failure → ONE
+            // strict retry → split into singles (never kills the dispatcher).
+            const pairSources = a.sourceText + "\n" + b.sourceText;
+            const lockedTerms = lockedTermsForChunk(langCode, pairSources);
+            const tryPair = (raw: string) => {
+              const p = parseContractResponse(raw);
+              if (!(p.ok && p.kind === "pair")) return null;
+              const vr = validatePairItems({
+                pair: p.value,
+                expectedIndexes: [a.chunkIndex, b.chunkIndex],
+                sources: [a.sourceText, b.sourceText],
+                langCode,
+                lockedTerms,
+              });
+              return vr;
+            };
+            const first = tryPair(resp.text);
+            if (first?.ok) {
+              contractAccepted += 2;
+              completions.push(
+                { jobId: a._id, claimToken: a.claimToken ?? "", resultText: first.translations[0] },
+                { jobId: b._id, claimToken: b.claimToken ?? "", resultText: first.translations[1] },
+              );
+              results.push(
+                { langCode, chunkIndex: a.chunkIndex, sourceText: a.sourceText, translatedText: first.translations[0], model: GEMINI_MODEL },
+                { langCode, chunkIndex: b.chunkIndex, sourceText: b.sourceText, translatedText: first.translations[1], model: GEMINI_MODEL },
+              );
+            } else if (a.contractRetried === true) {
+              malformedPairs++;
+              await ctx.runMutation(api.adaptiveJobs.markPairSplit, {
+                jobIdA: a._id as never,
+                jobIdB: b._id as never,
+                claimTokenA: a.claimToken ?? "",
+                claimTokenB: b.claimToken ?? "",
+                rawOutput: `contract pair: ${first && !first.ok ? first.reason : "not_pair_envelope"}`.slice(0, 20_000),
+              });
+            } else {
+              contractStrictRetries++;
+              const strictText = await strictRetry(
+                keys, langCode, a.sourceText + "\n\n" + b.sourceText, a.chunkIndex, b.chunkIndex + 1, deadline,
+              );
+              const second = strictText ? tryPair(strictText) : null;
+              if (second?.ok) {
+                contractAccepted += 2;
+                completions.push(
+                  { jobId: a._id, claimToken: a.claimToken ?? "", resultText: second.translations[0] },
+                  { jobId: b._id, claimToken: b.claimToken ?? "", resultText: second.translations[1] },
+                );
+                results.push(
+                  { langCode, chunkIndex: a.chunkIndex, sourceText: a.sourceText, translatedText: second.translations[0], model: GEMINI_MODEL },
+                  { langCode, chunkIndex: b.chunkIndex, sourceText: b.sourceText, translatedText: second.translations[1], model: GEMINI_MODEL },
+                );
+              } else {
+                malformedPairs++;
+                await ctx.runMutation(api.adaptiveJobs.markPairSplit, {
+                  jobIdA: a._id as never,
+                  jobIdB: b._id as never,
+                  claimTokenA: a.claimToken ?? "",
+                  claimTokenB: b.claimToken ?? "",
+                  rawOutput: (strictText ?? resp.text).slice(0, 20_000),
+                });
+              }
+            }
+          } else {
           const textA = extractPairSection(resp.text, "A");
           const textB = extractPairSection(resp.text, "B");
           const echoA = !isLatinTarget(langCode) && looksLikeEnglishEcho(textA ?? "");
@@ -495,6 +719,7 @@ export const dispatcherTickInner = internalAction({
               rawOutput: resp.text.slice(0, 20_000),
             });
             // The pair request DID hit Gemini → keep the slot counted.
+          }
           }
         }
       } else if (resp.status === 429 || /RESOURCE_EXHAUSTED|quota/i.test(resp.error)) {
@@ -577,6 +802,10 @@ export const dispatcherTickInner = internalAction({
       malformedPairs,
       saw429,
       sawOtherError,
+      // Thin Motherboard Phase 2 telemetry (per-tick, surfaced in /overview)
+      contractAccepted,
+      contractStrictRetries,
+      contractNeedsReview,
       nextTickDelay,
     };
   },

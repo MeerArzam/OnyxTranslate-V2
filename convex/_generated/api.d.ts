@@ -14,6 +14,7 @@ import type * as adaptivePdf from "../adaptivePdf.js";
 import type * as adaptiveTestProbes from "../adaptiveTestProbes.js";
 import type * as adaptiveWatchdog from "../adaptiveWatchdog.js";
 import type * as artifactMutations from "../artifactMutations.js";
+import type * as buildTranslationPrompt from "../buildTranslationPrompt.js";
 import type * as crons from "../crons.js";
 import type * as exportProject from "../exportProject.js";
 import type * as forensicProbe from "../forensicProbe.js";
@@ -39,6 +40,8 @@ import type * as translateContent from "../translateContent.js";
 import type * as translateImage from "../translateImage.js";
 import type * as translateQueue from "../translateQueue.js";
 import type * as translationConfig from "../translationConfig.js";
+import type * as translationContract from "../translationContract.js";
+import type * as translationContractMutation from "../translationContractMutation.js";
 import type * as upload from "../upload.js";
 import type * as zipAssembly from "../zipAssembly.js";
 
@@ -55,6 +58,7 @@ declare const fullApi: ApiFromModules<{
   adaptiveTestProbes: typeof adaptiveTestProbes;
   adaptiveWatchdog: typeof adaptiveWatchdog;
   artifactMutations: typeof artifactMutations;
+  buildTranslationPrompt: typeof buildTranslationPrompt;
   crons: typeof crons;
   exportProject: typeof exportProject;
   forensicProbe: typeof forensicProbe;
@@ -80,6 +84,8 @@ declare const fullApi: ApiFromModules<{
   translateImage: typeof translateImage;
   translateQueue: typeof translateQueue;
   translationConfig: typeof translationConfig;
+  translationContract: typeof translationContract;
+  translationContractMutation: typeof translationContractMutation;
   upload: typeof upload;
   zipAssembly: typeof zipAssembly;
 }>;

@@ -6,6 +6,9 @@ import { internalMutation, internalQuery, action, internalAction } from "./_gene
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { assembleWithBoundaryRepair, filterGeneratedArtifacts } from "./languageRules";
+import { PROMPT_VERSION } from "./buildTranslationPrompt";
+// Thin Motherboard Phase 2: the ONE upsert used by both contract modes.
+import { upsertTranslationResult, assembleContractChunks } from "./translationContractMutation";
 import {
   TRANSLATION_CONFIG,
   TREAT_KEYS_AS_ONE_POOL,
@@ -50,7 +53,13 @@ type JobDoc = {
   lastHttpStatus?: number;
   requestGroupId?: string;
   mergedWithChunkIndex?: number;
+  // Thin Motherboard Phase 2: contract state (needs_review / strict-retry)
+  needsReview?: boolean;
+  reviewReason?: string;
+  contractRetried?: boolean;
+  rawModelOutput?: string;
   pairFailureCount?: number;
+  translationIntelligenceMode?: string;
   idempotencyKey: string;
 };
 
@@ -92,9 +101,19 @@ export const enqueueAdaptiveJobs = internalMutation({
   },
   handler: async (ctx, args) => {
     const project = (await ctx.db.get(args.projectId)) as
-      | { fullText: string; status: string; clientId?: string; tabSessionId?: string }
+      | {
+          fullText: string;
+          status: string;
+          clientId?: string;
+          tabSessionId?: string;
+          translationIntelligenceMode?: string;
+        }
       | null;
     if (!project) throw new Error("Project not found");
+    // Thin Motherboard Phase 3: resolve ONCE per enqueue. Existing projects
+    // keep whatever mode they carry (undefined → legacy_postprocess); NEW
+    // projects default to gemini_contract at creation (mutations.ts).
+    const intelMode = project.translationIntelligenceMode ?? "legacy_postprocess";
 
     const sourceChunks = chunkTextForAdaptive(project.fullText);
     const chunkCount = sourceChunks.length;
@@ -157,6 +176,12 @@ export const enqueueAdaptiveJobs = internalMutation({
           completedAt: preDone ? now : undefined,
           idempotencyKey: idem,
           pipelineVersion: TRANSLATION_CONFIG.pipelineVersion,
+          // Thin Motherboard Phase 1: stamp the canonical prompt version per job.
+          promptVersion: PROMPT_VERSION,
+          // Thin Motherboard Phase 3: every NEW job inherits the project's
+          // translation-intelligence mode at enqueue time. The 14/92 Urdu job
+          // has existing rows (dup-continue) → never re-stamped → untouched.
+          translationIntelligenceMode: intelMode,
         });
         if (!preDone) created++;
       }
@@ -235,6 +260,16 @@ function chunkTextForAdaptive(text: string): string[] {
  * current rate-row worker limit. Read-only — the claim mutation re-checks
  * everything inside its own transaction (never trust a stale read).
  */
+/** Thin Motherboard Phase 3: per-job intelligence mode (job → project fallback). */
+function intelModeOf(job: {
+  translationIntelligenceMode?: string;
+  projectId: Id<"projects">;
+}): "legacy_postprocess" | "gemini_contract" {
+  // Per-job stamp is authoritative; the dispatcher passes the project default.
+  return (job.translationIntelligenceMode === "gemini_contract"
+    ? "gemini_contract"
+    : "legacy_postprocess");
+}
 export const findNextClaimable = internalQuery({
   args: { projectId: v.id("projects") },
   handler: async (
@@ -247,6 +282,7 @@ export const findNextClaimable = internalQuery({
         langCode: string;
         chunkIndex: number;
         neighborPending: boolean;
+        intelMode: "legacy_postprocess" | "gemini_contract";
         sourceLenA: number;
         sourceLenB: number;
         workerLimit: number;
@@ -263,8 +299,7 @@ export const findNextClaimable = internalQuery({
     pending.sort((a, b) => {
       if (a.langCode !== b.langCode) return a.langCode < b.langCode ? -1 : 1;
       return a.chunkIndex - b.chunkIndex;
-    });
-    const first = pending[0];
+    });    const first = pending[0];
     const neighbor = pending.find(
       (j) => j.langCode === first.langCode && j.chunkIndex === first.chunkIndex + 1,
     );
@@ -272,6 +307,12 @@ export const findNextClaimable = internalQuery({
       .query("rateLimits")
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
       .first()) as RateDoc | null;
+    // Thin Motherboard Phase 3: pairing only within one intelligence mode —
+    // a contract job never pairs with a legacy job (different prompt and
+    // response envelope). Mixed flag states fall back to singles.
+    const contractMode = intelModeOf(first);
+    const neighborEligible =
+      !!neighbor && intelModeOf(neighbor) === contractMode;
     const inFlight = (await ctx.db
       .query("translationJobs")
       .withIndex("by_project_status", (q) =>
@@ -282,9 +323,10 @@ export const findNextClaimable = internalQuery({
       jobId: first._id,
       langCode: first.langCode,
       chunkIndex: first.chunkIndex,
-      neighborPending: !!neighbor,
+      neighborPending: neighborEligible,
+      intelMode: contractMode,
       sourceLenA: first.sourceText.length,
-      sourceLenB: neighbor?.sourceText.length ?? 0,
+      sourceLenB: neighborEligible ? neighbor.sourceText.length : 0,
       workerLimit: rate?.workerLimit ?? TRANSLATION_CONFIG.workerCount,
       remainingJobs: pending.length + inFlight.length,
     };
@@ -386,6 +428,9 @@ export const claimJobPair = internalMutation({
     if (
       jobB &&
       jobB.status === "pending" &&
+      // Thin Motherboard Phase 3: never pair across intelligence modes —
+      // contract and legacy jobs use different prompts and response envelopes.
+      intelModeOf(jobB) === intelModeOf(jobA) &&
       safeTokens <= TRANSLATION_CONFIG.pairMergeMaxEstimatedInputTokens
     ) {
       const tokenB = `claim_${jobB._id}_${now}_${Math.random().toString(36).slice(2, 10)}`;
@@ -638,6 +683,101 @@ export const completeJobs = internalMutation({
   },
 });
 
+/**
+ * Thin Motherboard Phase 2 — arm the strict-retry state on a job whose first
+ * response failed contract validation. Keeps the claim alive; the dispatcher
+ * immediately re-asks with the strict prompt. Never overwrites done text.
+ */
+export const recordContractRetry = internalMutation({
+  args: {
+    jobId: v.id("translationJobs"),
+    claimToken: v.string(),
+    reason: v.string(),
+    diagnostics: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const job = (await ctx.db.get(args.jobId)) as JobDoc | null;
+    if (!job || job.claimToken !== args.claimToken) return { armed: false };
+    await ctx.db.patch(args.jobId, {
+      contractRetried: true,
+      lastError: `contract retry: ${args.reason}`.slice(0, 500),
+      rawModelOutput: args.diagnostics?.slice(0, 20_000) ?? job.rawModelOutput,
+    });
+    return { armed: true };
+  },
+});
+
+/**
+ * Thin Motherboard Phase 2 — terminal-but-flagged outcome for a chunk whose
+ * response failed contract validation twice (initial + strict retry).
+ * NEVER claimed by the dispatcher, NEVER overwritten (claimToken already
+ * cleared), visible in the job UI. Diagnostics preserved on the job.
+ */
+export const markNeedsReview = internalMutation({
+  args: {
+    jobId: v.id("translationJobs"),
+    claimToken: v.string(),
+    reason: v.string(),
+    diagnostics: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const job = (await ctx.db.get(args.jobId)) as JobDoc | null;
+    if (!job || job.claimToken !== args.claimToken) return { flagged: false };
+    await ctx.db.patch(args.jobId, {
+      status: "needs_review",
+      needsReview: true,
+      reviewReason: args.reason.slice(0, 500),
+      rawModelOutput: args.diagnostics?.slice(0, 20_000) ?? job.rawModelOutput,
+      claimToken: undefined,
+      lastError: `needs_review: ${args.reason}`.slice(0, 500),
+    });
+    return { flagged: true };
+  },
+});
+
+/**
+ * Thin Motherboard Phase 2 — clear a needs_review flag after a human or the
+ * QA-requeue path has reviewed/re-translated the chunk. Only needs_review
+ * rows are affected; done rows can never be touched by this.
+ */
+export const resolveNeedsReview = internalMutation({
+  args: {
+    jobId: v.id("translationJobs"),
+    resolvedText: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const job = (await ctx.db.get(args.jobId)) as JobDoc | null;
+    if (!job || job.status !== "needs_review") return { requeued: false };
+    if (args.resolvedText && args.resolvedText.trim().length > 0) {
+      await upsertTranslationResult(ctx, {
+        projectId: job.projectId,
+        langCode: job.langCode,
+        chunkIndex: job.chunkIndex,
+        sourceText: job.sourceText,
+        translatedText: args.resolvedText,
+        model: "manual_resolution",
+      });
+      await ctx.db.patch(args.jobId, {
+        status: "done",
+        needsReview: false,
+        reviewReason: undefined,
+        resultText: args.resolvedText,
+        completedAt: Date.now(),
+      });
+    } else {
+      // Requeue WITHOUT incrementing contract retries (fresh validation cycle).
+      await ctx.db.patch(args.jobId, {
+        status: "pending",
+        needsReview: false,
+        reviewReason: undefined,
+        contractRetried: false,
+        nextRetryAt: undefined,
+      });
+    }
+    return { requeued: true };
+  },
+});
+
 export const failJobForRetry = internalMutation({
   args: {
     jobId: v.id("translationJobs"),
@@ -791,38 +931,27 @@ export const flushJobResults = internalMutation({
     projectId: v.id("projects"),
   },
   handler: async (ctx, args) => {
+    // Thin Motherboard Phase 3: the project's contract flag decides the
+    // assembly law. gemini_contract → code NEVER rewrites saved prose
+    // (pure concatenation); legacy_postprocess → pre-migration behavior.
+    const proj = (await ctx.db.get(args.projectId)) as
+      | { translationIntelligenceMode?: string }
+      | null;
+    const contractMode = proj?.translationIntelligenceMode === "gemini_contract";
     let writes = 0;
     const BUDGET = TRANSLATION_CONFIG.maxDatabaseWritesPerAction;
     for (const r of args.results) {
       if (writes >= BUDGET) break;
-      const existing = await ctx.db
-        .query("chunks")
-        .withIndex("by_project_lang", (q) =>
-          q
-            .eq("projectId", args.projectId)
-            .eq("langCode", r.langCode)
-            .eq("chunkIndex", r.chunkIndex),
-        )
-        .first();
-      if (existing) {
-        await ctx.db.patch(existing._id, {
-          translatedText: r.translatedText,
-          status: "done",
-          model: r.model,
-        });
-        writes++;
-      } else {
-        await ctx.db.insert("chunks", {
-          projectId: args.projectId,
-          langCode: r.langCode,
-          chunkIndex: r.chunkIndex,
-          sourceText: r.sourceText,
-          translatedText: r.translatedText,
-          status: "done",
-          model: r.model,
-        });
-        writes++;
-      }
+      await upsertTranslationResult(ctx, {
+        projectId: args.projectId,
+        langCode: r.langCode,
+        chunkIndex: r.chunkIndex,
+        sourceText: r.sourceText,
+        translatedText: r.translatedText,
+        model: r.model,
+        intelMode: contractMode ? "gemini_contract" : undefined,
+      });
+      writes++;
     }
 
     // Per-language progress + completion detection
@@ -852,17 +981,28 @@ export const flushJobResults = internalMutation({
           (a: { chunkIndex: number }, b: { chunkIndex: number }) =>
             a.chunkIndex - b.chunkIndex,
         );
-        const mergedText = assembleWithBoundaryRepair(
-          ordered.map((c: { translatedText?: string }) => c.translatedText || ""),
-        );
-        // P4: final artifact sweep at language assembly (evidence-logged).
-        const swept = filterGeneratedArtifacts(mergedText);
-        if (swept.removals.length > 0) {
-          console.log(
-            `[languageRules] ${langCode} FINAL: removed ${swept.removals.length} artifact(s)`,
-          );
+        // Thin Motherboard Phase 3: contract chunks assemble via PURE
+        // concatenation (Gemini owns sentence/paragraph integrity, verified
+        // by the contract validators); legacy keeps boundary repair + sweep.
+        const mergedText = contractMode
+          ? assembleContractChunks(
+              ordered.map((c: { translatedText?: string }) => c.translatedText || ""),
+            )
+          : assembleWithBoundaryRepair(
+              ordered.map((c: { translatedText?: string }) => c.translatedText || ""),
+            );
+        // P4: final artifact sweep at language assembly — LEGACY ONLY.
+        // Contract output is saved verbatim (code verifies, never rewrites).
+        let finalText = mergedText;
+        if (!contractMode) {
+          const swept = filterGeneratedArtifacts(mergedText);
+          if (swept.removals.length > 0) {
+            console.log(
+              `[languageRules] ${langCode} FINAL: removed ${swept.removals.length} artifact(s)`,
+            );
+          }
+          finalText = swept.text;
         }
-        const finalText = swept.text;
         await ctx.db.patch(translation._id, {
           status: "generating_pdf",
           completedChunks: doneCount,
@@ -895,6 +1035,7 @@ export const flushJobResults = internalMutation({
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
       .collect();
     const doneJobs = allJobs.filter((j) => j.status === "done").length;
+    const flaggedJobs = allJobs.filter((j) => j.status === "needs_review").length;
     const failedJobs = allJobs.filter((j) => j.status === "failed").length;
     await ctx.db.patch(args.projectId, {
       completedTranslationJobs: doneJobs,

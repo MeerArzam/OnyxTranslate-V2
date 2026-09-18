@@ -120,7 +120,22 @@ function buildMarketContext(marketContext: string): string {
   }
 }
 
+// Thin Motherboard Phase 1: delegate to THE canonical prompt builder.
+import { buildTranslationPrompt } from "./buildTranslationPrompt";
+
 function buildSystemPrompt(langCode: string, marketContext = "standard"): string {
+  return buildTranslationPrompt({
+    sourceLanguage: "en",
+    targetLanguage: langCode,
+    langCode,
+    marketContext: (marketContext as "standard" | "high-censorship" | "romance-focused") || "standard",
+    contract: "plain",
+    sourceText: "",
+  }).system;
+}
+
+// Phase 4 will delete this retired duplicate body (kept until new-mode gates pass).
+function buildSystemPromptLegacyRetired(langCode: string, marketContext = "standard"): string {
   const cfg = getLocalizationConfig(langCode);
   const langLine = cfg
     ? `${cfg.name} (${cfg.nativeName}) \u2014 ${cfg.script} script${cfg.rtl ? ", RTL" : ""}`

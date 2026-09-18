@@ -33,10 +33,14 @@ export const createProject = mutation({
     fullTextStorageId: v.optional(v.id("_storage")),
     // ADAPTIVE PIPELINE (additive): "legacy" | "adaptive_parallel" feature flag
     translationMode: v.optional(v.string()),
+    // Thin Motherboard Phase 3: NEW projects default to the Gemini JSON
+    // contract; the handler below backstops it for clients that omit it.
+    // Existing projects keep their stored value (never auto-migrated).
+    translationIntelligenceMode: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { pageDataStorageId, fullTextStorageId, ...rest } = args;
-    return await ctx.db.insert("projects", {
+    return    await ctx.db.insert("projects", {
       ...rest,
       // Oversized values ride in Storage; the row keeps harmless stubs so every
       // existing reader still sees a valid pageData/fullText shape.
@@ -44,6 +48,10 @@ export const createProject = mutation({
       fullText: isOversized(args.fullText) ? "" : args.fullText,
       pageDataStorageId: pageDataStorageId,
       fullTextStorageId: fullTextStorageId,
+      // Thin Motherboard Phase 3: new-project default contract — the flag the
+      // spec names. Explicit client values win (rollback switch stays open).
+      translationIntelligenceMode:
+        args.translationIntelligenceMode ?? "gemini_contract",
       createdAt: Date.now(),
     });
   },
@@ -64,6 +72,8 @@ export const updateProject = mutation({
     zipUrl: v.optional(v.string()),
     // ADAPTIVE PIPELINE (additive): pipeline identity + governor fields
     translationMode: v.optional(v.string()),
+    // Thin Motherboard Phase 3: intelligence-mode flag (rollback support)
+    translationIntelligenceMode: v.optional(v.string()),
     pipelineVersion: v.optional(v.string()),
     governorState: v.optional(v.string()),
     governorResumeAt: v.optional(v.number()),

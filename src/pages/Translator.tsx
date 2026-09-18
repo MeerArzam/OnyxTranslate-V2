@@ -2252,6 +2252,11 @@ export default function Translator() {
                     <span className="text-muted-foreground">
                       server jobs {serverJobStatus.doneJobs}/{serverJobStatus.totalJobs} done · {serverJobStatus.pendingJobs} pending · {serverJobStatus.claimedJobs} claimed · {serverJobStatus.retryWaitJobs} retry-wait
                     </span>
+                    {serverJobStatus.needsReviewJobs > 0 && (
+                      <span style={{ color: "#fbbf24" }}>
+                        {serverJobStatus.needsReviewJobs} chunk(s) flagged needs-review (kept out of the book until resolved — progress NOT lost)
+                      </span>
+                    )}
                     {serverJobStatus.requestsToday > 0 && (
                       <span className="text-muted-foreground">{serverJobStatus.requestsToday}/{serverJobStatus.dailyBudget} requests today</span>
                     )}

@@ -208,12 +208,16 @@ export const getServerJobStatus = query({
     governorState: v.optional(v.string()),
     governorResumeAt: v.optional(v.number()),
     translationMode: v.optional(v.string()),
+    // Thin Motherboard Phase 3: which intelligence contract the project uses.
+    translationIntelligenceMode: v.optional(v.string()),
     totalJobs: v.number(),
     doneJobs: v.number(),
     pendingJobs: v.number(),
     claimedJobs: v.number(),
     retryWaitJobs: v.number(),
     failedJobs: v.number(),
+    // Thin Motherboard Phase 2: chunks flagged needs_review (visible, never hidden).
+    needsReviewJobs: v.number(),
     perLangDone: v.array(v.object({
       langCode: v.string(),
       done: v.number(),
@@ -237,7 +241,7 @@ export const getServerJobStatus = query({
         found: false, status: undefined, governorState: undefined,
         governorResumeAt: undefined, translationMode: undefined,
         totalJobs: 0, doneJobs: 0, pendingJobs: 0, claimedJobs: 0,
-        retryWaitJobs: 0, failedJobs: 0, perLangDone: [],
+        retryWaitJobs: 0, failedJobs: 0, needsReviewJobs: 0, perLangDone: [],
         requestsToday: 0, dailyBudget: TRANSLATION_CONFIG.dailyRequestBudget,
         workerCount: TRANSLATION_CONFIG.workerCount,
         lastDispatcherAt: undefined, lastSuccessfulActivityAt: undefined,
@@ -248,7 +252,8 @@ export const getServerJobStatus = query({
     }
     const proj = p as {
       status?: string; governorState?: string; governorResumeAt?: number;
-      translationMode?: string; requestsToday?: number;
+      translationMode?: string; translationIntelligenceMode?: string;
+      requestsToday?: number;
       lastDispatcherAt?: number; lastSuccessfulActivityAt?: number;
       watchdogLastRunAt?: number; watchdogLastError?: string;
       lastDispatcherError?: string; activeWorkerCount?: number;
@@ -259,6 +264,7 @@ export const getServerJobStatus = query({
       .collect()) as JobRow[];
     const counts = {
       done: 0, pending: 0, claimed: 0, retry_wait: 0, failed: 0, running: 0,
+      needs_review: 0,
     };
     const perLang = new Map<string, { done: number; total: number }>();
     for (const j of jobs) {
@@ -284,12 +290,14 @@ export const getServerJobStatus = query({
       governorState: proj.governorState,
       governorResumeAt: proj.governorResumeAt,
       translationMode: proj.translationMode,
+      translationIntelligenceMode: proj.translationIntelligenceMode,
       totalJobs: jobs.length,
       doneJobs: counts.done,
       pendingJobs: counts.pending,
       claimedJobs: counts.claimed,
       retryWaitJobs: counts.retry_wait,
       failedJobs: counts.failed,
+      needsReviewJobs: counts.needs_review,
       perLangDone: [...perLang.entries()].map(([langCode, v]) => ({
         langCode, ...v,
       })),

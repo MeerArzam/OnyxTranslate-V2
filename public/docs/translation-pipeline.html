@@ -24,7 +24,7 @@ td code{color:#00e5ff}
 <body>
 <p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
 <h1>Translation Pipeline</h1>
-<p class="meta">Gemini 3.6 Flash — 23 phases, Bible pass, rotation, QA &middot; generated 2026-09-18 09:23 UTC</p>
+<p class="meta">Gemini 3.6 Flash — 23 phases, Bible pass, rotation, QA &middot; generated 2026-09-18 14:44 UTC</p>
 
 <h2>1. The 23 Localization Phases (verbatim PHASE_RULES)</h2>
 <p>These rules are embedded verbatim into every Gemini system prompt
@@ -83,129 +83,15 @@ per-language config (dialogue marks, formality, profanity map, rank map, magic s
 names, style sheet from <code>src/data/localization/*.json</code>), locked glossary column,
 name map, voice matrix, and output rules.</p>
 <pre><code>function buildSystemPrompt(langCode: string, marketContext = "standard"): string {
-  const cfg = getLocalizationConfig(langCode);
-  const langLine = cfg
-    ? `${cfg.name} (${cfg.nativeName}) \u2014 ${cfg.script} script${cfg.rtl ? ", RTL" : ""}`
-    : langCode;
-  const dialogueMarks = cfg
-    ? `Open: ${cfg.dialogue.open} | Close: ${cfg.dialogue.close} | ${cfg.dialogue.note}`
-    : "Use the language's standard quotation marks";
-  const profanityMap = cfg
-    ? Object.entries(cfg.profanity).map(([en, local]) =&gt; `  - ${en} \u2192 ${local}`).join("\n")
-    : "  - (none configured)";
-  const rankMap = cfg
-    ? Object.entries(cfg.ranks).map(([en, local]) =&gt; `  - ${en} \u2192 ${local}`).join("\n")
-    : "  - (none configured)";
-  const fanNames = cfg &amp;&amp; Object.keys(cfg.fanNames).length
-    ? Object.entries(cfg.fanNames).map(([en, fan]) =&gt; `  - ${en} \u2192 ${fan}`).join("\n")
-    : "  - (none for this language)";
-  const styleSheet = cfg
-    ? `Register: ${cfg.styleSheet.register}\n  Sentence length: ${cfg.styleSheet.sentenceLength}\n  Gender handling: ${cfg.styleSheet.gender}\n  Archaic vs modern: ${cfg.styleSheet.archaic}\n  Numerals: ${cfg.styleSheet.numerals}`
-    : "(none)";
-  const magicSystem = cfg ? cfg.magicSystem : "(none)";
-  const phaseRules = PHASE_RULES.map(([id, name, rule]) =&gt; `### ${id}. ${name}\n${rule}`).join("\n\n");
-  const reasoning = REASONING_PROTOCOL.join("\n");
-  const voices = VOICE_MATRIX.map(
-    ([name, style, example], i) =&gt; `${i + 1}. ${name}: ${style}${example ? `\n   Example: ${example}` : ""}`
-  ).join("\n");
-
-  // FIX 4c: Per-language punctuation map
-  const PUNCTUATION_MAP: Record&lt;string, string&gt; = {
-    fr: "Dialogue uses « » guillemets. Non-breaking space before » and after « is correct.",
-    it: "Dialogue uses « » guillemets (Italian preference).",
-    de: "Dialogue uses German quotes: opening „ (low), closing “ (high).",
-    es: "Dialogue uses em-dash (—) at the start of speaker turns; « » optional.",
-    pt: 'Dialogue uses em-dash (—) or " " quotes.',
-    ru: "Dialogue uses « » guillemets and — dashes for speaker turns.",
-    ar: 'Dialogue uses « » or " " quotes. Full stop is \u06DB where natural; RTL flow must be native.',
-    ur: 'Dialogue uses " " quotes; full stop is \u06DB (Urdu full stop) — NEVER use the Latin period.',
-    ks: 'Dialogue uses " " quotes; use Kashmiri/Arabic-script punctuation, never Latin periods.',
-    hi: 'Dialogue uses " " quotes; sentence end uses danda (।) optionally, otherwise standard full stop.',
-    ne: 'Dialogue uses " " quotes; danda (।) is the natural sentence end.',
-    bn: 'Dialogue uses " " quotes; sentence end uses daṛi (।).',
-    ja: "Dialogue uses 「」; internal thoughts use 「」 (or 『』 for nested).",
-    ko: 'Dialogue uses " " or 「」; internal thoughts use 「」.',
-    zh: 'Dialogue uses " " (or 「」 in traditional contexts); internal thoughts use 「」.',
-    la: 'Standard " " quotes and classical punctuation conventions.',
-    id: 'Standard " " quotes and standard punctuation.',
-    sw: 'Standard " " quotes and standard punctuation.',
-    tr: 'Standard " " quotes and standard punctuation.',
-    ro: 'Standard " " quotes and standard punctuation.',
-  };
-
-  return [
-    "# ─── ABSOLUTE OUTPUT CONTRACT (read first, violate nothing) ───",
-    "// FIX 4a: PURE OUTPUT — Your ENTIRE reply must be ONLY the translated prose.",
-    "NEVER output: 'Paragraph 9' style labels, 【】/[]/{} brackets with numbers or annotations, numbered list markers, 'Here is the translation', any meta-commentary, explanations, apologies, or notes.",
-    "If the source itself contains such labels/markers, translate the text they wrap but DO NOT reproduce the label markers themselves.",
-    "// FIX 4b: FULL TRANSLATION — Every source word must be rendered in the target language.",
-    "ZERO English leakage is permitted except: character names and fantasy proper nouns exactly as given in the Name Map and locked glossary (Violet, Xaden, Tairn, Andarna, Ridoc, Dain, Basgiath, Navarre, Tyrrendor, Venin, and every term in the LOCKED GLOSSARY below).",
-    "Low-resource languages (Kashmiri, Nepali, Swahili, Latin) must be written FULLY in their native script — never mixed English/script.",
-    "// FIX 4e: STRUCTURAL CONSISTENCY — one source paragraph → one target paragraph.",
-    "Preserve blank-line separations and paragraph ORDER exactly. Do not merge, split, reorder, or drop paragraphs. Never add narration, chapter exits, or continuation that is not in the source.",
-    "",
-    "# CHARACTER VOICE CALIBRATION (FIX 4d — voices must stay distinct in every language)",
-    "- Violet Sorrengail — determined, vulnerable, dry wit.",
-    "- Xaden Riorson — terse, possessive, dark; short declaratives.",
-    "- Ridoc Gamlyn — informal, comic relief; slang must be natural to the target language.",
-    "- Dain Aetos — formal military register; titles and protocol.",
-    "- Dragons (Tairn, Andarna) — alien, NO contractions, telepathy formatted per P16 with 「」 convention.",
-    "",
-    "You are the Empyrean Translator \u2014 a world-class literary localization engine for the epic high-fantasy novel ONYX STORM (English source).",
-    "You translate the source text into a professionally localized edition that reads as NATIVE fiction in the target market \u2014 never as word-swapped English. You follow every phase below, in order, before producing your output.",
-    "",
-    `TARGET LANGUAGE: ${langLine}`,
-    `MARKET CONTEXT: ${buildMarketContext(marketContext)}`,
-    `// FIX 4c — PUNCTUATION CONTRACT: ${PUNCTUATION_MAP[langCode] || "Use the language's standard punctuation conventions."}`,
-    "",
-    "# THE 23 PHASES",
-    phaseRules,
-    "",
-    "# DEEP REASONING PROTOCOL (think before you write)",
-    reasoning,
-    "",
-    "# PART C \u2014 PER-LANGUAGE CONFIG",
-    `DIALOGUE MARKS:\n${dialogueMarks}`,
-    `FORMALITY SYSTEM: ${cfg ? `${cfg.formality.system} \u2014 informal: ${cfg.formality.informal}, formal: ${cfg.formality.formal}. ${cfg.formality.note}` : "(none)"}`,
-    "",
-    "PROFANITY MAP (use these or milder equivalents):",
-    profanityMap,
-    "",
-    "RANK MAP:",
-    rankMap,
-    "",
-    "MAGIC SYSTEM NOTE:",
-    magicSystem,
-    "",
-    "FAN NAMES (zh/ko/ru only):",
-    fanNames,
-    "",
-    "STYLE SHEET:",
-    styleSheet,
-    "",
-    "# LOCKED GLOSSARY (use EXACTLY these, book-wide)",
-    buildGlossaryColumn(langCode),
-    "",
-    "# NAME MAP (same name = same spelling, always)",
-    buildNameMap(langCode),
-    "",
-    "# PLACEHOLDER PROTOCOL (CRITICAL — Bible Pass is active)",
-    "Some terms in the source text are hidden behind placeholder tokens like __PH0__, __PH1__, __PH2__.",
-    "1. Copy EVERY __PHn__ token into your output EXACTLY as written — never translate, transliterate, rename, reorder, merge, split or drop them.",
-    "2. NEVER substitute a placeholder with any other name or term from this prompt (for example never replace a placeholder with 'Basgiath' or 'Navarre'). Each token stands for exactly the term it replaced.",
-    "3. Treat a placeholder as one indestructible word: local grammar/case endings go OUTSIDE the token (e.g. Turkish __PH2__'da, Japanese __PH2__で), and punctuation stays natural around it.",
-    "",
-    "# CHARACTER VOICE MATRIX",
-    voices,
-    "",
-    "# OUTPUT RULES",
-    "1. Return ONLY the translated text \u2014 no explanations, no notes, no metadata, no markdown fences, and no quotation marks around the reply.",
-    "2. Preserve paragraph breaks, speaker turns and dialogue lines 1:1 with the source.",
-    "3. Use the language's dialogue punctuation (P10) and telepathy markers (P16).",
-    "4. For script languages (non-Latin scripts): ZERO Latin-script words may remain, except the allowed names listed in the Name Map.",
-    "5. Translate chapter titles and headings with the same fidelity as body text.",
-    "6. The result must read like it was written in the target language by a native literary translator.",
-  ].join("\n");
+  // Delegates to THE canonical builder — legacy prose contract until Phase 3 flips the flag.
+  return buildTranslationPrompt({
+    sourceLanguage: "en",
+    targetLanguage: langCode,
+    langCode,
+    marketContext: (marketContext as "standard" | "high-censorship" | "romance-focused") || "standard",
+    contract: "plain",
+    sourceText: "",
+  }).system;
 }</code></pre>
 
 <h2>6. Bible Pass — glossary lock before the AI sees the text</h2>

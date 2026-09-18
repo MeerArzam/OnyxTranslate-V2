@@ -940,6 +940,13 @@ export const flushJobResults = internalMutation({
     const contractMode = proj?.translationIntelligenceMode === "gemini_contract";
     let writes = 0;
     const BUDGET = TRANSLATION_CONFIG.maxDatabaseWritesPerAction;
+    // Thin Motherboard Phase 2: flagged jobs per language (used for the
+    // per-language completion gate below; one needs_review chunk must not
+    // freeze its language's assembly).
+    const allJobs = (await ctx.db
+      .query("translationJobs")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect()) as JobDoc[];
     for (const r of args.results) {
       if (writes >= BUDGET) break;
       await upsertTranslationResult(ctx, {
@@ -966,6 +973,14 @@ export const flushJobResults = internalMutation({
       const doneCount = allChunks.filter(
         (c: { status: string }) => c.status === "done",
       ).length;
+      // Thin Motherboard Phase 2: needs_review jobs count toward completion
+      // (their chunk is intentionally absent from the assembly until a human
+      // resolves the flag) — one flagged chunk must not freeze the language.
+      const flaggedCount = allJobs.filter(
+        (j) =>
+          j.status === "needs_review" &&
+          j.langCode === langCode,
+      ).length;
       const translations = await ctx.db
         .query("translations")
         .withIndex("by_project_lang", (q) =>
@@ -975,7 +990,7 @@ export const flushJobResults = internalMutation({
       const translation = translations[0];
       if (!translation) continue;
       const total = Math.max(translation.totalChunks, allChunks.length);
-      if (doneCount >= total && total > 0) {
+      if (doneCount + flaggedCount >= total && total > 0) {
         // Language complete → merge (with P4.4 boundary repair) + enqueue PDF.
         const ordered = allChunks.sort(
           (a: { chunkIndex: number }, b: { chunkIndex: number }) =>
@@ -1029,11 +1044,7 @@ export const flushJobResults = internalMutation({
       }
     }
 
-    // Project-level progress counters
-    const allJobs = await ctx.db
-      .query("translationJobs")
-      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
-      .collect();
+    // Project-level progress counters (reuses allJobs loaded above)
     const doneJobs = allJobs.filter((j) => j.status === "done").length;
     const flaggedJobs = allJobs.filter((j) => j.status === "needs_review").length;
     const failedJobs = allJobs.filter((j) => j.status === "failed").length;
@@ -1152,11 +1163,18 @@ export const zipFinalizeIfDone = internalMutation({
       (t) => t.status === "complete" || t.status === "error",
     );
     if (!terminal) return { zipped: false };
+    // Thin Motherboard Phase 2: needs_review is TERMINAL-but-flagged — a
+    // flagged chunk must never deadlock the whole book's ZIP. The flag row
+    // stays visible/resolvable (resolveNeedsReview); the book ships without
+    // the flagged chunk rather than stalling forever.
     const anyInFlightJobs = (await ctx.db
       .query("translationJobs")
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
       .collect() as JobDoc[]).some(
-      (j) => j.status !== "done" && j.status !== "failed",
+      (j) =>
+        j.status !== "done" &&
+        j.status !== "failed" &&
+        j.status !== "needs_review",
     );
     if (anyInFlightJobs) return { zipped: false };
     await ctx.db.patch(args.projectId, { status: "all_translated", zipState: "assembling" });

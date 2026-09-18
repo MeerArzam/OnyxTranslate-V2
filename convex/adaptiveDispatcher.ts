@@ -191,13 +191,59 @@ async function callWithKeyRotation(
   return last ?? { ok: false, error: "No Gemini keys configured" };
 }
 
+/**
+ * Hardened wrapper (P2): ANY crash inside a tick is persisted and the chain
+ * self-reschedules — one malformed response or thrown error can never kill
+ * the pipeline. The real tick body lives in dispatcherTickInner.
+ */
 export const dispatcherTick = internalAction({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    try {
+      return await ctx.runAction(api.adaptiveDispatcher.dispatcherTickInner, {
+        projectId: args.projectId,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      try {
+        await ctx.runMutation(api.adaptiveJobs.recordDispatcherError, {
+          projectId: args.projectId,
+          error: msg,
+        });
+      } catch {
+        /* telemetry must never throw */
+      }
+      try {
+        const p = (await ctx.runQuery(api.queries.getProjectRaw, {
+          projectId: args.projectId,
+        })) as { status?: string } | null;
+        if (
+          p &&
+          p.status !== "cancelled" &&
+          p.status !== "complete" &&
+          p.status !== "all_translated"
+        ) {
+          await ctx.scheduler.runAfter(
+            TRANSLATION_CONFIG.dispatcherIntervalMs,
+            api.adaptiveDispatcher.dispatcherTick,
+            { projectId: args.projectId },
+          );
+        }
+      } catch {
+        /* the recovery path itself must never throw */
+      }
+      return { crashed: true as const, error: msg.slice(0, 300) };
+    }
+  },
+});
+
+export const dispatcherTickInner = internalAction({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {
     const startedAt = Date.now();
     const deadline = startedAt + TRANSLATION_CONFIG.actionSafetyDeadlineMs;
     const schedule = (delayMs: number) =>
-      ctx.scheduler.runAfter(delayMs, api.adaptiveJobs.dispatcherTick, {
+      ctx.scheduler.runAfter(delayMs, api.adaptiveDispatcher.dispatcherTick, {
         projectId: args.projectId,
       });
 
@@ -211,6 +257,9 @@ export const dispatcherTick = internalAction({
       activeWorkerCount?: number;
     } | null;
     if (!project) return { stopped: "no_project" };
+    await ctx.runMutation(api.adaptiveJobs.recordDispatcherHeartbeat, {
+      projectId: args.projectId,
+    });
     if (project.status === "cancelled" || project.status === "paused") {
       return { stopped: project.status };
     }
@@ -237,7 +286,13 @@ export const dispatcherTick = internalAction({
 
     const keys = getKeys();
     if (keys.length === 0) {
-      throw new Error("No Gemini keys configured (Gemini_API_Key_1..5)");
+      // Never throw: record + retry later so adding keys recovers automatically.
+      await ctx.runMutation(api.adaptiveJobs.recordDispatcherError, {
+        projectId: args.projectId,
+        error: "No Gemini keys configured (Gemini_API_Key_1..5)",
+      });
+      await schedule(60_000);
+      return { stopped: "no_keys" };
     }
 
     const results: Array<{

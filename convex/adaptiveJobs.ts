@@ -290,6 +290,25 @@ export const findNextClaimable = internalQuery({
   },
 });
 
+/** Dispatcher heartbeat (tick start) — powers honest liveness UI. */
+export const recordDispatcherHeartbeat = internalMutation({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.projectId, { lastDispatcherAt: Date.now() });
+  },
+});
+
+/** Persist a dispatcher error — never silently swallowed (P2 hardening). */
+export const recordDispatcherError = internalMutation({
+  args: { projectId: v.id("projects"), error: v.string() },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.projectId, {
+      lastDispatcherError: args.error.slice(0, 500),
+      lastDispatcherAt: Date.now(),
+    });
+  },
+});
+
 /** Clear a daily-pause when midnight Pacific has passed. */
 export const resumeFromDailyPause = internalMutation({
   args: { projectId: v.id("projects") },
@@ -872,6 +891,7 @@ export const flushJobResults = internalMutation({
       completedTranslationJobs: doneJobs,
       failedTranslationJobs: failedJobs,
       totalTranslationJobs: Math.max(allJobs.length, doneJobs),
+      lastSuccessfulActivityAt: Date.now(),
     });
 
     return { writes };
@@ -1025,7 +1045,7 @@ export const startAdaptiveTranslation = action({
       projectId: args.projectId,
     });
     // First dispatcher tick (self-rescheduling thereafter)
-    await ctx.scheduler.runAfter(0, api.adaptiveJobs.dispatcherTick, {
+    await ctx.scheduler.runAfter(0, api.adaptiveDispatcher.dispatcherTick, {
       projectId: args.projectId,
     });
     return { started: true as const, ...enq };

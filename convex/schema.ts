@@ -46,6 +46,12 @@ export default defineSchema({
     lastSuccessfulActivityAt: v.optional(v.number()),
     pdfGenerationState: v.optional(v.string()),
     zipState: v.optional(v.string()),
+    // RELIABILITY PASS: watchdog + dispatcher telemetry (honest recovery state)
+    watchdogLastRunAt: v.optional(v.number()),
+    watchdogRecoveredAt: v.optional(v.number()),
+    watchdogRecoveryCount: v.optional(v.number()),
+    watchdogLastError: v.optional(v.string()),
+    lastDispatcherError: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index("by_session", ["sessionId"])

@@ -168,6 +168,13 @@ export default function Translator() {
     api.queries.getProjectRateSummary,
     projectId ? { projectId } : "skip"
   );
+  // RELIABILITY PASS: honest server-side job state (P1/P5) — drives the
+  // Resume Server Job button and the hosting-paused / stalled banners.
+  const serverJobStatus = useQuery(
+    api.resumeServerProject.getServerJobStatus,
+    projectId ? { projectId } : "skip"
+  );
+  const resumeServerProjectAction = useAction(api.resumeServerProject.resumeServerProject);
   const convexTranslations = useQuery(
     api.queries.getProjectTranslations,
     projectId ? { projectId, sessionId } : "skip"
@@ -1007,6 +1014,45 @@ export default function Translator() {
   // heartbeat or left incomplete after a crash) and re-invoke the server
   // chain from the first incomplete one. Also revives a project stuck on
   // "translating" with no active server work.
+  // RELIABILITY PASS (P1): safe server-side recovery — never resets progress,
+  // never duplicates jobs; shows the recovery report from the server.
+  const handleResumeServerJob = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      setIsTranslating(true);
+      setTranslationError(null);
+      const langs =
+        activeTranslations.map((t) => t.langCode).length > 0
+          ? activeTranslations.map((t) => t.langCode)
+          : selectedLangCodes;
+      const report = (await resumeServerProjectAction({
+        projectId,
+        langCodes: langs,
+      })) as {
+        ok: boolean;
+        reason?: string;
+        promoted?: number;
+        reclaimed?: number;
+        done?: number;
+        pending?: number;
+      };
+      if (report.ok) {
+        toast.success(
+          `Server job resumed — ${report.done ?? 0} done, ${report.pending ?? 0} pending` +
+            (report.reclaimed ? `, ${report.reclaimed} stale claim(s) reclaimed` : "") +
+            ". Server continues even if you close this page (while the hosting deployment is active).",
+        );
+      } else {
+        toast.info(`Recovery: ${report.reason ?? "nothing to resume"}`);
+      }
+    } catch (err) {
+      console.error("Resume Server Job failed:", err);
+      setTranslationError(err instanceof Error ? err.message : "Resume Server Job failed");
+    } finally {
+      setIsTranslating(false);
+    }
+  }, [projectId, activeTranslations, selectedLangCodes, resumeServerProjectAction]);
+
   const resumeStalled = useCallback(async () => {
     if (!projectId || isTranslating) return;
     try {
@@ -2169,10 +2215,42 @@ export default function Translator() {
                       {adaptiveRateRow.jobsWaiting > 0 && <span style={{ color: "#fbbf24" }}>{adaptiveRateRow.jobsWaiting} waiting (backoff)</span>}
                       {adaptiveRateRow.jobsFailed > 0 && <span className="text-red-400">{adaptiveRateRow.jobsFailed} failed</span>}
                       <span className="text-muted-foreground">workers {adaptiveRateRow.workerLimit} · target {adaptiveRateRow.targetRpm} req/min · {adaptiveRateRow.requestsToday}/{adaptiveRateRow.dailyBudget} requests today</span>
-                      {adaptiveRateRow.governorState === "daily_paused" && adaptiveRateRow.governorResumeAt && <span style={{ color: "#fbbf24" }}>quota reached — auto-resumes {new Date(adaptiveRateRow.governorResumeAt).toLocaleTimeString()} · progress saved, safe to close</span>}
+                      {adaptiveRateRow.governorState === "daily_paused" && adaptiveRateRow.governorResumeAt && <span style={{ color: "#fbbf24" }}>quota reached — auto-resumes {new Date(adaptiveRateRow.governorResumeAt).toLocaleTimeString()} · progress saved</span>}
                       {adaptiveRateRow.governorState === "waiting_retry" && <span style={{ color: "#fbbf24" }}>Waiting for Gemini quota — progress is saved.</span>}
-                      {adaptiveRateRow.governorState !== "daily_paused" && adaptiveRateRow.governorState !== "waiting_retry" && adaptiveRateRow.jobsPending + adaptiveRateRow.jobsClaimed > 0 && <span style={{ color: "#34d399" }}>safe to close — server continues</span>}
                     </div>
+                  </div>
+                )}
+                {/* RELIABILITY PASS: honest platform/stall states + Resume Server Job */}
+                {serverJobStatus && serverJobStatus.found && (serverJobStatus.totalJobs > 0 || serverJobStatus.status === "translating") && (
+                  <div className="mx-4 mb-3 px-3 py-2 rounded-lg text-[10px] flex flex-wrap items-center gap-x-3 gap-y-1" style={{ background: "rgba(167,139,250,0.04)", border: "1px solid rgba(167,139,250,0.12)" }}>
+                    <span className="text-muted-foreground">
+                      server jobs {serverJobStatus.doneJobs}/{serverJobStatus.totalJobs} done · {serverJobStatus.pendingJobs} pending · {serverJobStatus.claimedJobs} claimed · {serverJobStatus.retryWaitJobs} retry-wait
+                    </span>
+                    {serverJobStatus.requestsToday > 0 && (
+                      <span className="text-muted-foreground">{serverJobStatus.requestsToday}/{serverJobStatus.dailyBudget} requests today</span>
+                    )}
+                    {serverJobStatus.governorState === "daily_paused" && (
+                      <span style={{ color: "#fbbf24" }}>
+                        Daily quota paused — resumes {serverJobStatus.governorResumeAt ? new Date(serverJobStatus.governorResumeAt).toLocaleString() : "after midnight Pacific"}.
+                      </span>
+                    )}
+                    {!serverJobStatus.serverAlive && serverJobStatus.status !== "all_translated" && serverJobStatus.status !== "complete" && (
+                      <span style={{ color: "#f87171" }}>
+                        Server job status not currently confirmed (hosting deployment may be paused).
+                      </span>
+                    )}
+                    {!serverJobStatus.serverAlive && serverJobStatus.totalJobs > 0 && (
+                      <button
+                        onClick={handleResumeServerJob}
+                        className="px-2 py-0.5 rounded font-medium transition-all border"
+                        style={{ color: "#a78bfa", borderColor: "rgba(167,139,250,0.35)", background: "rgba(167,139,250,0.08)" }}
+                      >
+                        Resume Server Job
+                      </button>
+                    )}
+                    {serverJobStatus.lastDispatcherError && (
+                      <span className="text-red-400" title={serverJobStatus.lastDispatcherError}>last dispatcher error: {serverJobStatus.lastDispatcherError.slice(0, 80)}</span>
+                    )}
                   </div>
                 )}
                 {translationError && !isTranslating && (

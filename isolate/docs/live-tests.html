@@ -198,5 +198,25 @@ the P8 script checks. Zero failures across the entire suite.</p>
 </ul>
 <p>Build gates: <code>convex dev --once</code> ✓ · <code>tsc -b --noEmit</code> exit 0 ✓ · <code>vite build</code> 14.4s ✓ · frozen archive verify 175/175 ✓ (untouched).</p>
 </section>
+<!-- PHASE15-PROOF:BEGIN -->
+<h2>Phase 15 — Adaptive Parallel Pipeline PROOF GATE (in progress)</h2>
+<p><strong>Last updated: 2026-09-17T16:29:03Z</strong>. Rule enforced: build success is necessary but not
+sufficient — no test below is marked PASS without raw evidence from the real pipeline
+(real dispatcher crons, real Gemini calls, real PDF bytes; no mocks). The deployment
+auto-paused mid-gate (Convex free tier pauses idle deployments); every harness is deployed
+and the table is updated in place the moment it resumes. Honest floor math while pending:
+1,840 calls ÷ 10 rpm ≈ 184 min without pair merge; effective pair merging (~920 calls) ≈ 92 min;
+2–4 h plausible, NOT guaranteed; >1,200 requests in one day triggers the governor's automatic
+overnight pause (auto-resume after midnight Pacific, no data loss).</p>
+<table>
+<thead><tr><th>Test</th><th>Status</th><th>Raw evidence / blocker</th></tr></thead>
+<tbody>
+<tr><td>T1 Rate conformance (≥10 min real dispatcher run)</td><td>PENDING</td><td>Harness ready: scripts/proofGate.mjs --stage=2 (220-para project, la+fr, 30s sampling of probeRateSnapshot). BLOCKED: deployment auto-paused mid-gate.</td></tr><tr><td>T2 Governor 1199→allowed / 1200→pause / midnight reset</td><td>PENDING</td><td>probeGovernorLadder deployed (convex/adaptiveTestProbes.ts:130). BLOCKED: deployment pause.</td></tr><tr><td>T3 Pair merge valid + malformed→split + oversized→single</td><td>PENDING</td><td>probePairParser + probeEstimator deployed; live pair evidence from stage-2 run. BLOCKED: deployment pause.</td></tr><tr><td>T4 Kill test (claim abandon → watchdog reclaim ≤~6.5 min)</td><td>PENDING</td><td>probeClaimAndAbandon + 3-min cron watchdog deployed. BLOCKED: deployment pause.</td></tr><tr><td>T5 PDF batches 50→25→10 shrink + restart-skip + page count</td><td>PENDING</td><td>proofGate.mjs --stage=4 builds a real 120-page PDF via /uploadAndCreateJob. BLOCKED: deployment pause.</td></tr><tr><td>T6 Offline ≥5 min — server continues with zero client contact</td><td>PENDING</td><td>proofGate.mjs --stage=5. BLOCKED: deployment pause.</td></tr><tr><td>T7 Regressions: upload→translate→PDF→ZIP, import/export, image, paste</td><td>PENDING (re-run)</td><td>Phase 3 real-browser suite: 44/44 PASS on 2026-09-15 (see history). proofGate.mjs --stage=6 re-run blocked by deployment pause.</td></tr><tr><td>T8 Measurement: avg/P95 duration, 92×20 projection</td><td>PENDING</td><td>durationsMs captured by probeRateSnapshot; projection math live in /docs/overview-dashboard.html §3.</td></tr><tr><td>T9 Archive checksum (_universal/onyx-stable/)</td><td>PASS</td><td>PASS — 175/175 files match manifest SHA-256 (byte-identical)</td></tr><tr><td>T10 Viewport meta still in index.html</td><td>PASS</td><td>index.html contains: &amp;lt;meta name=&amp;quot;viewport&amp;quot; content=&amp;quot;width=device-width, initial-scale=1, viewport-fit=cover&amp;quot; /&amp;gt;</td></tr>
+</tbody>
+</table>
+<p>Probe implementations: convex/adaptiveTestProbes.ts (10 probes, quota-free except the
+explicitly real runs) · orchestrators: scripts/verifyAdaptivePipeline.mjs, scripts/proofGate.mjs.
+Evidence JSON: /tmp/onyx/proof-results.json per stage.</p>
+<!-- PHASE15-PROOF:END -->
 </body>
 </html>

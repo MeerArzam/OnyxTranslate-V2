@@ -20,8 +20,12 @@ import {
   type UploadStagingRecord,
 } from "../identity";
 
-const CONVEX_HTTP_URL: string =
-  (import.meta.env?.VITE_CONVEX_URL ?? "").replace(/\.cloud$/, ".site") || "";
+// Deployment migration: the site URL derives from the migrated cloud URL.
+import { resolveConvexUrl } from "../convexUrl";
+
+const CONVEX_HTTP_URL: string = resolveConvexUrl(
+  import.meta.env?.VITE_CONVEX_URL,
+).replace(/\.cloud$/, ".site");
 
 export const PATH1_MAX_BYTES = 19 * 1024 * 1024; // mirrors convex/http.ts
 

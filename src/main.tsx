@@ -9,8 +9,11 @@ import { lazy, Suspense } from "react";
 const Overview = lazy(() => import("./pages/Overview.tsx"));
 
 import "./index.css";
+import { resolveConvexUrl } from "./lib/convexUrl";
 
-const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL!);
+// Deployment migration: resolveConvexUrl overrides a stale/paused deployment
+// URL baked into the build env (see src/lib/convexUrl.ts).
+const convex = new ConvexReactClient(resolveConvexUrl(import.meta.env.VITE_CONVEX_URL));
 
 /** Hash-based routing: #/overview → docs dashboard, everything else → Translator */
 function useHashRoute(): string {

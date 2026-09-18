@@ -976,7 +976,9 @@ from datetime import datetime, timezone
 REQUIRED_PIPELINE_COMPONENTS = [
     "Central config", "Job model + indexes", "Dispatcher", "Rate limiter",
     "Pair merge", "Daily governor", "Watchdog", "PDF batch generation",
-    "ZIP assembly", "Feature flag (legacy | adaptive_parallel)", "UI states",
+    "ZIP assembly", "Feature flag (legacy | adaptive_parallel)",
+    "UI truth (counters + states)", "Safe recovery (Resume Server Job)",
+    "Translation quality (P4 layer)", "Dead-code audit (P6)",
 ]
 
 REQUIRED_CONFIG_KEYS = [
@@ -998,24 +1000,30 @@ def gen_overview_dashboard(archive_result: str, archive_date: str, viewport_line
          "TRANSLATION_CONFIG single source of truth; every value in Constants table below"),
         ("Job model + indexes", "COMPLETE", "convex/schema.ts:195 (translationJobs), :252 (pdfBatches), rateLimits",
          "idempotencyKey projectId:langCode:chunkIndex; by_idempotencyKey + by_project_status indexes (deployed 2026-09-17 14:28)"),
-        ("Dispatcher", "COMPLETE", "convex/adaptiveDispatcher.ts:194",
-         "dispatcherTick: bounded 20s action deadline, self-rescheduling, claim budget 2/tick, commits every result immediately"),
+        ("Dispatcher", "COMPLETE (hardened)", "convex/adaptiveDispatcher.ts (dispatcherTick wrapper + dispatcherTickInner)",
+         "ANY crash inside a tick is persisted (recordDispatcherError) and the chain self-reschedules \u2014 one malformed response can never kill the pipeline; heartbeat at tick start; no-keys retries instead of throwing; bounded 20s deadline, claim budget 2/tick"),
+        ("Safe recovery (Resume Server Job)", "COMPLETE (code; live verify BLOCKED \u2014 deployment paused)", "convex/resumeServerProject.ts + src/pages/Translator.tsx (Resume Server Job button)",
+         "resumeServerProject: preserves all completed chunks, promotes arrived retry_wait, reclaims ONLY expired-heartbeat claims, Pacific-date-only governor reset, never bypasses a valid quota pause, one transactional lease + fresh dispatcherTick; getServerJobStatus powers honest UI"),
         ("Rate limiter", "COMPLETE", "convex/adaptiveJobs.ts:422",
          "acquireRequestSlot: rolling-60s window, ONE project-level pool (5 keys = 1 Google project), slot counted only when a request is actually sent"),
         ("Pair merge", "COMPLETE", "convex/translationConfig.ts (estimateSafePairTokens/buildPairUserContent/extractPairSection) + convex/adaptiveJobs.ts:305",
          "claimJobPair merges adjacent chunks only under safe token cap (+20% headroom); malformed pairs saved raw + split into singles + per-language circuit break (markPairSplit)"),
         ("Daily governor", "COMPLETE (probe written; live run pending)", "convex/adaptiveJobs.ts (pacificDateKey/msUntilNextPacificMidnight) + convex/adaptiveTestProbes.ts:130",
          "probeGovernorLadder: 1199 allowed / 1200 pauses with resume time / Pacific date change resets — execution blocked by deployment pause"),
-        ("Watchdog", "COMPLETE", "convex/adaptiveWatchdog.ts:30 + convex/crons.ts:24",
-         "3-minute interval cron: promotes retryables, reclaims expired-heartbeat claims, recovers stuck PDF batches, re-kicks missing dispatcher lease"),
+        ("Watchdog (PRIMARY driver)", "COMPLETE (hardened)", "convex/adaptiveWatchdog.ts (rewritten) + convex/crons.ts:24",
+         "Cron every 3 min is the PRIMARY safety driver for BOTH modes: legacy projects revived via translateLanguage (the 14/92 incident gap \u2014 old watchdog skipped legacy rows), adaptive via dispatcher re-kick on expired lease or >10min no-activity; per-project try/catch (one broken project never stops others); watchdogLastRunAt/RecoveredAt/RecoveryCount/LastError persisted; platform honesty: cron is SKIPPED while the deployment is paused (docs.convex.dev)"),
         ("PDF batch generation", "COMPLETE", "convex/adaptivePdf.ts:62 (plan), :136 (shrink), :252 (slice), :294 (render)",
          "50\u219225\u219210 idempotent page batches; computeBatchParagraphSlice exactly mirrors renderPdfCore distribution walk; per-batch source-page slicing; assembleLanguagePdf merges batch PDFs into the language PDF"),
         ("ZIP assembly", "PRESERVED (unchanged)", "convex/zipAssembly.ts + convex/adaptiveJobs.ts:968",
          "adaptive path fires buildZip only via zipFinalizeIfDone when all languages terminal \u2014 never premature, never duplicated"),
+        ("Translation quality (P4 layer)", "COMPLETE", "convex/languageRules.ts (LANGUAGE_RULES 20-lang punctuation table, filterGeneratedArtifacts, evaluateLanguageQA, assembleWithBoundaryRepair) \u2014 wired into translateContent post-processing, dispatcher QA gate, final merge (adaptiveJobs.flushJobResults)",
+         "Removes ONLY proven generated metadata (\u3010Paragraph N\u3011 etc., evidence-logged); kills CJK-bracket pollution in non-CJK languages (ja/zh preserved); script-ratio/echo/delimiter/replacement-char/paragraph-parity QA; boundary repair at assembly; local fixture 46/46 PASS (ar/ur/ks/fr/de/hi/bn/ja/en)"),
+        ("Dead-code audit (P6)", "COMPLETE", "removed: src/instrumentation.tsx, src/lib/translator/storage.ts, engine.ts, neural.ts (zero importers); voices.ts initially removed then RESTORED (convex imports it \u2014 archive-law copy-out)",
+         "Legacy fallback intact; no VLY code or API keys in production bundle (grep-verified); all gates green after each removal group"),
         ("Feature flag (legacy | adaptive_parallel)", "COMPLETE", "convex/mutations.ts (updateProject args) + convex/adaptiveJobs.ts:1002",
          "translationMode on every project; Begin runs adaptive first with visible legacy fallback (src/pages/Translator.tsx:930); Resume is adaptive-aware (:1022); completed chunks never re-translated"),
-        ("UI states", "COMPLETE", "src/pages/Translator.tsx:148 (query), adaptive strip in job view",
-         "honest strip: jobs done/total, waiting/failed, workers, RPM target, requests today vs budget, quota-paused + auto-resume time, safe-to-close \u2014 no fake progress"),
+        ("UI truth (counters + states)", "COMPLETE", "src/pages/Translator.tsx (serverJobStatus query, serverLangStats header, platform-pause strip)",
+         "Header counters are SERVER-DERIVED (translationJobs per-language done/total \u2014 fixes the incident 'Translating (0/1)' + '0/20 languages' while Urdu was 14/92); honest states incl. 'Server job status not currently confirmed (hosting deployment may be paused)' + Resume Server Job; unconditional safe-to-close banner REMOVED"),
     ]
     missing = [c for c in REQUIRED_PIPELINE_COMPONENTS if c.split(" (")[0] not in " ".join(r[0] for r in pipeline_rows)]
     if missing:
@@ -1080,7 +1088,10 @@ def gen_overview_dashboard(archive_result: str, archive_date: str, viewport_line
     ]
 
     risk_rows = [
-        ("Proof-gate tests T1\u2013T8 not yet executed", "BLOCKING 'proven' status \u2014 deployment auto-paused mid-gate; all harnesses deployed; run node scripts/verifyAdaptivePipeline.mjs + scripts/proofGate.mjs after resuming in dashboard"),
+        ("Proof-gate tests T1\u2013T8 not yet executed", "BLOCKING 'proven' status \u2014 deployment auto-paused mid-gate; all harnesses deployed (proofGate.mjs, verifyAdaptivePipeline.mjs, verifyP1P2.mjs, p0Forensic.mjs); run after resuming in dashboard"),
+        ("Incident 2026-09-16: 672-page job froze at Urdu 14/92 for ~20h", "ROOT CAUSE CONFIRMED (mechanism): deployment paused \u2192 crons SKIPPED + all calls error + nothing client-side can wake it (docs.convex.dev/production/pause-deployment.md); structural gaps fixed in this pass (watchdog skipped legacy-mode projects; dispatcher tick had no try/catch); per-project row values PENDING forensic probe (scripts/p0Forensic.mjs runs on resume) \u2014 see INCIDENT_DIAGNOSIS.md"),
+        ("'Continues even if you close this page' claim", "CONDITIONAL NOW \u2014 true ONLY while the hosting deployment is active and a recent server heartbeat exists; UI now shows 'Server job status not currently confirmed (hosting deployment may be paused)' otherwise; unconditional banner removed"),
+        ("Freebuff platform pauses idle deployments", "EXTERNAL CONSTRAINT \u2014 Convex free deployment pause skips crons entirely; mitigation is user Resume + durable job rows + revival on wake; no code can prevent the pause itself"),
         ("2\u20134h completion for 92\u00d720 NOT guaranteed", "OPEN \u2014 Google/Convex/network/model availability are external; honest floor math in Live Measurements"),
         ("Deployment auto-pause interrupts long chains", "MITIGATED \u2014 jobs are durable rows; 3-min watchdog re-kicks the dispatcher after resume; results never duplicated (idempotency keys)"),
         ("ur renders Naskh (Amiri) not Nastaliq", "DOCUMENTED TRADE-OFF \u2014 fontkit OOMs on Nastaliq layout (reproduced locally 2026-09-15); Amiri covers Urdu presentation forms with true bidi"),
@@ -1089,6 +1100,8 @@ def gen_overview_dashboard(archive_result: str, archive_date: str, viewport_line
     ]
 
     changelog_rows = [
+        ("2026-09-18", "Reliability pass P0\u2013P6: INCIDENT_DIAGNOSIS.md (cause: paused deployment + legacy-invisible watchdog + uncaught dispatcher throws); resumeServerProject.ts (safe recovery + getServerJobStatus); watchdog rewritten as PRIMARY driver covering legacy+adaptive with per-project error isolation and persisted telemetry; dispatcher hardened (crash \u2192 recordDispatcherError + self-reschedule; heartbeat; no-keys retries); UI truth (server-derived header counters, platform-pause warning, Resume Server Job, unconditional safe-to-close removed); languageRules.ts quality layer (20-lang punctuation table, evidence-logged artifact filter, language QA, boundary repair; fixture 46/46); dead code removed (instrumentation.tsx, storage.ts, engine.ts, neural.ts; voices.ts restored per archive law after cross-path import found)"),
+        ("2026-09-18", "P0 forensic probe deployed (convex/forensicProbe.ts + scripts/p0Forensic.mjs) \u2014 returns last completed job, first stuck job, all counts, governor state the moment the deployment resumes; P1/P2 live harness ready (scripts/verifyP1P2.mjs); proof harnesses unchanged (proofGate.mjs, verifyAdaptivePipeline.mjs)"),
         ("2026-09-17", "Phase 15: adaptive parallel pipeline \u2014 translationConfig.ts, adaptiveJobs.ts, adaptiveDispatcher.ts, adaptivePdf.ts, adaptiveWatchdog.ts, adaptiveTestProbes.ts; schema +translationJobs/rateLimits/pdfBatches + governor fields (all additive); crons +3-min watchdog; generatePdf +finalizeChain flag (no premature buildZip); Translator adaptive Begin + honest status strip + adaptive Resume; chunkText exported for reuse"),
         ("2026-09-17", "This static mirror created: public/docs/overview-dashboard.html (JS-free duplicate of /#/overview for the chat-side verifier)"),
     ]
@@ -1181,6 +1194,28 @@ def update_live_tests_phase15(archive_result: str, viewport_line: str) -> None:
         f"<tr><td>{_html.escape(t)}</td><td>{s}</td><td>{_html.escape(e)}</td></tr>"
         for t, s, e in rows
     )
+    p_rows = [
+        ("P0 Forensic diagnosis (14/92 freeze)", "STATIC + CONFIRMED (mechanism)",
+         "Deployment paused \u2192 crons SKIPPED + all calls error; nothing client-side can wake it (docs.convex.dev/production/pause-deployment.md, fetched 2026-09-18). Structural gaps found in live code: watchdog scanned ONLY translationMode=adaptive_parallel AND status=translating (legacy upload-chain projects invisible \u2014 adaptiveWatchdog.ts:35,76 pre-rewrite); dispatcher tick had NO try/catch (any throw silently killed the self-scheduling chain). INCIDENT_DIAGNOSIS.md has the full ranked cause table. Per-project row values (last completed job, first stuck job, counts, governor) are PENDING \u2014 read-only probe deployed (node scripts/p0Forensic.mjs runs the moment functions run)."),
+        ("P1 Safe recovery (Resume Server Job)", "CODE COMPLETE (deployed) + live verify BLOCKED",
+         "resumeServerProject: preserves all completed chunks (idempotency-key reuse \u2014 completed rows stamped done, never re-sent), promotes arrived retry_wait, reclaims ONLY expired-heartbeat claims, Pacific-date-only governor reset, never bypasses a valid quota pause, one transactional lease + a single fresh dispatcherTick. UI: visible Resume Server Job button + recovery report toast. scripts/verifyP1P2.mjs asserts Urdu \u226514/92 preserved + no dupes \u2014 BLOCKED by deployment pause."),
+        ("P2 Cron-primary reliability", "CODE COMPLETE (deployed) + live proof BLOCKED",
+         "Watchdog rewritten as PRIMARY driver every 3 min covering BOTH modes (legacy revival via translateLanguage \u2014 closes the incident gap), per-project try/catch isolation, watchdogLastRunAt/RecoveredAt/RecoveryCount/LastError persisted, Pacific rollover, >10min-no-activity force-start. Dispatcher: crash \u2192 recordDispatcherError + self-reschedule (never dies silently), heartbeat at tick start, no-keys retries instead of throwing. probes.runWatchdogOnce ready for live proof \u2014 BLOCKED by deployment pause."),
+        ("P3 Proof gate T1\u2013T8", "BLOCKED (deployment paused)",
+         "All harnesses deployed (proofGate.mjs stages 1\u20136, verifyAdaptivePipeline.mjs, 10 quota-free probes). T9 + T10 PASS below. PENDING is not PASS \u2014 runs immediately after dashboard Resume."),
+        ("P4 Translation quality", "PASS (fixture 46/46, local REAL)",
+         "convex/languageRules.ts: 20-language central punctuation table (CJK brackets ONLY for ja/zh), evidence-logged artifact filter (\u3010Paragraph N\u3011, Paragraph N:, Sentence N:, Translation:/Output:, ONYX markers, model commentary \u2014 preserves source-authored prose), evaluateLanguageQA (target-script ratio, English-echo, delimiter leakage, replacement glyphs, paragraph parity, length ratios with CJK-aware branch), boundary repair at assembly. Wired into legacy post-processing AND adaptive dispatcher QA gate AND final merge (final sweep uses swept.text \u2014 verified). Fixture: scripts/testLanguageRules.mjs \u2192 46/46 PASS (ar/ur/ks/fr/de/hi/bn/ja/en + per-lang CJK checks) on 2026-09-18."),
+        ("P5 UI truth", "CODE COMPLETE (deployed)",
+         "Header now server-derived: 'Translating (done/total langs) \u00b7 currentLang done/total chunks' from translationJobs (fixes incident 'Translating (0/1)' + '0/20 languages'); 'Overall progress' shows langs + chunks; honest states incl. Daily quota paused with resume time, 'Server job status not currently confirmed (hosting deployment may be paused)', Resume Server Job; unconditional safe-to-close banner removed."),
+        ("P6 Dead-code audit", "PASS (gates green after each group)",
+         "Read-only candidate table first; removed ONLY import-graph-proven dead code: src/instrumentation.tsx (zero importers), src/lib/translator/storage.ts (zero importers), engine.ts (999-line dead VLY/neural pipeline; only 2 live exports moved to sampleText.ts), neural.ts (zero importers). voices.ts initially removed \u2192 Convex import error caught by gate \u2192 RESTORED from the frozen archive per archive law (archive 175/175 after). Legacy fallback intact; no VLY code, no API keys in dist bundle (grep-verified)."),
+        ("P7 Documentation sync", "PASS",
+         "/#/overview row + this file + overview-dashboard.html mirror + history.html + INCIDENT_DIAGNOSIS.md regenerated together by scripts/generate-docs.py (hard-fails on archive drift or missing rows). Status vocabulary: PASS/FAIL/PENDING/BLOCKED/SIMULATED/STATIC/NOT APPLICABLE only."),
+    ]
+    p_trs = "".join(
+        f"<tr><td>{_html.escape(t)}</td><td>{s}</td><td>{_html.escape(e)}</td></tr>"
+        for t, s, e in p_rows
+    )
     block = f"""{begin}
 <h2>Phase 15 — Adaptive Parallel Pipeline PROOF GATE (in progress)</h2>
 <p><strong>Last updated: {now_iso}</strong>. Rule enforced: build success is necessary but not
@@ -1200,6 +1235,16 @@ overnight pause (auto-resume after midnight Pacific, no data loss).</p>
 <p>Probe implementations: convex/adaptiveTestProbes.ts (10 probes, quota-free except the
 explicitly real runs) · orchestrators: scripts/verifyAdaptivePipeline.mjs, scripts/proofGate.mjs.
 Evidence JSON: /tmp/onyx/proof-results.json per stage.</p>
+
+<h2>Reliability Pass — P0–P7 status (2026-09-18)</h2>
+<table>
+<thead><tr><th>Phase</th><th>Status</th><th>Evidence</th></tr></thead>
+<tbody>
+{p_trs}
+</tbody>
+</table>
+<p>Archives: _universal/onyx-stable/ 175/175 SHA-256 verified before AND after all edits
+(scripts/verify-universal-archive.mjs). No secrets in code, logs, dashboard, or reports.</p>
 {end}"""
 
     if os.path.exists(path):

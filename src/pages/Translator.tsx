@@ -54,7 +54,7 @@ import { Toaster } from "@/components/ui/sonner";
 import {
   generateSampleText,
   type TranslationMode,
-} from "@/lib/translator/engine";
+} from "@/lib/translator/sampleText";
 import type { QAReport } from "@/lib/translator/qa";
 import {
   runBaselineTests,

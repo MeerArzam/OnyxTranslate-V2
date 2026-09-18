@@ -5,6 +5,7 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery, action, internalAction } from "./_generated/server";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { assembleWithBoundaryRepair, filterGeneratedArtifacts } from "./languageRules";
 import {
   TRANSLATION_CONFIG,
   TREAT_KEYS_AS_ONE_POOL,
@@ -846,19 +847,27 @@ export const flushJobResults = internalMutation({
       if (!translation) continue;
       const total = Math.max(translation.totalChunks, allChunks.length);
       if (doneCount >= total && total > 0) {
-        // Language complete → merge + enqueue PDF generation (existing pipeline)
-        const mergedText = allChunks
-          .sort(
-            (a: { chunkIndex: number }, b: { chunkIndex: number }) =>
-              a.chunkIndex - b.chunkIndex,
-          )
-          .map((c: { translatedText?: string }) => c.translatedText || "")
-          .join("\n\n");
+        // Language complete → merge (with P4.4 boundary repair) + enqueue PDF.
+        const ordered = allChunks.sort(
+          (a: { chunkIndex: number }, b: { chunkIndex: number }) =>
+            a.chunkIndex - b.chunkIndex,
+        );
+        const mergedText = assembleWithBoundaryRepair(
+          ordered.map((c: { translatedText?: string }) => c.translatedText || ""),
+        );
+        // P4: final artifact sweep at language assembly (evidence-logged).
+        const swept = filterGeneratedArtifacts(mergedText);
+        if (swept.removals.length > 0) {
+          console.log(
+            `[languageRules] ${langCode} FINAL: removed ${swept.removals.length} artifact(s)`,
+          );
+        }
+        const finalText = swept.text;
         await ctx.db.patch(translation._id, {
           status: "generating_pdf",
           completedChunks: doneCount,
           totalChunks: total,
-          mergedText,
+          mergedText: finalText,
           pdfGenerating: true,
           lastChunkAt: Date.now(),
         });
@@ -866,7 +875,7 @@ export const flushJobResults = internalMutation({
           projectId: args.projectId,
           langCode,
           translationId: translation._id,
-          mergedText,
+          mergedText: finalText,
         });
         // (PDF render failure is caught inside generateTranslatedPdf and marks
         // the translation row error — the chain never dies silently here.)

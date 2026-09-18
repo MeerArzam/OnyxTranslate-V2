@@ -8,6 +8,7 @@
  */
 import { action } from "./_generated/server";
 import { v } from "convex/values";
+import { filterGeneratedArtifacts, normalizePunctuationForLanguage } from "./languageRules";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 
@@ -620,6 +621,16 @@ export const postProcessTranslationForTest = (
   out = stripMetaCommentary(out, langCode);
   out = out.replace(/\s*[\u3010\[](?:\s*)Paragraph(?:\s*#?\s*\d+)?[\u3011\]]\s*/gi, "\n");
   out = out.replace(/\s*\u3010\s*\d+\s*\u3011\s*/g, "\n");
+  // P4: central language-quality layer — evidence-logged artifact filter +
+  // per-language punctuation normalization (kills 「」 pollution in non-CJK).
+  const filtered = filterGeneratedArtifacts(out);
+  if (filtered.removals.length > 0) {
+    console.log(
+      `[languageRules] ${langCode}: removed ${filtered.removals.length} artifact(s):` +
+        filtered.removals.slice(0, 5).map((r) => ` ${r.kind}("${r.sample}")`).join(","),
+    );
+  }
+  out = normalizePunctuationForLanguage(filtered.text, langCode);
   out = applyCulturalFilters(out, langCode, marketContext);
   out = out.replace(/\*([^*]+)\*/g, (_: string, thought: string) =>
     formatDragonTelepathy(thought, langCode)

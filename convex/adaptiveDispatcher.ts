@@ -16,6 +16,7 @@ import {
   postProcessTranslationForTest,
 } from "./translateContent";
 import { runQA } from "../src/lib/translator/qa";
+import { evaluateLanguageQA } from "./languageRules";
 
 /**
  * convex/adaptiveDispatcher.ts — ADAPTIVE PIPELINE (dispatcher)
@@ -85,6 +86,17 @@ function qaRejectReason(
   if (!translated.trim()) return "empty output";
   if (!isLatinTarget(langCode) && looksLikeEnglishEcho(translated)) {
     return "untranslated English echo";
+  }
+  // P4.3: language-quality gate — script ratio, English echo, artifacts,
+  // delimiter leakage, replacement glyphs, paragraph parity.
+  try {
+    const lqa = evaluateLanguageQA(langCode, sourceText, translated);
+    if (!lqa.ok) {
+      // needs_review-grade failures never silently pass; retry carries the reason.
+      return `language QA: ${lqa.failures.slice(0, 3).join("; ")}`;
+    }
+  } catch {
+    // QA layer itself failed → fall through to the legacy gate below
   }
   try {
     const qa = runQA(sourceText, translated, langCode, []);

@@ -24,6 +24,7 @@ import type * as identity from "../identity.js";
 import type * as importJob from "../importJob.js";
 import type * as jobMutations from "../jobMutations.js";
 import type * as jobProcessing from "../jobProcessing.js";
+import type * as languageRules from "../languageRules.js";
 import type * as liveTest from "../liveTest.js";
 import type * as liveTestStore from "../liveTestStore.js";
 import type * as mutations from "../mutations.js";
@@ -64,6 +65,7 @@ declare const fullApi: ApiFromModules<{
   importJob: typeof importJob;
   jobMutations: typeof jobMutations;
   jobProcessing: typeof jobProcessing;
+  languageRules: typeof languageRules;
   liveTest: typeof liveTest;
   liveTestStore: typeof liveTestStore;
   mutations: typeof mutations;

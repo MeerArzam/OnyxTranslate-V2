@@ -24,7 +24,7 @@ td code{color:#00e5ff}
 <body>
 <p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
 <h1>Convex Functions — translateContent.ts (Unified Translation Action)</h1>
-<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-18 09:23 UTC</p>
+<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-18 14:44 UTC</p>
 <p>Files on this page: <code>convex/translateContent.ts</code></p><h2>convex/translateContent.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>translateLanguage</code> — action</li></ul></p><pre><code>"use node";
 /**
  * convex/translateContent.ts — Unified translation action.
@@ -143,7 +143,23 @@ function buildMarketContext(marketContext: string): string {
   }
 }
 
+// Thin Motherboard Phase 1: single canonical prompt source (code asks, Gemini thinks).
+import { buildTranslationPrompt } from "./buildTranslationPrompt";
+
 function buildSystemPrompt(langCode: string, marketContext = "standard"): string {
+  // Delegates to THE canonical builder — legacy prose contract until Phase 3 flips the flag.
+  return buildTranslationPrompt({
+    sourceLanguage: "en",
+    targetLanguage: langCode,
+    langCode,
+    marketContext: (marketContext as "standard" | "high-censorship" | "romance-focused") || "standard",
+    contract: "plain",
+    sourceText: "",
+  }).system;
+}
+
+// Phase 4 will delete this retired duplicate body (kept until new-mode gates pass).
+function buildSystemPromptLegacyRetired(langCode: string, marketContext = "standard"): string {
   const cfg = getLocalizationConfig(langCode);
   const langLine = cfg
     ? `${cfg.name} (${cfg.nativeName}) \u2014 ${cfg.script} script${cfg.rtl ? ", RTL" : ""}`

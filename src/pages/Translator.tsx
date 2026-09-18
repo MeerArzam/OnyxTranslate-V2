@@ -175,6 +175,26 @@ export default function Translator() {
     projectId ? { projectId } : "skip"
   );
   const resumeServerProjectAction = useAction(api.resumeServerProject.resumeServerProject);
+  // RELIABILITY PASS (P5): server-derived language counters — NEVER from
+  // client rows. The incident showed `Translating (0/1)` + `0/20 languages`
+  // while Urdu was 14/92 server-side; these values come from translationJobs.
+  const serverLangStats = (() => {
+    if (!serverJobStatus?.found || serverJobStatus.perLangDone.length === 0) return null;
+    const per = [...serverJobStatus.perLangDone].sort((a, b) =>
+      a.langCode < b.langCode ? -1 : 1,
+    );
+    const completed = per.filter((l) => l.total > 0 && l.done >= l.total).length;
+    const current = per.find((l) => l.done < l.total);
+    return {
+      completed,
+      total: per.length,
+      currentLang: current?.langCode ?? null,
+      currentDone: current?.done ?? 0,
+      currentTotal: current?.total ?? 0,
+      doneJobs: serverJobStatus.doneJobs,
+      totalJobs: serverJobStatus.totalJobs,
+    };
+  })();
   const convexTranslations = useQuery(
     api.queries.getProjectTranslations,
     projectId ? { projectId, sessionId } : "skip"
@@ -1386,7 +1406,13 @@ export default function Translator() {
               {flowPhase === "all-complete" && <CheckCircle2 className="w-3 h-3" />}
               <span>
                 {flowPhase === "idle" && "Ready"}
-                {flowPhase === "translating" && `Translating (${completedCount}/${activeTranslations.length || targetLanguages.length})`}
+                {flowPhase === "translating" &&
+                  (serverLangStats
+                    ? `Translating (${serverLangStats.completed}/${serverLangStats.total})` +
+                      (serverLangStats.currentLang
+                        ? ` · ${serverLangStats.currentLang} ${serverLangStats.currentDone}/${serverLangStats.currentTotal} chunks`
+                        : "")
+                    : `Translating (${completedCount}/${activeTranslations.length || targetLanguages.length})`)}`, 
                 {flowPhase === "all-complete" && "All Complete"}
               </span>
             </div>
@@ -1501,7 +1527,7 @@ export default function Translator() {
               <div className="px-4 pb-3">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                    Overall progress — {completedCount}/{targetLanguages.length} languages
+                    Overall progress — {serverLangStats ? `${serverLangStats.completed}/${serverLangStats.total} languages · ${serverLangStats.doneJobs}/${serverLangStats.totalJobs} chunks` : `${completedCount}/${targetLanguages.length} languages`}
                   </span>
                   <span className="text-[10px] font-mono" style={{ color: '#00e5ff' }}>{overallProgress}%</span>
                 </div>

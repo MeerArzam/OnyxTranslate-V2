@@ -392,18 +392,30 @@ export function evaluateLanguageQA(
 
   // Source echo: translation nearly identical to source (non-Latin targets).
   if (!stats.empty) {
-    const srcWords = sourceText.split(/\s+/).filter(Boolean);
-    const trWords = t.split(/\s+/).filter(Boolean);
-    stats.lengthRatio = srcWords.length ? trWords.length / srcWords.length : 0;
+    const isCjk = rule.cjkBracketsOk; // ja/zh: no spaces → word ratio meaningless
+    if (isCjk) {
+      const srcChars = [...sourceText].length;
+      const trChars = [...t].length;
+      stats.lengthRatio = srcChars ? trChars / srcChars : 0;
+      if (stats.lengthRatio > 0 && (stats.lengthRatio < 0.2 || stats.lengthRatio > 4)) {
+        failures.push(`abnormal length ratio (${stats.lengthRatio.toFixed(2)}x)`);
+      }
+    } else {
+      const srcWords = sourceText.split(/\s+/).filter(Boolean);
+      const trWords = t.split(/\s+/).filter(Boolean);
+      stats.lengthRatio = srcWords.length ? trWords.length / srcWords.length : 0;
+    }
     if (rule.direction === "rtl" || scriptReGlobal) {
       if (stats.lengthRatio > 0.4 && stats.targetScriptRatio < 0.3) {
         failures.push("likely source echo (length similar, wrong script)");
         stats.sourceEcho = true;
       }
     }
-    // Abnormal length ratio
-    if (stats.lengthRatio > 0 && (stats.lengthRatio < 0.35 || stats.lengthRatio > 3.5)) {
-      failures.push(`abnormal length ratio (${stats.lengthRatio.toFixed(2)}x)`);
+    // Abnormal length ratio (space-language branch)
+    if (!rule.cjkBracketsOk) {
+      if (stats.lengthRatio > 0 && (stats.lengthRatio < 0.35 || stats.lengthRatio > 3.5)) {
+        failures.push(`abnormal length ratio (${stats.lengthRatio.toFixed(2)}x)`);
+      }
     }
   }
 

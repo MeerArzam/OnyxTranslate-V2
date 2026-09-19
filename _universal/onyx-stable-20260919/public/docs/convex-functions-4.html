@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Convex Functions — PDF Parse, PDF Generate, ZIP — OnyxTranslate Docs</title>
+<style>
+body{background:#0a0a0f;color:#e0e0e0;font-family:Georgia,'Times New Roman',serif;max-width:960px;margin:0 auto;padding:24px;line-height:1.6}
+h1{color:#8B5CF6;border-bottom:2px solid rgba(139,92,246,.3);padding-bottom:8px}
+h2{color:#00e5ff;margin-top:28px}
+h3{color:#fbbf24}
+a{color:#00e5ff}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#F59E0B}
+pre{background:rgba(0,0,0,.45);border:1px solid rgba(139,92,246,.25);border-radius:8px;padding:12px;overflow-x:auto}
+pre code{color:#e0e0e0;font-size:11px;line-height:1.5;white-space:pre}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border:1px solid rgba(139,92,246,.25);padding:6px 10px;text-align:left;vertical-align:top}
+th{color:#8B5CF6;background:rgba(139,92,246,.08)}
+td code{color:#00e5ff}
+.meta{color:#8b8ba0;font-size:12px;font-family:ui-monospace,monospace}
+.note{border-left:3px solid #fbbf24;background:rgba(251,191,36,.06);padding:8px 14px;font-size:13px}
+</style>
+</head>
+<body>
+<p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
+<h1>Convex Functions — PDF Parse, PDF Generate, ZIP</h1>
+<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-19 15:18 UTC</p>
+<p>Files on this page: <code>convex/parsePdf.ts</code>, <code>convex/generatePdf.ts</code>, <code>convex/zipAssembly.ts</code></p><h2>convex/parsePdf.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>parseUploadedPdf</code> — action</li></ul></p><pre><code>"use node";
+
+import { v } from "convex/values";
+import { action } from "./_generated/server";
+import { itemsToBlocks, mergeItemsIntoLines, type LayoutTextItem } from "./pdfLayout";
+
+/**
+ * convex/parsePdf.ts — Server-side PDF text extraction.
+ *
+ * The browser's pdf.js parser extracts individual text items without merging
+ * nearby fragments, causing broken words and missing letters. This action
+ * re-parses the PDF server-side with geometry-aware word merging (x-gap
+ * based) and paragraph block clustering.
+ */
+
+interface RawTextItem {
+  str: string;
+  transform?: number[];
+  width?: number;
+  height?: number;
+  fontName?: string;
+  hasEOL?: boolean;
+}
+
+export interface ServerParsedTextItem {
+  str: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fontName: string;
+}
+
+export interface ServerParsedLine {
+  text: string;
+  y: number;
+}
+
+export interface ServerParsedPage {
+  num: number;
+  text: string;
+  lines: ServerParsedLine[];
+  textItems: ServerParsedTextItem[];
+  blocks: Array&lt;{
+    text: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    fontSize: number;
+    lineCount: number;
+    align: "left" | "center";
+  }&gt;;
+  pageWidth: number;
+  pageHeight: number;
+}
+
+export const parseUploadedPdf = action({
+  args: {
+    pdfStorageId: v.string(),
+  },
+  handler: async (ctx, args) =&gt; {
+    // 1. Download PDF from Convex File Storage
+    const blob = await ctx.storage.get(args.pdfStorageId);
+    if (!blob) throw new Error("PDF not found in storage");
+    const arrayBuffer = await blob.arrayBuffer();
+    const uint8 = new Uint8Array(arrayBuffer);
+
+    // 2. Dynamically import pdfjs-dist.
+    // CRITICAL: pdfjs-dist references DOMMatrix at module load. In the
+    // browser that global exists; in the Node runtime ("use node" actions)
+    // it does not, and the optional @napi-rs/canvas polyfill is unavailable,
+    // so the import crashed with "DOMMatrix is not defined". Text extraction
+    // never performs real rendering — a minimal stub is sufficient.
+    const g = globalThis as Record&lt;string, unknown&gt;;
+    if (typeof g.pdfjsWorker === "undefined") {
+      // In Node, pdf.js falls back to a "fake worker" that does a runtime
+      // dynamic import of pdf.worker.mjs — impossible inside Convex's
+      // bundler. Pre-registering the worker module on globalThis.pdfjsWorker
+      // is the documented escape hatch pdf.js checks FIRST.
+      const workerMod = await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
+      g.pdfjsWorker = workerMod;
+    }
+    if (typeof g.DOMMatrix === "undefined") {
+      class DOMMatrixStub {
+        a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
+        constructor(init?: unknown) {
+          if (Array.isArray(init) &amp;&amp; init.length === 6) {
+            [this.a, this.b, this.c, this.d, this.e, this.f] = init as number[];
+          }
+        }
+        multiply() { return this; }
+        translate() { return this; }
+        scale() { return this; }
+        rotate() { return this; }
+        inverse() { return this; }
+        transformPoint(p: { x: number; y: number }) { return { x: p.x, y: p.y, z: 0, w: 1 }; }
+      }
+      g.DOMMatrix = DOMMatrixStub;
+    }
+    if (typeof g.Path2D === "undefined") {
+      g.Path2D = class {
+        moveTo() {} lineTo() {} closePath() {} rect() {} arc() {}
+        bezierCurveTo() {} quadraticCurveTo() {}
+      };
+    }
+    const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+
+    // 3. Load the PDF document
+    const loadingTask = pdfjsLib.getDocument({
+      data: uint8,
+      useSystemFonts: true,
+      disableFontFace: true,
+    });
+    const pdf = await loadingTask.promise;
+    const totalPages = pdf.numPages;
+
+    // 4. Parse each page with proper merging
+    const allPages: ServerParsedPage[] = [];
+    const allTexts: string[] = [];
+
+    for (let pageNum = 1; pageNum &lt;= totalPages; pageNum++) {
+      try {
+        const page = await pdf.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 1 });
+        const pageWidth = viewport.width;
+        const pageHeight = viewport.height;
+
+        const textContent = await page.getTextContent({
+          normalizeWhitespace: true,
+        } as any);
+
+        const rawItems = (textContent.items as RawTextItem[]).filter(
+          (item) =&gt; "str" in item &amp;&amp; item.str.trim().length &gt; 0
+        );
+
+        // Map to clean format (PDF bottom-origin coordinates, unscaled)
+        const textItems: ServerParsedTextItem[] = rawItems.map((item) =&gt; {
+          const t = item.transform || [1, 0, 0, 1, 0, 0];
+          return {
+            str: item.str,
+            x: t[4],
+            y: t[5],
+            width: item.width || 0,
+            height: item.height || 0,
+            fontName: item.fontName || "",
+          };
+        });
+
+        // Geometry-aware merging (x-gap based) — fixes "Ony xStor m"
+        const layoutLines = mergeItemsIntoLines(textItems as LayoutTextItem[]);
+
+        // Paragraph block clustering for coordinate-aware PDF output
+        const blocks = itemsToBlocks(textItems as LayoutTextItem[]);
+
+        const lines: ServerParsedLine[] = layoutLines.map((l) =&gt; ({
+          text: l.text,
+          y: l.y,
+        }));
+
+        // Build clean page text from grouped lines
+        const pageText = layoutLines.map((l) =&gt; l.text).join("\n").trim();
+
+        allPages.push({
+          num: pageNum,
+          text: pageText,
+          lines,
+          textItems,
+          blocks,
+          pageWidth,
+          pageHeight,
+        });
+        allTexts.push(pageText);
+      } catch (pageErr) {
+        // One unreadable page must not kill the whole parse — record an
+        // empty page and continue.
+        console.warn(`[parsePdf] page ${pageNum} failed:`, pageErr);
+        allPages.push({
+          num: pageNum,
+          text: "",
+          lines: [],
+          textItems: [],
+          blocks: [],
+          pageWidth: 595,
+          pageHeight: 842,
+        });
+        allTexts.push("");
+      }
+
+      // Yield every 20 pages to stay within action timeout
+      if (pageNum % 20 === 0) {
+        await new Promise((r) =&gt; setTimeout(r, 0));
+      }
+    }
+
+    const fullText = allTexts.filter(Boolean).join("\n\n").trim();
+    const wordCount = fullText.split(/\s+/).filter(Boolean).length;
+
+    return {
+      pageData: allPages,
+      fullText,
+      pageCount: totalPages,
+      wordCount,
+    };
+  },
+});
+</code></pre><h2>convex/generatePdf.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>generateTranslatedPdf</code> — action</li></ul></p><pre><code>"use node";
+
+// fontkit's UMD bundle contains transpiled async GSUB code (Devanagari/Bengali
+// substitution paths) that expects a global regeneratorRuntime — provide it
+// BEFORE fontkit is ever imported. Verified: hi measures 201 widths in 746ms
+// with the polyfill; without it fontkit throws "regeneratorRuntime is not
+// defined".
+import "regenerator-runtime/runtime";
+
+import { v } from "convex/values";
+import { action } from "./_generated/server";
+import { api } from "./_generated/api";
+import { renderTranslatedPdf } from "./renderPdfCore";
+
+/**
+ * convex/generatePdf.ts — Server-side translated PDF generation (Segment B).
+ *
+ * Reads the original PDF from Convex Storage, renders the translated overlay
+ * via the shared pure module renderPdfCore.ts (per-block erase + auto-fit,
+ * paragraph mapping, RTL word-order handling), stores the result in Convex
+ * Storage, and chains to the NEXT language's translation or ZIP assembly.
+ *
+ * The rendering body lives in renderPdfCore so scripts/testPdfFidelity.cjs
+ * can execute the EXACT production render code (no drift between prod and
+ * the fidelity assertions).
+ */
+
+// ─── Font cache (across calls within same action worker) ────────────────
+
+const fontCache = new Map&lt;string, ArrayBuffer&gt;();
+
+async function getFontBytes(url: string): Promise&lt;ArrayBuffer&gt; {
+  const cached = fontCache.get(url);
+  if (cached) return cached;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`Font download failed (HTTP ${resp.status}): ${url}`);
+  const bytes = await resp.arrayBuffer();
+  fontCache.set(url, bytes);
+  return bytes;
+}
+
+// ─── Main action ────────────────────────────────────────────────────────
+
+export const generateTranslatedPdf = action({
+  args: {
+    projectId: v.id("projects"),
+    langCode: v.string(),
+    translationId: v.id("translations"),
+    mergedText: v.string(),
+    // UNIFIED chain: generatePdf now carries the language chain (set by
+    // translateContent when each language's text completes)
+    nextLangCode: v.optional(v.string()),
+    remainingLangs: v.optional(v.array(v.string())),
+    marketContext: v.optional(v.string()),
+    // ADAPTIVE PIPELINE (additive, default true): when false, this action
+    // renders + stores the PDF and updates the translation row but does NOT
+    // run the legacy finalize (all_translated + buildZip) — the adaptive
+    // dispatcher owns end-of-project finalization via zipFinalizeIfDone.
+    finalizeChain: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) =&gt; {
+
+    // 1. Get project and original PDF
+    const project = await ctx.runQuery(api.queries.getProjectRaw, {
+      projectId: args.projectId,
+    });
+    if (!project) throw new Error("Project not found");
+
+    // Pasted-text projects have no PDF — keep the chain alive, do NOT abort
+    if (!project.pdfStorageId) {
+      await ctx.runMutation(api.mutations.updateTranslation, {
+        translationId: args.translationId,
+        status: "complete",
+        pdfGenerating: false,
+        completedAt: Date.now(),
+      });
+      if (args.finalizeChain === false) {
+        return { skipped: true, url: undefined, storageId: undefined };
+      }
+      if (args.nextLangCode) {
+        const rest = args.remainingLangs || [];
+        await ctx.scheduler.runAfter(0, api.translateContent.translateLanguage, {
+          projectId: args.projectId,
+          langCode: args.nextLangCode,
+          marketContext: args.marketContext,
+          nextLangCode: rest.length &gt; 0 ? rest[0] : undefined,
+          remainingLangs: rest.length &gt; 1 ? rest.slice(1) : undefined,
+        });
+      } else {
+        // All languages done — finalize project + build ZIP
+        await ctx.runMutation(api.mutations.updateProject, {
+          projectId: args.projectId,
+          status: "all_translated",
+        });
+        await ctx.scheduler.runAfter(0, api.zipAssembly.buildZip, {
+          projectId: args.projectId,
+        });
+      }
+      return { skipped: true, url: undefined, storageId: undefined };
+    }
+
+    const pdfBlob = await ctx.storage.get(project.pdfStorageId);
+    if (!pdfBlob) throw new Error("Original PDF blob not found");
+    const pdfArrayBuffer = await pdfBlob.arrayBuffer();
+    const pdfBytes = new Uint8Array(pdfArrayBuffer);
+
+    // 2. Render via the shared production core (identical code path as the
+    // fidelity tests): copy pages → per-item whiteout → block overlay
+    //
+    // CHAIN-SAFETY: a render crash here used to kill the whole remaining
+    // language chain (the chain continues INSIDE this action). Now the error
+    // is surfaced honestly on the translation row (status "error" + message
+    // in pdfProgress) and the chain CONTINUES to the next language.
+    // FIX (1MiB limit): if pageData was offloaded to Storage (empty on the
+    // row with a ref present), resolve the real coordinates before rendering.
+    let pageDataRaw: unknown = project.pageData;
+    if (Array.isArray(pageDataRaw) &amp;&amp; pageDataRaw.length === 0 &amp;&amp; (project as { pageDataStorageId?: string }).pageDataStorageId) {
+      const blob = await ctx.storage.get((project as { pageDataStorageId: string }).pageDataStorageId);
+      if (blob) pageDataRaw = JSON.parse(await blob.text());
+    }
+    const pageData = (pageDataRaw || []) as NonNullable&lt;
+      Parameters&lt;typeof renderTranslatedPdf&gt;[0]["pageData"]
+    &gt;;
+
+    let storageId: string | undefined;
+    let url: string | undefined;
+    try {
+      const { bytes: resultBytes, stats: pdfFit } = await renderTranslatedPdf({
+        srcBytes: pdfBytes,
+        pageData,
+        mergedText: args.mergedText,
+        langCode: args.langCode,
+        getFontBytes,
+      });
+
+      console.log(
+        `[generatePdf] ${args.langCode} pdfFit: blocks=${pdfFit.pagesUsingBlocks} fallback=${pdfFit.pagesFallback} paraMatched=${pdfFit.paragraphsMatchedPages} minFont=${pdfFit.minFontSize === 999 ? 0 : pdfFit.minFontSize}pt`,
+      );
+
+      // 3. Store in Convex Storage
+      const resultBlob = new Blob(
+        [new Uint8Array(resultBytes).buffer as ArrayBuffer],
+        { type: "application/pdf" },
+      );
+      storageId = await ctx.storage.store(resultBlob);
+      url = (await ctx.storage.getUrl(storageId)) ?? undefined;
+
+      // 4. Update translation record
+      await ctx.runMutation(api.mutations.updateTranslation, {
+        translationId: args.translationId,
+        pdfStorageId: storageId,
+        pdfUrl: url,
+        status: "complete",
+        pdfGenerating: false,
+        completedAt: Date.now(),
+      });
+    } catch (renderErr) {
+      const message = renderErr instanceof Error ? renderErr.message : String(renderErr);
+      console.error(`[generatePdf] ${args.langCode} RENDER FAILED: ${message}`);
+      await ctx.runMutation(api.mutations.updateTranslation, {
+        translationId: args.translationId,
+        status: "error",
+        pdfGenerating: false,
+        pdfProgress: `pdf_render_failed: ${message.slice(0, 300)}`,
+        completedAt: Date.now(),
+      });
+    }
+
+    // 5. UNIFIED chain: next language comes from the args set by
+    // translateContent (nextLangCode + remainingLangs). If none remain,
+    // all languages are done — mark project and build the ZIP.
+    // (Skipped entirely when finalizeChain === false — adaptive path.)
+    if (args.finalizeChain === false) {
+      return { storageId: storageId ?? undefined, url, renderFailed: !storageId };
+    }
+    if (args.nextLangCode) {
+      const rest = args.remainingLangs || [];
+      await ctx.scheduler.runAfter(0, api.translateContent.translateLanguage, {
+        projectId: args.projectId,
+        langCode: args.nextLangCode,
+        marketContext: args.marketContext,
+        nextLangCode: rest.length &gt; 0 ? rest[0] : undefined,
+        remainingLangs: rest.length &gt; 1 ? rest.slice(1) : undefined,
+      });
+    } else {
+      // All languages done — build ZIP
+      await ctx.runMutation(api.mutations.updateProject, {
+        projectId: args.projectId,
+        status: "all_translated",
+      });
+      await ctx.scheduler.runAfter(0, api.zipAssembly.buildZip, {
+        projectId: args.projectId,
+      });
+    }
+
+    return { storageId: storageId ?? undefined, url, renderFailed: !storageId };
+  },
+});
+</code></pre><h2>convex/zipAssembly.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>buildZip</code> — action</li></ul></p><pre><code>"use node";
+
+import { action } from "./_generated/server";
+import { v } from "convex/values";
+import { api } from "./_generated/api";
+import JSZip from "jszip";
+
+/**
+ * convex/zipAssembly.ts — Builds a ZIP of all translated PDFs.
+ *
+ * Runs after the LAST language's PDF is generated. Reads all translation
+ * records with a pdfStorageId, downloads each PDF from Convex Storage,
+ * bundles them into a ZIP with a summary report, stores the ZIP in
+ * Convex Storage, and updates the project record.
+ */
+
+export const buildZip = action({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) =&gt; {
+    const project = await ctx.runQuery(api.queries.getProjectRaw, {
+      projectId: args.projectId,
+    });
+    if (!project) throw new Error("Project not found");
+
+    const translations = await ctx.runQuery(api.queries.getTranslationsRaw, {
+      projectId: args.projectId,
+    });
+
+    const zip = new JSZip();
+
+    // Add each translated PDF
+    let pdfCount = 0;
+    for (const t of translations) {
+      if (t.status === "complete" &amp;&amp; t.pdfStorageId) {
+        const blob = await ctx.storage.get(t.pdfStorageId);
+        if (blob) {
+          const bytes = new Uint8Array(await blob.arrayBuffer());
+          zip.file(`${t.langCode}_translated.pdf`, bytes);
+          pdfCount++;
+        }
+      }
+    }
+
+    // Add summary report
+    const report = [
+      "Onyx Translate — Batch Report",
+      "=".repeat(40),
+      `Generated: ${new Date().toISOString()}`,
+      `Source: ${project.fileName}`,
+      `Pages: ${project.pageCount}`,
+      `Words: ${project.wordCount.toLocaleString()}`,
+      `Languages: ${translations.length}`,
+      `PDFs included: ${pdfCount}`,
+      "",
+      "Language Status:",
+      ...translations.map(
+        (t: { langCode: string; status: string; completedChunks: number; totalChunks: number }) =&gt;
+          `  ${t.langCode.toUpperCase()}: ${t.status} (${t.completedChunks}/${t.totalChunks} chunks)`,
+      ),
+    ].join("\n");
+    zip.file("translation_report.txt", report);
+
+    // Generate ZIP and store in Convex Storage
+    const zipBytes = await zip.generateAsync({ type: "uint8array" });
+    const zipBlob = new Blob([zipBytes.buffer as ArrayBuffer], { type: "application/zip" });
+    const storageId = await ctx.storage.store(zipBlob);
+    const url = (await ctx.storage.getUrl(storageId)) ?? undefined;
+
+    // Update project with ZIP info
+    await ctx.runMutation(api.mutations.updateProject, {
+      projectId: args.projectId,
+      zipStorageId: storageId,
+      zipUrl: url,
+      status: "complete",
+    });
+
+    return { ok: true, url, pdfCount };
+  },
+});
+</code></pre>
+<hr>
+<p class="meta">OnyxTranslate static documentation mirror — plain HTML, no JavaScript. Interactive version: <a href="/#/overview">/#/overview</a></p>
+</body>
+</html>

@@ -1,0 +1,51 @@
+{
+  "code": "hi",
+  "name": "Hindi",
+  "nativeName": "हिन्दी",
+  "script": "Devanagari",
+  "rtl": false,
+  "dialogue": { "open": "“", "close": "”", "note": "Use “ ” for dialogue; डैश — for interruptions." },
+  "formality": {
+    "system": "तू/तुम/आप",
+    "informal": "तुम / तू",
+    "formal": "आप",
+    "note": "Violet↔Xaden use intimate तुम/तू; General Aetos / King Tauri addressed with आप."
+  },
+  "profanity": {
+    "fuck": "लानत है",
+    "shit": "बकवास",
+    "bastard": "कमीना",
+    "damn": "धत् तेरे की",
+    "hell": "नर्क"
+  },
+  "ranks": {
+    "Wingleader": "विंग कमांडर",
+    "Squad Leader": "दस्ता नेता",
+    "Cadet": "कैडेट",
+    "General": "जनरल",
+    "Scribe": "लिपिक",
+    "Rider": "सवार"
+  },
+  "magicSystem": "मुहर (सिग्नेट) का क्रम: सवार → मुहर → चैनल (कंड्यूट) → रक्षाचिह्न (वार्ड)। रून 'रून' ही रहे, सामान्य जादू न बनाएँ। दिव्य for Empyrean; वेनिन for Venin.",
+  "fanNames": {},
+  "blurb": "वायलेट एरेटिया में उलझन में जागती है, ज़ैडेन की एक अंगूठी और एक नोट उसके पास है: \"मुझे मत ढूंढो।\" उसे पता चलता है कि उसकी शादी हो गई है, लेकिन उसका पति अंधकार में खो गया है। रक्षाचिह्न टूटते हुए, वायलेट को उस झूठ का सामना करना होगा जिस पर साम्राज्य टिका है।",
+  "styleSheet": {
+    "register": "literary-vivid",
+    "sentenceLength": "balanced",
+    "gender": "grammatical gender honored",
+    "archaic": "modern Hindi, shudh register in narration",
+    "numerals": "Devanagari numerals optional, Western preferred"
+  },
+  "names": {
+    "Violet": "वायलेट",
+    "Xaden": "ज़ैडेन",
+    "Tairn": "तैर्न",
+    "Andarna": "अंदार्ना",
+    "Sgaeyl": "स्केल",
+    "Navarre": "नवार",
+    "Tyrrendor": "तायरेंडोर",
+    "Aretia": "एरेटिया",
+    "Poromiel": "पोरोमिएल",
+    "Deverelli": "देवेरेली"
+  }
+}

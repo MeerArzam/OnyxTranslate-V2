@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Architecture — OnyxTranslate Docs</title>
+<style>
+body{background:#0a0a0f;color:#e0e0e0;font-family:Georgia,'Times New Roman',serif;max-width:960px;margin:0 auto;padding:24px;line-height:1.6}
+h1{color:#8B5CF6;border-bottom:2px solid rgba(139,92,246,.3);padding-bottom:8px}
+h2{color:#00e5ff;margin-top:28px}
+h3{color:#fbbf24}
+a{color:#00e5ff}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#F59E0B}
+pre{background:rgba(0,0,0,.45);border:1px solid rgba(139,92,246,.25);border-radius:8px;padding:12px;overflow-x:auto}
+pre code{color:#e0e0e0;font-size:11px;line-height:1.5;white-space:pre}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border:1px solid rgba(139,92,246,.25);padding:6px 10px;text-align:left;vertical-align:top}
+th{color:#8B5CF6;background:rgba(139,92,246,.08)}
+td code{color:#00e5ff}
+.meta{color:#8b8ba0;font-size:12px;font-family:ui-monospace,monospace}
+.note{border-left:3px solid #fbbf24;background:rgba(251,191,36,.06);padding:8px 14px;font-size:13px}
+</style>
+</head>
+<body>
+<p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
+<h1>Architecture</h1>
+<p class="meta">Schema, sessions, data flow &middot; generated 2026-09-19 15:18 UTC</p>
+
+<h2>1. Convex Schema (verbatim from convex/schema.ts)</h2>
+<table>
+<tr><th>Table</th><th>Fields (name: type)</th><th>Indexes</th></tr>
+<tr><td><strong>projects</strong></td><td><code>sessionId</code>: v.optional(v.string()) <em>// PHASE 2: durable device + tab identity. clientId survives reopens;</em><br><code>clientId</code>: v.optional(v.string())<br><code>tabSessionId</code>: v.optional(v.string())<br><code>fileName</code>: v.string()<br><code>pageCount</code>: v.number()<br><code>wordCount</code>: v.number()<br><code>pdfStorageId</code>: v.optional(v.string())<br><code>pageData</code>: v.any()<br><code>fullText</code>: v.string()<br><code>parsedPages</code>: v.number()<br><code>status</code>: v.string()<br><code>zipStorageId</code>: v.optional(v.string())<br><code>zipUrl</code>: v.optional(v.string()) <em>// PHASE 2: pending-upload staging (set at uploadJob creation, cleared at parse)</em><br><code>uploadJobId</code>: v.optional(v.id("uploadJobs")) <em>// FIX (1MiB limit): when parsed pageData exceeds Convex's 1MiB document</em><br><code>pageDataStorageId</code>: v.optional(v.id("_storage")) <em>// FIX (1MiB limit): same offload mechanism for very large fullText.</em><br><code>fullTextStorageId</code>: v.optional(v.id("_storage")) <em>// ══ ADAPTIVE PARALLEL PIPELINE (additive — legacy fields untouched) ══</em><br><code>pipelineVersion</code>: v.optional(v.string()) <em>// "legacy" (original scheduler chain) | "adaptive_parallel" (dispatcher)</em><br><code>translationMode</code>: v.optional(v.string()) <em>// Thin Motherboard Phase 3: translation-intelligence contract flag.</em><br><code>translationIntelligenceMode</code>: v.optional(v.string())<br><code>totalTranslationJobs</code>: v.optional(v.number())<br><code>completedTranslationJobs</code>: v.optional(v.number())<br><code>failedTranslationJobs</code>: v.optional(v.number()) <em>// Daily governor: Pacific-date-keyed counter of requests actually SENT.</em><br><code>requestsToday</code>: v.optional(v.number())<br><code>requestDayPacific</code>: v.optional(v.string())<br><code>lastRequestAt</code>: v.optional(v.number()) <em>// running | daily_paused | waiting_retry | complete | failed</em><br><code>governorState</code>: v.optional(v.string())<br><code>governorResumeAt</code>: v.optional(v.number())<br><code>activeWorkerCount</code>: v.optional(v.number())<br><code>consecutive429Count</code>: v.optional(v.number())<br><code>lastDispatcherAt</code>: v.optional(v.number())<br><code>lastSuccessfulActivityAt</code>: v.optional(v.number())<br><code>pdfGenerationState</code>: v.optional(v.string())<br><code>zipState</code>: v.optional(v.string()) <em>// RELIABILITY PASS: watchdog + dispatcher telemetry (honest recovery state)</em><br><code>watchdogLastRunAt</code>: v.optional(v.number())<br><code>watchdogRecoveredAt</code>: v.optional(v.number())<br><code>watchdogRecoveryCount</code>: v.optional(v.number())<br><code>watchdogLastError</code>: v.optional(v.string())<br><code>lastDispatcherError</code>: v.optional(v.string())<br><code>createdAt</code>: v.number()</td><td><code>by_session</code> ("sessionId"), <code>by_client</code> ("clientId")</td></tr>
+<tr><td><strong>chunks</strong></td><td><code>projectId</code>: v.id("projects")<br><code>langCode</code>: v.string()<br><code>chunkIndex</code>: v.number()<br><code>sourceText</code>: v.string()<br><code>translatedText</code>: v.optional(v.string())<br><code>status</code>: v.string()<br><code>model</code>: v.optional(v.string())<br><code>usage</code>: v.optional(v.any()) <em>// Thin Motherboard Phase 3: which intelligence contract produced this</em><br><code>translationIntelligenceMode</code>: v.optional(v.string())</td><td><code>by_project_lang</code> ("projectId", "langCode", "chunkIndex"), <code>by_project_status</code> ("projectId", "status")</td></tr>
+<tr><td><strong>translations</strong></td><td><code>projectId</code>: v.id("projects")<br><code>langCode</code>: v.string()<br><code>status</code>: v.string()<br><code>totalChunks</code>: v.number()<br><code>completedChunks</code>: v.number()<br><code>mergedText</code>: v.optional(v.string())<br><code>pdfStorageId</code>: v.optional(v.string())<br><code>pdfUrl</code>: v.optional(v.string())<br><code>pdfGenerating</code>: v.optional(v.boolean())<br><code>pdfProgress</code>: v.optional(v.string())<br><code>startedAt</code>: v.optional(v.number())<br><code>completedAt</code>: v.optional(v.number()) <em>// Watchdog heartbeat: timestamp of the last completed chunk (FIX 5a)</em><br><code>lastChunkAt</code>: v.optional(v.number())</td><td><code>by_project_lang</code> ("projectId", "langCode")</td></tr>
+<tr><td><strong>imageTranslations</strong></td><td><code>projectId</code>: v.optional(v.id("projects"))<br><code>imageBase64</code>: v.string()<br><code>extractedText</code>: v.optional(v.string())<br><code>translatedText</code>: v.optional(v.string())<br><code>targetLangCode</code>: v.string()<br><code>status</code>: v.string()<br><code>createdAt</code>: v.number()</td><td><code>by_session</code> ("sessionId")</td></tr>
+<tr><td><strong>history</strong></td><td><code>sessionId</code>: v.string()<br><code>projectId</code>: v.id("projects")<br><code>fileName</code>: v.string()<br><code>pageCount</code>: v.number()<br><code>wordCount</code>: v.number()<br><code>status</code>: v.string()<br><code>languagesCompleted</code>: v.number()<br><code>createdAt</code>: v.number()<br><code>completedAt</code>: v.optional(v.number())<br><code>zipUrl</code>: v.optional(v.string())</td><td><code>by_session</code> ("sessionId"), <code>by_status_scheduled</code> ("status", "scheduledFor")</td></tr>
+<tr><td><strong>jobs</strong></td><td><code>projectId</code>: v.id("projects")<br><code>type</code>: v.string()<br><code>langCode</code>: v.optional(v.string())<br><code>chunkIndex</code>: v.optional(v.number())<br><code>status</code>: v.string()<br><code>error</code>: v.optional(v.string())<br><code>scheduledFor</code>: v.number()<br><code>createdAt</code>: v.number()</td><td><code>by_status_scheduled</code> ("status", "scheduledFor"), <code>by_project</code> ("projectId")</td></tr>
+<tr><td><strong>uploadJobs</strong></td><td><code>clientId</code>: v.string()<br><code>tabSessionId</code>: v.optional(v.string())<br><code>fileName</code>: v.string()<br><code>fileSize</code>: v.number()<br><code>storageId</code>: v.optional(v.id("_storage"))<br><code>projectId</code>: v.optional(v.id("projects"))<br><code>status</code>: v.string() <em>// parsed → chunked → translating → generating_pdf → assembling_zip → complete</em><br><code>processStage</code>: v.optional(v.string()) <em>// PHASE 3: which browser→server transport created this job (1 = single</em><br><code>uploadPath</code>: v.optional(v.number()) <em>// monotonic counter: a scheduled stage run is only valid if stageSeq matches</em><br><code>stageSeq</code>: v.optional(v.number())<br><code>heartbeatAt</code>: v.optional(v.number())<br><code>error</code>: v.optional(v.string())<br><code>idempotencyKey</code>: v.optional(v.string())<br><code>langCodes</code>: v.optional(v.array(v.string()))<br><code>createdAt</code>: v.number()<br><code>updatedAt</code>: v.number()</td><td><code>by_client</code> ("clientId"), <code>by_idempotency</code> ("idempotencyKey"), <code>by_status</code> ("status")</td></tr>
+<tr><td><strong>pendingUploads</strong></td><td><code>clientId</code>: v.string()<br><code>tabSessionId</code>: v.optional(v.string())<br><code>uploadJobId</code>: v.id("uploadJobs")<br><code>fileName</code>: v.string()<br><code>fileSize</code>: v.number()<br><code>langCodes</code>: v.optional(v.array(v.string()))<br><code>status</code>: v.string() <em>// staging | uploaded | finalized | abandoned</em><br><code>storageId</code>: v.optional(v.id("_storage"))<br><code>createdAt</code>: v.number()</td><td><code>by_client</code> ("clientId"), <code>by_status</code> ("status"), <code>by_project</code> ("projectId")</td></tr>
+<tr><td><strong>exportArtifacts</strong></td><td><code>projectId</code>: v.id("projects")<br><code>storageId</code>: v.id("_storage")<br><code>kind</code>: v.optional(v.string())<br><code>sizeBytes</code>: v.optional(v.number())<br><code>createdAt</code>: v.number()</td><td><code>by_project</code> ("projectId")</td></tr>
+<tr><td><strong>exportTokens</strong></td><td><code>token</code>: v.string()<br><code>projectId</code>: v.id("projects")<br><code>storageId</code>: v.id("_storage")<br><code>fileName</code>: v.string()<br><code>expiresAt</code>: v.number()</td><td><code>by_token</code> ("token")</td></tr>
+<tr><td><strong>translationJobs</strong></td><td><code>projectId</code>: v.id("projects")<br><code>clientId</code>: v.optional(v.string())<br><code>tabSessionId</code>: v.optional(v.string())<br><code>langCode</code>: v.string()<br><code>chunkIndex</code>: v.number()<br><code>chunkCount</code>: v.number()<br><code>sourceText</code>: v.string()<br><code>sourceStartOffset</code>: v.optional(v.number())<br><code>sourceEndOffset</code>: v.optional(v.number()) <em>// pending | claimed | running | done | retry_wait | failed</em><br><code>status</code>: v.string()<br><code>resultText</code>: v.optional(v.string())<br><code>attempts</code>: v.number()<br><code>reclaimCount</code>: v.optional(v.number())<br><code>lastError</code>: v.optional(v.string())<br><code>lastHttpStatus</code>: v.optional(v.number())<br><code>claimedAt</code>: v.optional(v.number())<br><code>startedAt</code>: v.optional(v.number())<br><code>completedAt</code>: v.optional(v.number())<br><code>heartbeatAt</code>: v.optional(v.number())<br><code>nextRetryAt</code>: v.optional(v.number())<br><code>claimToken</code>: v.optional(v.string()) <em>// pair merging: requestGroupId groups the 2 rows sharing one Gemini call</em><br><code>requestGroupId</code>: v.optional(v.string())<br><code>mergedWithChunkIndex</code>: v.optional(v.number())<br><code>splitValidated</code>: v.optional(v.boolean())<br><code>pairFailureCount</code>: v.optional(v.number()) <em>// raw model output saved when pair parsing fails (diagnostics)</em><br><code>rawModelOutput</code>: v.optional(v.string())<br><code>idempotencyKey</code>: v.string()<br><code>pipelineVersion</code>: v.string() <em>// Thin Motherboard Migration Phase 1: which canonical prompt version</em><br><code>promptVersion</code>: v.optional(v.string()) <em>// Thin Motherboard Phase 3: per-job intelligence mode stamp (resolved from</em><br><code>translationIntelligenceMode</code>: v.optional(v.string()) <em>// Thin Motherboard Phase 2: contract-validation state. needs_review jobs</em><br><code>needsReview</code>: v.optional(v.boolean())<br><code>reviewReason</code>: v.optional(v.string()) <em>// Set when the strict-retry (once) path already ran for this job.</em><br><code>contractRetried</code>: v.optional(v.boolean())</td><td><code>by_project</code> ("projectId"), <code>by_project_status</code> ("projectId", "status"), <code>by_project_lang_chunk</code> ("projectId", "langCode", "chunkIndex"), <code>by_idempotencyKey</code> ("idempotencyKey")</td></tr>
+<tr><td><strong>rateLimits</strong></td><td><code>projectId</code>: v.id("projects")<br><code>windowStartMs</code>: v.number()<br><code>requestTimestamps</code>: v.array(v.number())<br><code>requestsToday</code>: v.number()<br><code>requestDayPacific</code>: v.string()<br><code>consecutive429Count</code>: v.number()<br><code>workerLimit</code>: v.number() <em>// per-language pair-merge circuit breaker (set on repeated malformed pairs)</em><br><code>pairMergeDisabledLangs</code>: v.optional(v.array(v.string()))<br><code>lastUpdatedAt</code>: v.number()</td><td><code>by_project</code> ("projectId")</td></tr>
+<tr><td><strong>pdfBatches</strong></td><td><code>projectId</code>: v.id("projects")<br><code>langCode</code>: v.string()<br><code>translationId</code>: v.optional(v.id("translations"))<br><code>batchIndex</code>: v.number()<br><code>pageStart</code>: v.number()<br><code>pageEnd</code>: v.number()<br><code>batchSize</code>: v.number() <em>// pending | running | done | failed</em><br><code>status</code>: v.string()<br><code>storageId</code>: v.optional(v.id("_storage"))<br><code>checksum</code>: v.optional(v.string())<br><code>attempts</code>: v.number()<br><code>error</code>: v.optional(v.string())<br><code>heartbeatAt</code>: v.optional(v.number())<br><code>idempotencyKey</code>: v.string()<br><code>createdAt</code>: v.number()</td><td><code>by_project_lang</code> ("projectId", "langCode"), <code>by_status</code> ("status"), <code>by_idempotencyKey</code> ("idempotencyKey")</td></tr>
+<tr><td><strong>liveTests</strong></td><td><code>langCode</code>: v.string()<br><code>langName</code>: v.string()<br><code>nativeName</code>: v.string()<br><code>script</code>: v.string()<br><code>rtl</code>: v.boolean()<br><code>status</code>: v.string() <em>// pending | running | pass | warn | fail</em><br><code>score</code>: v.optional(v.number())<br><code>output</code>: v.optional(v.string())<br><code>qaSummary</code>: v.optional(v.array(v.string()))<br><code>issueCount</code>: v.optional(v.number())<br><code>missingNames</code>: v.optional(v.array(v.string()))<br><code>scriptIssues</code>: v.optional(v.array(v.string()))<br><code>model</code>: v.optional(v.string())<br><code>durationMs</code>: v.optional(v.number())<br><code>error</code>: v.optional(v.string())<br><code>testedAt</code>: v.number()</td><td><code>by_lang</code> ("langCode")</td></tr>
+</table>
+
+<h2>2. Session Isolation Model</h2>
+<p>Every browser tab generates a unique <code>sessionId</code> on mount
+(<code>useState(() =&gt; { ... })</code> in <code>src/pages/Translator.tsx</code> —
+persistence via <code>sessionStorage</code>). All client-facing Convex queries filter by it,
+so two tabs (or a private window) never see each other's progress. Imported projects are
+assigned the importing session's ID.</p>
+<p>The session check lives server-side in <code>convex/queries.ts</code>:</p>
+<pre><code>export const getProject = query({
+  args: { projectId: v.id("projects"), sessionId: v.string() },
+  handler: async (ctx, args) =&gt; {
+    const project = await ctx.db.get(args.projectId);
+    if (!project || project.sessionId !== args.sessionId) return null;
+    return project;
+  },
+});</code></pre>
+<p>Auto-resume uses the latest project for the session:</p>
+<pre><code>export const getLatestProject = query({
+  args: { sessionId: v.string() },
+  handler: async (ctx, args) =&gt; {
+    const projects = await ctx.db
+      .query("projects")
+      .withIndex("by_session", (q) =&gt; q.eq("sessionId", args.sessionId))
+      .order("desc")
+      .take(1);
+    return projects[0] ?? null;
+  },
+});</code></pre>
+
+<h2>3. End-to-End Data Flow</h2>
+<h3>3.1 PDF upload &amp; parse</h3>
+<ol>
+<li><code>handleFileSelect</code> (Translator.tsx) &rarr; <code>parsePDFHeader</code> reads page count
+without decoding pages.</li>
+<li><code>parsePDFBatch</code> loops in batches of <code>PARSE_BATCH_SIZE = 10</code> pages, updating
+<code>setParseProgress({ current, total })</code> after each batch (live "Page X of Y").</li>
+<li><code>storePdfAction</code> → <code>convex/upload.ts storePdf</code> stores the original PDF in
+Convex File Storage, returns <code>storageId</code>.</li>
+<li><code>parsePdfAction</code> → <code>convex/parsePdf.ts parseUploadedPdf</code> re-parses
+server-side with pdfjs-dist, groups text items into lines by Y-coordinate (2 px tolerance) —
+fixes broken words/missing letters.</li>
+<li><code>createProjectMutation</code> writes the <code>projects</code> row
+(<code>fullText</code>, <code>pageData</code>, <code>pdfStorageId</code>, <code>status: "ready"</code>).</li>
+</ol>
+<h3>3.2 Text paste</h3>
+<p><code>setSourceText(text)</code> directly; project row is created lazily inside
+<code>startTranslation</code> with <code>fileName: "Pasted Text"</code>.</p>
+<h3>3.3 Translation (Begin Translation Journey)</h3>
+<ol>
+<li><code>startTranslation</code> creates the project if needed, then calls
+<code>translateLanguageAction({ projectId, langCode: langs[0], marketContext, nextLangCode: langs[1],
+remainingLangs: langs.slice(2) })</code>.</li>
+<li><code>convex/translateContent.ts translateLanguage</code>: chunks
+<code>project.fullText</code> into 2,500-word chunks, and for each chunk runs:
+sliding-window context (last 2 sentences of previous chunk) &rarr; <strong>Bible Pass</strong>
+(glossary terms replaced by <code>__PH0__</code> placeholders) &rarr; <strong>Gemini call</strong>
+(5-key rotation, retries) &rarr; placeholder restore &rarr; cultural filters &rarr;
+dragon-telepathy formatting &rarr; RTL marker &rarr; <strong>runQA</strong> &rarr; writes the
+<code>chunks</code> row and bumps <code>translations.completedChunks</code>.</li>
+<li>After the last chunk the action merges text into <code>translations.mergedText</code>, marks
+the language <code>complete</code>, and chains the next language via
+<code>ctx.scheduler.runAfter(0, api.translateContent.translateLanguage, { ... })</code>.</li>
+<li>The browser can close at any point — the chain is server-side. Progress is read back
+through reactive queries (<code>getTranslationProgress</code>, <code>getLivePreviewText</code>).</li>
+</ol>
+<h3>3.4 PDF generation (autonomous)</h3>
+<p>When a language finishes inside the scheduler queue
+(<code>convex/translateQueue.ts processLanguage</code> &rarr; status
+<code>"generating_pdf"</code>), <code>convex/generatePdf.ts generateTranslatedPdf</code> loads the
+original PDF from storage, copies each page, whites out text using per-text-item coordinates
+(preserving images/maps), overlays the translation with Noto fonts for non-Latin scripts
+(Helvetica fallback), stores the PDF, and either chains the next language or, when none
+remain, sets <code>projects.status = "all_translated"</code> and schedules
+<code>zipAssembly.buildZip</code>.</p>
+<h3>3.5 ZIP assembly</h3>
+<p><code>convex/zipAssembly.ts buildZip</code> downloads every completed
+<code>translations.pdfStorageId</code>, bundles them (plus <code>translation_report.txt</code>)
+with JSZip, stores the ZIP, and writes <code>projects.zipStorageId</code>/<code>zipUrl</code> and
+<code>status: "complete"</code>.</p>
+<h3>3.6 Images</h3>
+<p><code>translateImageMultiLang</code> (client) downsamples to ≤1024 px JPEG
+&harr; <code>convex/translateImage.ts translateImage</code> sends the base64 image to Gemini
+multimodal for OCR + translation in one pass, saves to <code>imageTranslations</code>.</p>
+
+<h2>4. Status Enums (as written by the code)</h2>
+<table>
+<tr><th>Table</th><th>Values</th></tr>
+<tr><td>projects.status</td><td><code>ready</code> &rarr; <code>translating</code> &rarr;
+<code>all_translated</code> &rarr; <code>complete</code>; also <code>cancelled</code> (Pause button)</td></tr>
+<tr><td>chunks.status</td><td><code>pending</code>, <code>done</code></td></tr>
+<tr><td>translations.status</td><td><code>pending</code>, <code>in_progress</code>,
+<code>generating_pdf</code>, <code>complete</code>, <code>error</code></td></tr>
+<tr><td>history.status</td><td><code>in_progress</code>, <code>complete</code></td></tr>
+<tr><td>imageTranslations.status</td><td><code>pending</code>, <code>processing</code>,
+<code>complete</code>, <code>error</code></td></tr>
+</table>
+
+<hr>
+<p class="meta">OnyxTranslate static documentation mirror — plain HTML, no JavaScript. Interactive version: <a href="/#/overview">/#/overview</a></p>
+</body>
+</html>

@@ -1,0 +1,51 @@
+{
+  "code": "zh",
+  "name": "Chinese",
+  "nativeName": "中文",
+  "script": "Chinese",
+  "rtl": false,
+  "dialogue": { "open": "「", "close": "」", "note": "Use 「」 for dialogue; 『』 for dragon telepathy; —— for interruptions." },
+  "formality": {
+    "system": "你/您",
+    "informal": "你",
+    "formal": "您",
+    "note": "Violet↔Xaden use 你; General Aetos / King Tauri receive 您."
+  },
+  "profanity": {
+    "fuck": "该死",
+    "shit": "妈的",
+    "bastard": "混蛋",
+    "damn": "见鬼",
+    "hell": "地狱"
+  },
+  "ranks": {
+    "Wingleader": "翼队长",
+    "Squad Leader": "分队长",
+    "Cadet": "军校生",
+    "General": "将军",
+    "Scribe": "抄写员",
+    "Rider": "骑手"
+  },
+  "magicSystem": "印章（印记）的层级：骑手 → 印章 → 导管 → 护符。符文保持'符文'，不得变成通用咒语。至高天 for Empyrean; 文宁 for Venin.",
+  "fanNames": { "Violet": "维奥莱特", "Xaden": "谢顿", "Tairn": "泰恩", "Aretia": "阿雷蒂亚" },
+  "blurb": "维奥莱特在阿雷蒂亚困惑地醒来，手上戴着戒指，还有谢顿的纸条：\"别来找我。\"她意识到自己已经结婚，但丈夫已迷失在黑暗中。命中注定的两人——她要夺回消失在黑暗中的丈夫，就必须直面帝国赖以维系的谎言。",
+  "styleSheet": {
+    "register": "web-novel literary",
+    "sentenceLength": "short-medium",
+    "gender": "gender via 她/他 and context",
+    "archaic": "modern Chinese, xianxia-flavored epic register",
+    "numerals": "Chinese numerals in formal text, Western otherwise"
+  },
+  "names": {
+    "Violet": "维奥莱特",
+    "Xaden": "谢顿",
+    "Tairn": "泰恩",
+    "Andarna": "安达娜",
+    "Sgaeyl": "斯盖尔",
+    "Navarre": "纳瓦尔",
+    "Tyrrendor": "泰伦多尔",
+    "Aretia": "阿雷蒂亚",
+    "Poromiel": "波罗米尔",
+    "Deverelli": "德维雷利"
+  }
+}

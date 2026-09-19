@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Convex Functions — PDF Layout Cores (x-gap merge + block render) — OnyxTranslate Docs</title>
+<style>
+body{background:#0a0a0f;color:#e0e0e0;font-family:Georgia,'Times New Roman',serif;max-width:960px;margin:0 auto;padding:24px;line-height:1.6}
+h1{color:#8B5CF6;border-bottom:2px solid rgba(139,92,246,.3);padding-bottom:8px}
+h2{color:#00e5ff;margin-top:28px}
+h3{color:#fbbf24}
+a{color:#00e5ff}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#F59E0B}
+pre{background:rgba(0,0,0,.45);border:1px solid rgba(139,92,246,.25);border-radius:8px;padding:12px;overflow-x:auto}
+pre code{color:#e0e0e0;font-size:11px;line-height:1.5;white-space:pre}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border:1px solid rgba(139,92,246,.25);padding:6px 10px;text-align:left;vertical-align:top}
+th{color:#8B5CF6;background:rgba(139,92,246,.08)}
+td code{color:#00e5ff}
+.meta{color:#8b8ba0;font-size:12px;font-family:ui-monospace,monospace}
+.note{border-left:3px solid #fbbf24;background:rgba(251,191,36,.06);padding:8px 14px;font-size:13px}
+</style>
+</head>
+<body>
+<p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
+<h1>Convex Functions — PDF Layout Cores (x-gap merge + block render)</h1>
+<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-19 15:18 UTC</p>
+<p>Files on this page: <code>convex/pdfLayout.ts</code>, <code>convex/renderPdfCore.ts</code></p><h2>convex/pdfLayout.ts — full real source</h2><p><strong>Exports:</strong><ul></ul></p><pre><code>/**
+ * convex/pdfLayout.ts — Pure PDF text-layout helpers (NO Convex imports).
+ *
+ * Used by:
+ *   - convex/parsePdf.ts  (extraction: raw text items → clean lines → blocks)
+ *   - convex/generatePdf.ts (rendering: cluster blocks from stored textItems
+ *     when the project predates stored blocks)
+ *   - scripts/testExtraction.ts (extraction self-test)
+ *
+ * Root cause this fixes: naive `.join(" ")` between pdf.js text items inserts
+ * spaces INSIDE words ("OnyxStorm" → "Ony xStor m") because tightly-kerned
+ * text arrives as many small per-glyph fragments. Word merging must be
+ * GEOMETRY-based: measure the horizontal gap between consecutive items and
+ * only insert a space when the gap is word-sized.
+ */
+
+export interface LayoutTextItem {
+  str: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fontName?: string;
+}
+
+export interface LayoutLine {
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fontSize: number;
+}
+
+export interface LayoutBlock {
+  text: string;
+  x: number;
+  /** Top edge of the block in the SAME convention as the input items. */
+  y: number;
+  width: number;
+  height: number;
+  fontSize: number;
+  lineCount: number;
+  align: "left" | "center";
+}
+
+// ──────────────────────────────────────────────────────────
+// Word merging: items → lines (x-gap based)
+// ──────────────────────────────────────────────────────────
+
+/**
+ * Merge raw text items into clean visual lines.
+ *
+ * Rules between two consecutive items on the same line (sorted by x):
+ *  - Explicit spaces in the strings themselves are preserved (deduped —
+ *    never double-spaced).
+ *  - gap = next.x − (current.x + current.width)
+ *      gap &lt; 0.3 × fontSize  → join with NO space (same word, kerned split)
+ *      otherwise             → join with ONE space
+ *  - Line-end hyphenation: "some-" + "thing" → "something"
+ */
+export function mergeItemsIntoLines(items: LayoutTextItem[]): LayoutLine[] {
+  const usable = items.filter((it) =&gt; it.str &amp;&amp; it.str.trim().length &gt; 0);
+  if (usable.length === 0) return [];
+
+  // 1. Group into lines by baseline Y proximity (2px tolerance).
+  const sorted = [...usable].sort((a, b) =&gt; b.y - a.y); // PDF bottom-origin: higher y = higher on page
+  const groups: LayoutTextItem[][] = [];
+  let current: LayoutTextItem[] = [sorted[0]];
+  for (let i = 1; i &lt; sorted.length; i++) {
+    const item = sorted[i];
+    const last = current[current.length - 1];
+    if (Math.abs(item.y - last.y) &lt;= 2) {
+      current.push(item);
+    } else {
+      groups.push(current);
+      current = [item];
+    }
+  }
+  groups.push(current);
+
+  // 2. Sort each line left-to-right and merge with gap logic.
+  const lines: LayoutLine[] = [];
+  for (const group of groups) {
+    group.sort((a, b) =&gt; a.x - b.x);
+
+    let text = "";
+    let maxX = 0;
+    for (const item of group) {
+      if (text === "") {
+        text = item.str;
+        maxX = item.x + item.width;
+        continue;
+      }
+      const prev = text;
+      const prevTrimEnd = prev.replace(/\s+$/, "");
+      const hadTrailingSpace = prevTrimEnd.length &lt; prev.length;
+      const nextTrimStart = item.str.replace(/^\s+/, "");
+      const hadLeadingSpace = nextTrimStart.length &lt; item.str.length;
+
+      let joiner = "";
+      if (hadTrailingSpace || hadLeadingSpace) {
+        // Explicit space — exactly one (dedupe).
+        joiner = " ";
+      } else {
+        const fontSize = Math.max(item.height, 1) || 10;
+        const gap = item.x - maxX;
+        joiner = gap &lt; 0.3 * fontSize ? "" : " ";
+      }
+      text = prevTrimEnd + joiner + nextTrimStart;
+      maxX = Math.max(maxX, item.x + item.width);
+    }
+
+    // Collapse accidental double spaces, trim.
+    text = text.replace(/ {2,}/g, " ").trim();
+    if (!text) continue;
+
+    const first = group[0];
+    const lastItem = group[group.length - 1];
+    const fontSize =
+      group.reduce((s, it) =&gt; s + (it.height || 10), 0) / group.length;
+
+    lines.push({
+      text,
+      x: first.x,
+      y: Math.max(...group.map((it) =&gt; it.y)),
+      width: Math.max(maxX - first.x, lastItem.x + lastItem.width - first.x),
+      height: Math.max(...group.map((it) =&gt; it.height || 10)),
+      fontSize,
+    });
+  }
+
+  // 3. Line-end hyphenation: "some-" at line end + "thing" at next line
+  //    start → "something" (only for lowercase continuation — headings that
+  //    legitimately end with "-" and start a capitalized word are kept).
+  const merged: LayoutLine[] = [];
+  for (const line of lines) {
+    const prev = merged[merged.length - 1];
+    if (
+      prev &amp;&amp;
+      /[a-z]-$/.test(prev.text) &amp;&amp;
+      /^[a-z]/.test(line.text)
+    ) {
+      prev.text = prev.text.replace(/-$/, "") + line.text;
+      prev.width = Math.max(prev.width, line.x + line.width - prev.x);
+      prev.fontSize = Math.max(prev.fontSize, line.fontSize);
+      continue;
+    }
+    merged.push({ ...line });
+  }
+
+  return merged;
+}
+
+// ──────────────────────────────────────────────────────────
+// Paragraph block clustering: lines → blocks
+// ──────────────────────────────────────────────────────────
+
+/**
+ * Cluster consecutive lines into PARAGRAPH blocks.
+ *
+ * A block continues while:
+ *  - left-x stays within ±2px,
+ *  - the vertical gap to the previous line is ≤ 1.5× the document's modal
+ *    line-gap (larger gaps are paragraph breaks),
+ *  - font size stays within ~15% (headings break out),
+ *  - center-x stays within ±3px when the block reads as centered.
+ */
+export function clusterIntoBlocks(lines: LayoutLine[]): LayoutBlock[] {
+  if (lines.length === 0) return [];
+
+  // Modal line gap (mode of positive consecutive diffs, bucketed to 2px —
+  // falls back to median). Mode beats median on SPARSE pages (chapter
+  // breaks, title pages) where section gaps outnumber line gaps.
+  const gaps: number[] = [];
+  for (let i = 1; i &lt; lines.length; i++) {
+    const gap = lines[i - 1].y - lines[i].y; // bottom-origin: next line is lower
+    if (gap &gt; 0.5 &amp;&amp; gap &lt; 200) gaps.push(gap);
+  }
+  let lineGap = 0;
+  if (gaps.length &gt; 0) {
+    const buckets = new Map&lt;number, number[]&gt;();
+    for (const g of gaps) {
+      const key = Math.round(g / 2);
+      const arr = buckets.get(key) || [];
+      arr.push(g);
+      buckets.set(key, arr);
+    }
+    let best: number[] = [];
+    for (const arr of buckets.values()) {
+      if (arr.length &gt; best.length || (arr.length === best.length &amp;&amp; arr[0] &lt; best[0])) best = arr;
+    }
+    lineGap = best.reduce((a, b) =&gt; a + b, 0) / best.length;
+  }
+
+  const blocks: LayoutBlock[] = [];
+  let blockLines: LayoutLine[] = [];
+
+  const flush = () =&gt; {
+    if (blockLines.length === 0) return;
+    const x = Math.min(...blockLines.map((l) =&gt; l.x));
+    const right = Math.max(...blockLines.map((l) =&gt; l.x + l.width));
+    const top = Math.max(...blockLines.map((l) =&gt; l.y)); // bottom-origin top edge
+    const bottom = Math.min(...blockLines.map((l) =&gt; l.y - l.height));
+    const fontSize = Math.max(...blockLines.map((l) =&gt; l.fontSize));
+
+    // Centered detection: every line's center within 3px of the block center
+    // AND the left margin noticeably indented relative to the widest line.
+    const centerX =
+      blockLines.reduce((s, l) =&gt; s + l.x + l.width / 2, 0) / blockLines.length;
+    const centered =
+      blockLines.length &gt; 1 &amp;&amp;
+      blockLines.every((l) =&gt; Math.abs(l.x + l.width / 2 - centerX) &lt;= 3) &amp;&amp;
+      x - (centerX - (right - x) / 2) &gt; 4;
+
+    blocks.push({
+      text: blockLines.map((l) =&gt; l.text).join("\n"),
+      x,
+      y: top,
+      width: Math.max(right - x, 1),
+      height: Math.max(top - bottom, fontSize),
+      fontSize,
+      lineCount: blockLines.length,
+      align: centered ? "center" : "left",
+    });
+    blockLines = [];
+  };
+
+  for (const line of lines) {
+    if (blockLines.length === 0) {
+      blockLines.push(line);
+      continue;
+    }
+    const prev = blockLines[blockLines.length - 1];
+    const verticalGap = prev.y - line.y; // bottom-origin
+    const leftDelta = Math.abs(line.x - blockLines[0].x);
+    const sizeDelta =
+      Math.abs(line.fontSize - prev.fontSize) / Math.max(prev.fontSize, 1);
+
+    const isBreak =
+      (lineGap &gt; 0 &amp;&amp; verticalGap &gt; 1.5 * lineGap) ||
+      leftDelta &gt; 2 ||
+      sizeDelta &gt; 0.15;
+
+    if (isBreak) {
+      flush();
+    }
+    blockLines.push(line);
+  }
+  flush();
+
+  return blocks;
+}
+
+/**
+ * Convenience: raw text items → ordered blocks (top of page first).
+ * Input items are expected in PDF bottom-origin coordinates.
+ */
+export function itemsToBlocks(items: LayoutTextItem[]): LayoutBlock[] {
+  const lines = mergeItemsIntoLines(items);
+  const blocks = clusterIntoBlocks(lines);
+  // Order top→bottom (bottom-origin: descending y)
+  return blocks.sort((a, b) =&gt; b.y - a.y);
+}
+</code></pre><h2>convex/renderPdfCore.ts — full real source</h2><p><strong>Exports:</strong><ul></ul></p><pre><code>/**
+ * convex/renderPdfCore.ts — Pure PDF overlay planning (NO Convex imports).
+ *
+ * Used by convex/generatePdf.ts (production) and scripts/testPdfFidelity.ts
+ * (verification). Implements Google-translate-grade fidelity:
+ *
+ *   C1. Paragraph alignment — translated paragraphs (split on the \n\n
+ *       sentinel produced by the 23-phase pipeline) are mapped back to their
+ *       original paragraph BLOCKS in reading order. When counts mismatch the
+ *       page falls back to word-proportional fill (recorded, never silent).
+ *
+ *   C2. Per-block font auto-fit — each block starts at its OWN original font
+ *       size, wraps at the block's original width (lineHeight 1.3×), and
+ *       shrinks ×0.95 (floor 6pt) until the wrapped text fits BOTH width and
+ *       height. Erase rectangle = block bounds + 1px padding (white).
+ *
+ *   C3. RTL — Arabic/Kashmiri get TRUE bidi (UAX #9) + Arabic shaping:
+ *       logical text is reshaped to Unicode presentation forms (U+FE70–U+FEFF
+ *       contextual glyphs via arabic-reshaper) and reordered to visual order
+ *       (bidi-js); the embedded Noto Sans Arabic font carries those glyphs
+ *       (verified via cmap). Urdu stays on WORD-ORDER reversal because Noto
+ *       Nastaliq Urdu lacks presentation-form glyphs (would render boxes);
+ *       documented limitation, not silent corruption.
+ */
+
+import { itemsToBlocks, type LayoutTextItem } from "./pdfLayout";
+import type { PDFDocument, PDFFont, PDFPage } from "pdf-lib";
+
+export interface RenderFont {
+  widthOfTextAtSize(text: string, size: number): number;
+  heightAtSize(size: number): number;
+}
+
+export interface RenderBlock {
+  text: string;
+  x: number;
+  /** Top edge measured from the page TOP (client-stored convention). */
+  y: number;
+  width: number;
+  height: number;
+  fontSize: number;
+  lineCount: number;
+  align: "left" | "center";
+}
+
+export interface BlockOp {
+  erase: { x: number; y: number; width: number; height: number };
+  lines: Array&lt;{ text: string; x: number; y: number; size: number }&gt;;
+  fontSize: number;
+  fits: boolean;
+  /** bottom-origin y of the erase rect (for pdf-lib drawRectangle) */
+  eraseYBottomOrigin: number;
+}
+
+export interface PageOverlayPlan {
+  ops: BlockOp[];
+  mode: "blocks" | "proportional";
+  paragraphsMatched: boolean;
+  minFontSize: number;
+}
+
+const SIZE_FLOOR = 6;
+const SIZE_CAP = 16;
+const LINE_HEIGHT_FACTOR = 1.3;
+
+// ──────────────────────────────────────────────────────────
+// Word wrapping (moved from generatePdf — shared with tests)
+// ──────────────────────────────────────────────────────────
+
+export function wrapText(
+  font: RenderFont,
+  text: string,
+  maxWidth: number,
+  size: number,
+): string[] {
+  const paragraphs = text.split("\n");
+  const lines: string[] = [];
+
+  for (const paragraph of paragraphs) {
+    if (!paragraph.trim()) {
+      lines.push("");
+      continue;
+    }
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    let current = "";
+
+    for (const word of words) {
+      if (font.widthOfTextAtSize(word, size) &gt; maxWidth) {
+        if (current) {
+          lines.push(current);
+          current = "";
+        }
+        // Break very long words character by character
+        let chunk = "";
+        for (const ch of word) {
+          if (chunk &amp;&amp; font.widthOfTextAtSize(chunk + ch, size) &gt; maxWidth) {
+            lines.push(chunk);
+            chunk = ch;
+          } else {
+            chunk += ch;
+          }
+        }
+        current = chunk;
+        continue;
+      }
+      const test = current ? `${current} ${word}` : word;
+      if (font.widthOfTextAtSize(test, size) &lt;= maxWidth) {
+        current = test;
+      } else {
+        if (current) lines.push(current);
+        current = word;
+      }
+    }
+    if (current) lines.push(current);
+  }
+
+  return lines.length &gt; 0 ? lines : [""];
+}
+
+// ──────────────────────────────────────────────────────────
+// Paragraph → block mapping
+// ──────────────────────────────────────────────────────────
+
+function countWords(text: string): number {
+  return text.split(/\s+/).filter(Boolean).length;
+}
+
+/**
+ * Assign translated paragraphs (reading order) to blocks (reading order).
+ * 1:1 when counts match; otherwise words are distributed proportionally to
+ * each block's ORIGINAL word count (translation preserves the ~1:1 word
+ * ratio per paragraph, so this stays faithful even when the model merged or
+ * split a paragraph).
+ */
+export function mapParagraphsToBlocks(
+  paragraphs: string[],
+  blocks: RenderBlock[],
+): { text: string[]; matched: boolean } {
+  if (blocks.length === 0) return { text: [], matched: false };
+
+  if (paragraphs.length === blocks.length) {
+    return { text: paragraphs, matched: true };
+  }
+
+  const blockWords = blocks.map((b) =&gt; Math.max(countWords(b.text), 1));
+  const totalBlockWords = blockWords.reduce((a, b) =&gt; a + b, 0);
+  const paraWords = paragraphs.map(countWords);
+  const totalParaWords = Math.max(
+    paraWords.reduce((a, b) =&gt; a + b, 0),
+    1,
+  );
+
+  const out: string[] = [];
+  let paraIdx = 0;
+  let consumed = 0; // words consumed so far (of totalParaWords)
+
+  for (let b = 0; b &lt; blocks.length; b++) {
+    const target = (blockWords[b] / totalBlockWords) * totalParaWords;
+    let buf: string[] = [];
+    let bufWords = 0;
+    // Pull paragraphs until this block has its proportional share
+    while (
+      paraIdx &lt; paragraphs.length &amp;&amp;
+      (bufWords + paraWords[paraIdx] &lt;= target + 0.5 || b === blocks.length - 1)
+    ) {
+      buf.push(paragraphs[paraIdx]);
+      bufWords += paraWords[paraIdx];
+      consumed += paraWords[paraIdx];
+      paraIdx++;
+      if (b &lt; blocks.length - 1 &amp;&amp; bufWords &gt;= target) break;
+    }
+    out.push(buf.join("\n\n"));
+  }
+  // Any leftover paragraphs go to the last block
+  while (paraIdx &lt; paragraphs.length) {
+    out[out.length - 1] += "\n\n" + paragraphs[paraIdx++];
+  }
+  void consumed;
+
+  return { text: out, matched: false };
+}
+
+// ──────────────────────────────────────────────────────────
+// Per-block font auto-fit
+// ──────────────────────────────────────────────────────────
+
+export function fitBlockText(
+  font: RenderFont,
+  text: string,
+  block: RenderBlock,
+  isRTL: boolean,
+  useBidiShaping = false,
+): BlockOp {
+  const width = Math.max(block.width, 20);
+  const height = Math.max(block.height, block.fontSize);
+
+  let size = Math.min(Math.max(block.fontSize, SIZE_FLOOR), SIZE_CAP);
+  let lines: string[] = [];
+  let fits = false;
+
+  for (let iter = 0; iter &lt; 24; iter++) {
+    lines = wrapText(font, text, width, size);
+    const lineHeight = size * LINE_HEIGHT_FACTOR;
+    const needed = lines.length * lineHeight;
+    if (needed &lt;= height + 0.5) {
+      fits = true;
+      break;
+    }
+    const next = size * 0.95;
+    if (next &lt; SIZE_FLOOR) {
+      size = SIZE_FLOOR;
+      lines = wrapText(font, text, width, size);
+      break;
+    }
+    size = next;
+  }
+
+  const lineHeight = size * LINE_HEIGHT_FACTOR;
+
+  // Erase rect: block bounds +1px padding, white — drawn by the caller.
+  const erase = {
+    x: block.x - 1,
+    y: block.y - 1, // top-origin
+    width: width + 2,
+    height: height + 2,
+  };
+
+  // Baselines (bottom-origin for pdf-lib): first baseline sits one font
+  // ascent below the block's top edge.
+  const firstBaselineTopOrigin = block.y + size;
+  const ops: BlockOp["lines"] = [];
+  let drawn = 0;
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    const baselineTop = firstBaselineTopOrigin + drawn * lineHeight;
+    if (baselineTop &gt; block.y + height + lineHeight * 0.5) break; // don't spill past block
+    const visual = isRTL
+      ? (useBidiShaping ? toVisualBidi(line) : reverseWords(line))
+      : line;
+    let x = block.x;
+    const lineWidth = font.widthOfTextAtSize(visual, size);
+    if (block.align === "center" || isRTL) {
+      if (isRTL) x = block.x + width - lineWidth;
+      else x = block.x + (width - lineWidth) / 2;
+    }
+    ops.push({
+      text: visual,
+      x,
+      y: baselineTop, // top-origin; caller converts
+      size,
+    });
+    drawn++;
+  }
+
+  return {
+    erase,
+    lines: ops,
+    fontSize: size,
+    fits,
+    // bottom-origin conversion done by caller (needs pageHeight)
+    eraseYBottomOrigin: 0,
+  };
+}
+
+/** RTL visual order: reverse WORD order only, never characters. */
+export function reverseWords(line: string): string {
+  return line.split(/\s+/).filter(Boolean).reverse().join(" ");
+}
+
+/**
+ * C3 TRUE bidi pipeline (ar/ks): logical Arabic → shaped presentation forms
+ * (U+FE70–U+FEFF) → visual-order string via the Unicode Bidirectional
+ * Algorithm. Both pure-JS, no node builtins — verified Convex-compatible.
+ * Dynamic requires keep the bundler from eagerly evaluating them in actions
+ * that never render RTL pages.
+ */
+export function toVisualBidi(line: string): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const arabicShaper = require("arabic-reshaper");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const bidiFactory = require("bidi-js");
+    const bidi = (bidiFactory.default ?? bidiFactory)();
+    const shaped: string =
+      (arabicShaper.convertArabic ?? arabicShaper.default?.convertArabic)(line);
+    const levels = bidi.getEmbeddingLevels(shaped, "rtl");
+    return bidi.getReorderedString(shaped, levels);
+  } catch {
+    return reverseWords(line); // safety net — never worse than before
+  }
+}
+
+// ──────────────────────────────────────────────────────────
+// Full-page planning
+// ──────────────────────────────────────────────────────────
+
+/**
+ * Plan the overlay for one page.
+ *
+ * @param textItems stored text items in TOP-origin coordinates
+ * @param storedBlocks stored paragraph blocks (TOP-origin) if the parse
+ *        produced them; null for pre-existing projects
+ * @param paragraphs translated paragraphs for THIS page (reading order)
+ */
+export function planPageOverlay(opts: {
+  textItems: LayoutTextItem[];
+  storedBlocks: RenderBlock[] | null;
+  pageWidth: number;
+  pageHeight: number;
+  paragraphs: string[];
+  font: RenderFont;
+  isRTL: boolean;
+  useBidiShaping?: boolean;
+}): PageOverlayPlan {
+  const { textItems, storedBlocks, pageHeight, paragraphs, font, isRTL, useBidiShaping = false } = opts;
+
+  // Resolve blocks: prefer stored, else cluster on the fly. Stored items are
+  // TOP-origin; clustering helpers expect PDF BOTTOM-origin, so convert.
+  let blocks: RenderBlock[];
+  if (storedBlocks &amp;&amp; storedBlocks.length &gt; 0) {
+    blocks = storedBlocks;
+  } else {
+    const bottomItems: LayoutTextItem[] = textItems.map((it) =&gt; ({
+      ...it,
+      y: pageHeight - it.y - it.height,
+    }));
+    blocks = itemsToBlocks(bottomItems).map((b) =&gt; ({
+      ...b,
+      y: pageHeight - b.y - b.height, // back to top-origin
+    }));
+  }
+
+  if (blocks.length === 0 || paragraphs.length === 0) {
+    return { ops: [], mode: "blocks", paragraphsMatched: false, minFontSize: 0 };
+  }
+
+  const { text: blockTexts, matched } = mapParagraphsToBlocks(paragraphs, blocks);
+
+  const ops: BlockOp[] = [];
+  let minSize = Infinity;
+  for (let i = 0; i &lt; blocks.length; i++) {
+    const text = blockTexts[i] ?? "";
+    if (!text.trim()) continue;
+    const op = fitBlockText(font, text, blocks[i], isRTL, useBidiShaping);
+    op.eraseYBottomOrigin = pageHeight - op.erase.y - op.erase.height;
+    ops.push(op);
+    minSize = Math.min(minSize, op.fontSize);
+  }
+
+  return {
+    ops,
+    mode: "blocks",
+    paragraphsMatched: matched,
+    minFontSize: Number.isFinite(minSize) ? minSize : 0,
+  };
+}
+
+// ════════════════════════════════════════════════════════════
+// Full-document render (shared by generatePdf action + fidelity tests)
+// ════════════════════════════════════════════════════════════
+
+export interface SourcePageData {
+  num: number;
+  text?: string;
+  textItems?: Array&lt;{ str: string; x: number; y: number; width: number; height: number; fontName?: string }&gt;;
+  blocks?: RenderBlock[];
+  pageWidth?: number;
+  pageHeight?: number;
+}
+
+export interface RenderFontUrls {
+  /** Per-language CDN font URL; absent = Helvetica. */
+  [langCode: string]: string | undefined;
+}
+
+export interface RenderStats {
+  pagesUsingBlocks: number;
+  pagesFallback: number;
+  paragraphsMatchedPages: number;
+  minFontSize: number;
+  wordSpaceCompressions: number;
+}
+
+export const RENDER_FONT_URLS: RenderFontUrls = {
+  // ALL fonts are STATIC instances. The VARIABLE fonts (Noto* [wght].ttf from
+  // google/fonts) crash fontkit's GPOS anchor parser on real shaped text
+  // ("Cannot destructure 'xCoordinate' from null" / "Cannot read properties
+  // of null (reading 'xCoordinate')") — the same crash class already fixed
+  // for ar/ks with static Amiri (verified against full production text).
+  // Statics verified HTTP-200: notofonts.github.io (TTFs) + noto-cjk (OTFs).
+  // ur: Noto NastaliqUrdu (static AND variable) CRASHES fontkit's layout
+  // engine — a single widthOfTextAtSize OOMs the process (reproduced locally
+  // against the real font: embed OK, first measurement OOM). Amiri covers the
+  // Urdu Arabic-block presentation forms and measures cleanly (200 widths in
+  // 524ms, verified) — ur joins ar/ks on Amiri with TRUE bidi shaping.
+  ur: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/amiri/Amiri-Regular.ttf",
+  // C3: ar/ks use Amiri (STATIC classical Naskh with full Unicode
+  // presentation-form coverage). Amiri embeds+draws the identical text
+  // cleanly (verified against the full production translation).
+  ar: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/amiri/Amiri-Regular.ttf",
+  ks: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/amiri/Amiri-Regular.ttf",
+  // hi/ne/bn: the notofonts STATIC Devanagari/Bengali TTFs trigger a
+  // different fontkit bug ("regeneratorRuntime is not defined" inside the
+  // UMD bundle's GSUB code) — fixed by importing regenerator-runtime/runtime
+  // in the action module. The old VARIABLE google/fonts URLs also crashed
+  // fontkit (same class as ar). Statics verified HTTP-200 + measured OK.
+  hi: "https://notofonts.github.io/devanagari/fonts/NotoSansDevanagari/hinted/ttf/NotoSansDevanagari-Regular.ttf",
+  ne: "https://notofonts.github.io/devanagari/fonts/NotoSansDevanagari/hinted/ttf/NotoSansDevanagari-Regular.ttf",
+  bn: "https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io/fonts/NotoSansBengali/hinted/ttf/NotoSansBengali-Regular.ttf",
+  ja: "https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/JP/NotoSansJP-Regular.otf",
+  zh: "https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf",
+  ko: "https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/KR/NotoSansKR-Regular.otf",
+};
+
+const RTL_LANGS = new Set(["ar", "ur", "ks"]);
+
+/**
+ * Render the translated PDF in memory (NO Convex imports — used by the
+ * generatePdf action and by scripts/testPdfFidelity.cjs to assert on the
+ * exact production drawing code).
+ */
+export async function renderTranslatedPdf(opts: {
+  srcBytes: Uint8Array;
+  pageData: SourcePageData[];
+  mergedText: string;
+  langCode: string;
+  getFontBytes: (url: string) =&gt; Promise&lt;ArrayBuffer&gt;;
+}): Promise&lt;{ bytes: Uint8Array; stats: RenderStats; usedFallbackFont: boolean }&gt; {
+  const { srcBytes, pageData, mergedText, langCode, getFontBytes } = opts;
+
+  // Resolve pdf-lib with CJS/ESM interop fallbacks (action bundlers can
+  // expose the CJS build either as named exports or under .default).
+  const pdfLibMod = (await import("pdf-lib")) as unknown as Record&lt;string, unknown&gt;;
+  const pdfLib = (
+    pdfLibMod.PDFDocument ? pdfLibMod : (pdfLibMod.default as Record&lt;string, unknown&gt;)
+  ) as typeof import("pdf-lib");
+  const PDFDocument = pdfLib.PDFDocument;
+  const StandardFontsRef = pdfLib.StandardFonts;
+  const rgbRef = pdfLib.rgb;
+
+  const srcDoc = await PDFDocument.load(srcBytes, { ignoreEncryption: true });
+  const srcPageCount = srcDoc.getPageCount();
+  if (srcPageCount === 0) throw new Error("Source PDF has no pages");
+
+  const outDoc = await PDFDocument.create();
+  try {
+    const fontkitMod = (await import("@pdf-lib/fontkit")) as unknown as Record&lt;string, unknown&gt;;
+    const fontkit = fontkitMod.default ?? fontkitMod;
+    outDoc.registerFontkit(fontkit as never);
+  } catch {
+    // fontkit optional — only needed for custom (Noto) fonts
+  }
+
+  const isRTL = RTL_LANGS.has(langCode);
+  // C3: TRUE bidi+shaping for ALL RTL langs — the fonts in RENDER_FONT_URLS
+  // (Amiri for ar/ur/ks) carry the Unicode presentation forms the reshaper
+  // emits (Amiri verified with real Urdu text: 200 width measurements clean).
+  const useBidiShaping = isRTL;
+  const fontUrl = RENDER_FONT_URLS[langCode];
+  let font: PDFFont;
+  try {
+    if (fontUrl) font = await outDoc.embedFont(await getFontBytes(fontUrl));
+    else font = await outDoc.embedFont(StandardFontsRef.Helvetica);
+  } catch {
+    font = await outDoc.embedFont(StandardFontsRef.Helvetica);
+  }
+  const usedFallbackFont = !fontUrl;
+  const black = rgbRef(0, 0, 0);
+  const white = rgbRef(1, 1, 1);
+
+  // C1: split translated text into paragraphs and distribute across pages by
+  // ORIGINAL word share (identical to the previous inline implementation).
+  const translatedParagraphs = mergedText
+    .split(/\n{2,}/)
+    .map((p) =&gt; p.trim())
+    .filter(Boolean);
+  const totalWords = mergedText.split(/\s+/).filter(Boolean).length;
+  let paraIdx = 0;
+  const srcWordsPerPage = pageData.map((p) =&gt; {
+    const text = p.text ?? (p.textItems || []).map((it) =&gt; it.str).join(" ");
+    return Math.max(text.split(/\s+/).filter(Boolean).length, 1);
+  });
+  const totalSrcWords = Math.max(srcWordsPerPage.reduce((a, b) =&gt; a + b, 0), 1);
+
+  const stats: RenderStats = {
+    pagesUsingBlocks: 0, pagesFallback: 0, paragraphsMatchedPages: 0,
+    minFontSize: 999, wordSpaceCompressions: 0,
+  };
+
+  for (let i = 0; i &lt; srcPageCount; i++) {
+    const [copiedPage] = await outDoc.copyPages(srcDoc, [i]);
+    outDoc.addPage(copiedPage);
+    const pageWidth = copiedPage.getWidth();
+    const pageHeight = copiedPage.getHeight();
+
+    const pageEntry = pageData.find((p) =&gt; p.num === i + 1);
+    const textItems = pageEntry?.textItems || [];
+
+    // White-out with per-item coordinates (preserves images/maps/illustrations)
+    if (textItems.length &gt; 0) {
+      for (const item of textItems) {
+        if (!item.str.trim()) continue;
+        const w = Math.max(item.width + 2, 10);
+        const h = Math.max(item.height + 2, 6);
+        const y = pageHeight - item.y - item.height; // top-origin → bottom-origin
+        copiedPage.drawRectangle({ x: item.x, y, width: w, height: h, color: white, borderWidth: 0 });
+      }
+    } else {
+      const margin = 50;
+      copiedPage.drawRectangle({
+        x: margin - 5,
+        y: margin + 10 - 5,
+        width: pageWidth - 2 * margin + 10,
+        height: pageHeight - 2 * margin - 20 + 10,
+        color: white, borderWidth: 0,
+      });
+    }
+
+    // C1: page paragraphs by original word share
+    const share = (srcWordsPerPage[i] ?? 1) / totalSrcWords;
+    const targetWords = Math.floor(share * totalWords);
+    const pageParas: string[] = [];
+    let pageParaWords = 0;
+    while (
+      paraIdx &lt; translatedParagraphs.length &amp;&amp;
+      (pageParaWords + translatedParagraphs[paraIdx].split(/\s+/).filter(Boolean).length &lt;= targetWords ||
+        i === srcPageCount - 1)
+    ) {
+      pageParas.push(translatedParagraphs[paraIdx]);
+      pageParaWords += translatedParagraphs[paraIdx].split(/\s+/).filter(Boolean).length;
+      paraIdx++;
+      if (i &lt; srcPageCount - 1 &amp;&amp; pageParaWords &gt;= targetWords) break;
+    }
+    const pageText = pageParas.join("\n\n");
+
+    // C1/C2: block-based overlay (erase → auto-fit at block's own font size)
+    const storedBlocks = pageEntry?.blocks;
+    if (storedBlocks &amp;&amp; storedBlocks.length &gt; 0 &amp;&amp; pageText.trim()) {
+      const plan = planPageOverlay({
+        textItems: [],
+        storedBlocks,
+        pageWidth, pageHeight,
+        paragraphs: pageParas,
+        font: font as unknown as { widthOfTextAtSize(t: string, s: number): number; heightAtSize(s: number): number },
+        isRTL,
+        useBidiShaping,
+      });
+      for (const op of plan.ops) {
+        copiedPage.drawRectangle({
+          x: op.erase.x, y: op.eraseYBottomOrigin,
+          width: op.erase.width, height: op.erase.height,
+          color: white, borderWidth: 0,
+        });
+        for (const line of op.lines) {
+          try {
+            copiedPage.drawText(line.text, {
+              x: line.x, y: pageHeight - line.y, // top-origin baseline → bottom-origin
+              size: line.size, font, color: black,
+            });
+          } catch { /* skip unencodable glyph lines */ }
+        }
+      }
+      stats.pagesUsingBlocks++;
+      if (plan.paragraphsMatched) stats.paragraphsMatchedPages++;
+      if (plan.minFontSize &gt; 0) stats.minFontSize = Math.min(stats.minFontSize, plan.minFontSize);
+    } else if (textItems.length &gt; 0 &amp;&amp; pageText.trim()) {
+      stats.pagesFallback++;
+      // Legacy band fill (avg font, band width/height from stored coordinates)
+      const avgFontSize = textItems.reduce((s, it) =&gt; s + (it.height || 10), 0) / textItems.length;
+      const fontSize = Math.min(Math.max(avgFontSize, 7), 14);
+      const lineHeight = fontSize * 1.35;
+      const allYs = textItems.filter((it) =&gt; it.str.trim()).map((it) =&gt; it.y);
+      const storedTopY = allYs.length ? Math.min(...allYs) : 50;
+      const storedBottomY = allYs.length ? Math.max(...allYs) : pageHeight - 50;
+      const topY = pageHeight - storedTopY;
+      const bottomY = pageHeight - storedBottomY;
+      const totalHeight = topY - bottomY;
+      const maxLines = Math.max(1, Math.floor(totalHeight / lineHeight));
+      const allXs = textItems.filter((it) =&gt; it.str.trim()).map((it) =&gt; it.x);
+      const textLeft = allXs.length ? Math.max(0, Math.min(...allXs) - 4) : 40;
+      const textRight = Math.max(...textItems.filter((it) =&gt; it.str.trim()).map((it) =&gt; it.x + it.width), textLeft + 100);
+      const bandWidth = Math.min(pageWidth - 40 - textLeft, Math.max(textRight - textLeft, 200));
+      const wrappedLines = wrapText(font, pageText, bandWidth, fontSize);
+      const toVisualRTL = (l: string) =&gt; l.split(/\s+/).filter(Boolean).reverse().join(" ");
+      for (let ln = 0; ln &lt; Math.min(wrappedLines.length, maxLines); ln++) {
+        const line = wrappedLines[ln];
+        if (!line.trim()) continue;
+        const y = topY - ln * lineHeight;
+        if (y &lt; bottomY) break;
+        try {
+          if (isRTL) {
+            // C3: ar/ks use true bidi+shaped visual order; ur falls back to
+            // word reversal (its Nastaliq font lacks presentation forms).
+            const visual = useBidiShaping ? toVisualBidi(line) : toVisualRTL(line);
+            const lineWidth = font.widthOfTextAtSize(visual, fontSize);
+            copiedPage.drawText(visual, { x: textLeft + bandWidth - lineWidth, y, size: fontSize, font, color: black });
+          } else {
+            copiedPage.drawText(line, { x: textLeft, y, size: fontSize, font, color: black });
+          }
+        } catch { /* skip */ }
+      }
+    } else if (pageText.trim()) {
+      // Fixed-margin fallback (no pageData)
+      const margin = 50;
+      const textLeft = margin;
+      const maxWidth = pageWidth - 2 * margin;
+      const fontSize = 10;
+      const lineHeight = fontSize * 1.4;
+      const textBottom = margin + 10;
+      const wrappedLines = wrapText(font, pageText, maxWidth, fontSize);
+      let baseline = pageHeight - margin - fontSize;
+      for (const line of wrappedLines) {
+        if (baseline - fontSize &lt; textBottom) break;
+        if (line.trim()) {
+          try {
+          if (isRTL) {
+            const visual = useBidiShaping ? toVisualBidi(line) : line.split(/\s+/).filter(Boolean).reverse().join(" ");
+              const lineWidth = font.widthOfTextAtSize(visual, fontSize);
+              copiedPage.drawText(visual, { x: textLeft + maxWidth - lineWidth, y: baseline, size: fontSize, font, color: black });
+            } else {
+              copiedPage.drawText(line, { x: textLeft, y: baseline, size: fontSize, font, color: black });
+            }
+          } catch { /* skip */ }
+        }
+        baseline -= lineHeight;
+      }
+    }
+  }
+
+  const bytes = await outDoc.save();
+  return { bytes, stats, usedFallbackFont };
+}
+</code></pre>
+<hr>
+<p class="meta">OnyxTranslate static documentation mirror — plain HTML, no JavaScript. Interactive version: <a href="/#/overview">/#/overview</a></p>
+</body>
+</html>

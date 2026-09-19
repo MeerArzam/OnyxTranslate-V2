@@ -1,0 +1,51 @@
+{
+  "code": "la",
+  "name": "Latin",
+  "nativeName": "Latina",
+  "script": "Latin",
+  "rtl": false,
+  "dialogue": { "open": "“", "close": "”", "note": "Use “ ” for dialogue; for classical flavor keep dialogus marks minimal." },
+  "formality": {
+    "system": "tu/vos",
+    "informal": "tu",
+    "formal": "vos",
+    "note": "Violet↔Xaden use tu; authorities addressed with vos + titles (domine)."
+  },
+  "profanity": {
+    "fuck": "maledicte",
+    "shit": "stercus",
+    "bastard": "spurius",
+    "damn": "vae",
+    "hell": "infernum"
+  },
+  "ranks": {
+    "Wingleader": "Dux Alarum",
+    "Squad Leader": "Dux Manipuli",
+    "Cadet": "Tiro",
+    "General": "Imperator",
+    "Scribe": "Scriba",
+    "Rider": "Eques"
+  },
+  "magicSystem": "Sigillum (Signet) hierarchy: eques → sigillum → conductus (conduit) → custodes (ward). Runa manet 'runa'; Empyreum pro Empyrean; venenum pro Venin.",
+  "fanNames": {},
+  "blurb": "Violet in Aretia expergiscitur, turbata, anulo et epistula Xaden: «Noli me quaerere.» Intellegit se nuptam esse, sed virum suum in tenebris perisse. Custodibus ruentibus, Violet debet inter fidem imperii et veritatem eligere.",
+  "styleSheet": {
+    "register": "classical-elevated",
+    "sentenceLength": "balanced",
+    "gender": "grammatical gender honored",
+    "archaic": "Renaissance literary Latin, epic vocabulary",
+    "numerals": "Roman numerals in formal contexts, Western Arabic otherwise"
+  },
+  "names": {
+    "Violet": "Violet",
+    "Xaden": "Xaden",
+    "Tairn": "Tairn",
+    "Andarna": "Andarna",
+    "Sgaeyl": "Sgaeyl",
+    "Navarre": "Navarre",
+    "Tyrrendor": "Tyrrendor",
+    "Aretia": "Aretia",
+    "Poromiel": "Poromiel",
+    "Deverelli": "Deverelli"
+  }
+}

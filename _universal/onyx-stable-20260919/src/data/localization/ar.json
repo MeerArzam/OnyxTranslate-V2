@@ -1,0 +1,51 @@
+{
+  "code": "ar",
+  "name": "Arabic",
+  "nativeName": "العربية",
+  "script": "Arabic",
+  "rtl": true,
+  "dialogue": { "open": "«", "close": "»", "note": "Use « » for dialogue; dash — for interruptions." },
+  "formality": {
+    "system": "adab / أنتَ-أنتِ",
+    "informal": "أنتَ / أنتِ",
+    "formal": "حضرة / سيّد",
+    "note": "Violet↔Xaden use intimate أنتِ/أنتَ; military superiors addressed with حضرة + rank."
+  },
+  "profanity": {
+    "fuck": "اللعنة",
+    "shit": "هراء",
+    "bastard": "ابن حرام",
+    "damn": "تبًّا",
+    "hell": "الجحيم"
+  },
+  "ranks": {
+    "Wingleader": "قائد الجناح",
+    "Squad Leader": "قائد السرية",
+    "Cadet": "طالب عسكري",
+    "General": "جنرال",
+    "Scribe": "كاتب",
+    "Rider": "راكب"
+  },
+  "magicSystem": "Signet = ختم؛ Wards = حراسات؛ Conduit = قناة؛ Venin = فينين؛ Empyrean = السماء العلوية. سلسلة القوة: راكب → ختم → قناة → حراسة، حافظ على التسلسل ثابتًا في كل فصل.",
+  "fanNames": {},
+  "blurb": "تستيقظ فايوليت في آريتيا في حالة من الارتباك، مع خاتم وملاحظة من زيدن: «لا تبحثي عني». تدرك أنها متزوجة، لكن زوجها ضاع في الظلام. في عالم تتهالك فيه الحراسات وتحترق السماء، يجب على فايوليت أن تختار بين الولاء للإمبراطورية والحقيقة التي يموت الناس لأجلها.",
+  "styleSheet": {
+    "register": "elevated-classical",
+    "sentenceLength": "long",
+    "gender": "grammatical gender honored in verbs and pronouns",
+    "archaic": "modern standard Arabic with classical flourishes in epic scenes",
+    "numerals": "Western Arabic numerals"
+  },
+  "names": {
+    "Violet": "فايوليت",
+    "Xaden": "زيدن",
+    "Tairn": "تيرن",
+    "Andarna": "أندارنا",
+    "Sgaeyl": "سغييل",
+    "Navarre": "نافار",
+    "Tyrrendor": "تيريندور",
+    "Aretia": "آريتيا",
+    "Poromiel": "بورومييل",
+    "Deverelli": "ديفيريلي"
+  }
+}

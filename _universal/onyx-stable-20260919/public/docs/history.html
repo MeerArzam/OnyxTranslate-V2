@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Change Log — OnyxTranslate Docs</title>
+<style>
+body{background:#0a0a0f;color:#e0e0e0;font-family:Georgia,'Times New Roman',serif;max-width:960px;margin:0 auto;padding:24px;line-height:1.6}
+h1{color:#8B5CF6;border-bottom:2px solid rgba(139,92,246,.3);padding-bottom:8px}
+h2{color:#00e5ff;margin-top:28px}
+h3{color:#fbbf24}
+a{color:#00e5ff}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#F59E0B}
+pre{background:rgba(0,0,0,.45);border:1px solid rgba(139,92,246,.25);border-radius:8px;padding:12px;overflow-x:auto}
+pre code{color:#e0e0e0;font-size:11px;line-height:1.5;white-space:pre}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border:1px solid rgba(139,92,246,.25);padding:6px 10px;text-align:left;vertical-align:top}
+th{color:#8B5CF6;background:rgba(139,92,246,.08)}
+td code{color:#00e5ff}
+.meta{color:#8b8ba0;font-size:12px;font-family:ui-monospace,monospace}
+.note{border-left:3px solid #fbbf24;background:rgba(251,191,36,.06);padding:8px 14px;font-size:13px}
+</style>
+</head>
+<body>
+<p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
+<h1>Change Log</h1>
+<p class="meta">Reconstructed from verifiable code evidence &middot; generated 2026-09-19 15:18 UTC</p>
+
+<p class="note">Provenance: the original audit/report .md files (AUDIT_REPORT,
+EXHAUSTIVE_AUDIT_REPORT, VERIFICATION_REPORT, MIGRATION_REGRESSION_REPORT, …) were removed
+during the dead-code cleanup pass. This change log is reconstructed from code evidence that
+is still verifiable in the repository (legacy modules kept on disk, Convex schema history,
+commit-level architecture changes) and from the development session records.</p>
+
+<h2>Phase 0 — Client-side era (IndexedDB)</h2>
+<ul>
+<li>Original architecture: everything ran in the browser — pdf.js parsing, local "glossary"
+word-swap translation, IndexedDB persistence. Evidence still on disk:
+<code>src/lib/translator/storage.ts</code> (656 lines of IndexedDB code: saveProject,
+saveTranslationChunk, terminology locks, QA-report and PDF blobs), now largely dead after the
+migration.</li>
+<li>Translation quality problem: the "AI" path ran client-side, the gateway token was compiled
+to <code>{}</code> in the browser bundle, requests failed with HTTP 401, and the app silently
+fell back to word-swap — users saw English with a few swapped words instead of real Urdu.</li>
+</ul>
+
+<h2>Phase 1 — Move AI server-side (Convex actions)</h2>
+<ul>
+<li>Created the root <code>convex/</code> deployment: schema, mutations, queries, and a
+server translation action where the integration key exists only in <code>process.env</code>.</li>
+<li>Client wired through <code>useAction</code>; browser SDK imports removed from
+<code>src/</code> entirely.</li>
+</ul>
+
+<h2>Phase 2 — AI transport migrations</h2>
+<ul>
+<li>Legacy VLY gateway retired (permanent HTTP 401 "Invalid token", confirmed after key
+rotation).</li>
+<li>Switched to OpenAI-compatible providers, finally settling on
+<strong>Google Gemini</strong> with a <strong>5-key rotation</strong>
+(<code>Gemini_API_Key_1..5</code>, ~250 req/day each &rarr; ~1,250/day) to stay on the free
+tier. Model moved to <code>gemini-3.6-flash</code> (default via <code>GEMINI_MODEL</code>).</li>
+</ul>
+
+<h2>Phase 3 — Server-side pipeline hardening</h2>
+<ul>
+<li>23-phase literary localization system prompt (P1 glossary fidelity … P23 final QA) with
+per-language config from <code>src/data/localization/*.json</code>.</li>
+<li>Bible Pass placeholder locking, sliding-window context across chunks (P21), cultural
+filters, dragon-telepathy formatting, RTL markers, code-level QA engine
+(<code>src/lib/translator/qa.ts</code>, 710 lines).</li>
+<li>Fixed double-chunking (chunks re-derived from stored <code>chunk.sourceText</code>),
+duplicate-chain guard (<code>project.status === "translating"</code> skip), and the two P0
+missing-mutation bugs found by the migration audit.</li>
+</ul>
+
+<h2>Phase 4 — Autonomous queue + PDF/ZIP on the server</h2>
+<ul>
+<li><code>convex/translateQueue.ts</code>: scheduler-chained <code>processLanguage</code>/
+<code>processChunkInternal</code> — the browser can close; the server continues.</li>
+<li><code>convex/generatePdf.ts</code>: vector PDF generation with pdf-lib (copy pages,
+coordinate-aware whiteout, Noto font embedding for ur/ar/ks/ja/zh/ko/hi/ne/bn, RTL draw),
+chaining into <code>convex/zipAssembly.ts</code> for the batch ZIP + report.</li>
+<li>Pause via <code>cancelTranslation</code>; per-language Retranslate
+(<code>deleteChunksForLang</code> + restart).</li>
+</ul>
+
+<h2>Phase 5 — Unified multi-input experience</h2>
+<ul>
+<li>Image &amp; camera translation via Gemini multimodal OCR
+(<code>convex/translateImage.ts</code>, downsampling to ≤1024 px for low-RAM devices).</li>
+<li>One unified flow for PDF / pasted text / images: shared language picker
+(multi-select, select-all), one Begin button, one progress section
+(<code>RoyalProgressPanel</code>: which language N/20, which chunk X/Y).</li>
+<li>Live preview while PDF generates in the background; copy first 10,000 words button.</li>
+<li>Session isolation per browser tab (sessionId), history panel, JSON export/import fixed
+(returning <code>projectId</code>/<code>importedLangCodes</code>, auto-selecting languages,
+preview visible when translations exist).</li>
+</ul>
+
+<h2>Phase 6 — UI</h2>
+<ul>
+<li>Dark neon royal theme (cyan <code>#00e5ff</code> / purple <code>#a78bfa</code> / gold
+<code>#fbbf24</code> on <code>#06060e</code>); Android 5.1-safe (no backdrop-filter, CSS-only
+animations).</li>
+<li>Kali-dragon intro overlay using the real <code>logo.svg</code> asset with neon glow;
+plays every refresh, <code>?debug=1</code> replay button, reduced-motion respected.</li>
+</ul>
+
+<h2>Phase 7 — Documentation</h2>
+<ul>
+<li><code>/#/overview</code> lazy-loaded React dashboard backed by
+<code>src/docs/PROJECT_DOCUMENTATION.json</code> (124 files / 20k+ lines documented).</li>
+<li>This static JS-free mirror under <code>public/docs/</code> for raw HTTP fetchers / AI
+agents, regenerated by <code>scripts/generate-docs.py</code>.</li>
+</ul>
+
+<h2>Phase 9 — Comprehensive fix pass (viewport, extraction fidelity, PDF overlay, UX)</h2>
+<ul>
+<li><strong>Mobile viewport root cause fixed</strong>: <code>index.html</code> now ships
+<code>&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1, viewport-fit=cover&quot;&gt;</code>,
+theme-color, description, and manifest link — phones render at device width instead of a
+~980 px desktop layout.</li>
+<li><strong>Global CSS hardening</strong> (<code>src/index.css</code>): full-height
+<code>html/body/#root</code>, text-size-adjust, 16 px form controls (no focus auto-zoom),
+tap-highlight reset, <code>.safe-pad</code> safe-area helper applied to the app shell;
+flex-first layout, single column below 768 px.</li>
+<li><strong>PDF word-extraction fixed</strong> (<code>convex/pdfLayout.ts</code>, wired into
+<code>convex/parsePdf.ts</code>): geometry-aware x-gap word merging replaces blind
+<code>.join(&quot; &quot;)</code> — gap &lt; 0.3 × fontSize joins with no space (kills
+&quot;Ony xStor m&quot;), explicit spaces deduped, line-end hyphenation rejoined.</li>
+<li><strong>Paragraph block clustering</strong> (<code>clusterIntoBlocks</code>): modal-bucketed
+line-gap detection, ±2 px left-x tolerance, 1.5× gap paragraph breaks, centered-heading
+detection; blocks <code>{text, x, y, width, height, fontSize, lineCount, align}</code> stored
+in <code>pageData</code> for the renderer.</li>
+<li><strong>Coordinate-aware PDF overlay</strong> (<code>convex/renderPdfCore.ts</code>, used by
+<code>convex/generatePdf.ts</code>): per-block erase + auto-fit font sizing replaces the global
+average-font proportional fill; per-paragraph mapping with RTL word-order handling; per-page
+fit stats logged (blocks / fallback / paraMatched / minFont).</li>
+<li><strong>Chunking</strong>: paragraph-aware accumulation (~2,500-word cap) that never splits a
+paragraph mid-sentence; single-source chunk records (<code>chunks.sourceText</code>) with no
+re-chunking from <code>fullText</code> during processing.</li>
+<li><strong>Resilience</strong>: action-timeout continuation after MAX_CHUNKS_PER_RUN,
+chunk-level try/catch with a single 60 s retry (watchdog pickup), hardened placeholder
+restore (mangled <code>__PHn__</code> tokens repaired by index), dictionary-format and
+meta-commentary stripping.</li>
+<li><strong>Docs</strong>: generator extended with <code>convex-functions-5.html</code>
+(pdfLayout + renderPdfCore full source); all source-derived pages regenerated from current
+code.</li>
+</ul>
+<h2>Phase 10 — Phase E/F/G completion (job-centric UX, unified input tabs, crash recovery)</h2>
+<ul>
+<li><strong>Interrupted-session repair</strong>: the previous session died mid-edit leaving
+<code>Translator.tsx</code> with an unclosed JSX ternary (uncompilable). Repaired and completed:</li>
+<li><strong>Phase E1 — Documents auto-start</strong>: <code>handleDocumentSelect</code> guardrails
+(&lt;10 MB, &lt;300 pages, pre-parse rejection with toasts) plus auto-start of the full 20-language
+chain after upload via ref handoff (<code>newProjectIdRef</code>,
+<code>serverFullTextRef</code>).</li>
+<li><strong>Phase E2 — State-driven job view</strong>: <code>isJobView</code> gates on Convex
+project/translation state, never on local <code>flowPhase</code>; job header card, overall
+progress, per-language rows, server-driven ZIP card, session-scoped recent-jobs list;
+<code>Toaster</code> viewport mounted so toasts render.</li>
+<li><strong>Phase E3 — Recent jobs</strong>: <code>queries.getSessionProjects</code> (last 10,
+session-indexed) feeds compact resume cards.</li>
+<li><strong>Google-style segmented input tabs</strong>: Documents | Paste Text | Image/Camera
+tab bar in the upload card; dropzone gated to Documents, paste block to Text, image/camera
+controls to Images.</li>
+<li><strong>TDZ fix</strong>: <code>handleDrop</code> moved below <code>handleDocumentSelect</code>
+(it appeared in the dependency array before declaration).</li>
+</ul>
+
+<h2>Phase 11 — C3 true bidi/shaping, fidelity suite green, D3 re-test (2026-09-13)</h2>
+<ul>
+<li><strong>C3 verified on Convex</strong>: added <code>bidi-js</code> (UAX #9) and
+<code>arabic-reshaper</code> (presentation forms) — pure JS, both run inside node actions.
+<code>renderPdfCore.toVisualBidi()</code> reshapes + reorders Arabic to visual order;
+<code>useBidiShaping</code> is enabled only where the embedded font carries the glyphs.</li>
+<li><strong>Font swap ar/ks → Amiri</strong>: the variable Noto Sans Arabic crashed fontkit’s GPOS
+anchor parser on real shaped text (<code>Cannot destructure 'xCoordinate' from null</code>). Static
+Amiri-Regular embeds and draws the full production translation cleanly and has complete
+presentation-form coverage.</li>
+<li><strong>Evidence</strong>: regenerated ar PDF contains 373 Unicode presentation-form glyphs of
+469 Arabic codepoints; the 15-assertion fidelity suite passes for ar/ja/de (page count, image/vector
+preservation, whiteout coverage, script presence, ≤2px overflow) with ZIPs assembled; extraction
+self-test passes (OnyxStorm/fluxcapacitor/hyperdrive merged, hyphen rejoin, 5 paragraph blocks).</li>
+<li><strong>D3 re-test</strong>: tr 91→99, ks 91→99, bn 91→99 after the placename lock — zero missing
+names. Suite aggregate 99.3/100, 0 failures.</li>
+<li><strong>Documented limitation (ur)</strong>: Noto Nastaliq Urdu has no presentation-form glyphs;
+Urdu keeps word-reversal rendering (right-aligned, correct word order) instead of glyph shaping.</li>
+</ul>
+
+<h2>Phase 12 — UNDO regression pass: upload / import / export / limits (2026-09-14)</h2>
+<ul>
+<li><strong>Why</strong>: the mega pass rebuilt the client handlers and broke what already worked in the real
+browser (upload did nothing, import/export unresponsive) while all server-side tests kept passing because they
+call the pipeline directly (<code>api.liveTest</code>) and never exercise the UI.</li>
+<li><strong>FIX 1 — upload restored</strong>: <code>handleDocumentSelect</code> (guardrail wrapper with
+ref-handoff auto-start) removed; <code>handleFileSelect</code> is again the single entry point for file input,
+drop and <code>handleDocumentSelect</code>'s old slot, running the pre-mega sequence: parsePDFHeader →
+parsePDFBatch → direct upload → <code>parseUploadedPdf</code> → <code>createProject</code> →
+<code>setProjectId</code>; translation starts on the <em>Begin Translation</em> click (server-side chain
+unchanged). Early-exit paths now log to console for diagnosability.</li>
+<li><strong>FIX 2 — limits removed</strong>: the 10MB and 300-page rejection branches and toasts are deleted.
+A non-blocking info toast ("Large file — translation will take longer") is shown for >10MB but processing
+always continues. Hidden platform cap found and fixed: Convex actions reject arguments over 5MiB, so
+<code>storePdf(pdfBase64)</code> could never carry a PDF larger than ~3.7MB — replaced by Convex direct upload
+(<code>upload.generatePdfUploadUrl</code> → browser POST → <code>upload.finalizePdfUpload</code>), which has
+no argument cap. <code>storePdf</code> kept for compatibility (now V8-runtime via atob).</li>
+<li><strong>FIX 3 — import restored</strong>: on success the client sets projectId, selectedLangCodes,
+first-language preview, resets error state, and toasts — no <code>isJobView</code> gating; visibility returns
+to the pre-mega rule (<code>convexTranslations.length &gt; 0</code>).</li>
+<li><strong>FIX 4 — export restored</strong>: unconditional with a project (idle, mid-translation, complete);
+Blob → URL.createObjectURL → anchor click → revoke; JSON now includes project metadata, fullText, pageData,
+parsedPages, per-language chunks (sourceText/translatedText), translations and langCodes. ZIP download stays
+separate.</li>
+<li><strong>FIX 5 — TDZ audit</strong>: <code>handleDrop</code> now references <code>handleFileSelect</code>
+directly (declared above it), eliminating the use-before-declaration hazard entirely.</li>
+<li><strong>Client-path verification (real browser)</strong>: headless Chromium (Playwright,
+<code>scripts/clientPathTest.mjs</code>) against the dev app — 17/17 assertions pass across 5 stages:
+upload (project row created, no auto-start, chip, Begin gating, Gemini round-trip for la), drag-and-drop,
+large file (10.6MB/310p processed with info toast, no rejection), export (downloaded JSON keys:
+type/version/exportedAt/langCodes/project/chunks/translations), import (fresh session: success toast,
+la:complete restored, Begin visible). Zero uncaught page errors in every stage.</li>
+</ul>
+
+<h2>Phase 13 — Server-first Phase 2: identity, hybrid upload, server import/export (2026-09-14)</h2>
+<ul>
+<li><strong>Identity scheme</strong>: durable per-device <code>onyx-client-id</code> (localStorage) + per-tab
+<code>onyx-tab-session-id</code> (sessionStorage); every project/job row stores BOTH. Live queries filter by
+clientId+tabSessionId (two tabs stay isolated — C1 preserved); <code>getResumableJobs({clientId})</code> powers the
+"Your jobs" list on reopen, and opening one ADOPTS it (<code>adoptJob</code> rebinds tabSessionId). Never shows
+another device's jobs.</li>
+<li><strong>Hybrid PDF upload (no artificial limits)</strong>: Path 1 (≤19MB) = ONE request to the new HTTP action
+<code>uploadAndCreateJob</code> (convex/http.ts) — raw multipart POST → ctx.storage.store → uploadJob →
+scheduled processing. Path 2 (&gt;19MB) = <code>createPendingUploadWithPath</code> → raw XHR POST to Storage
+(progress %, cancel) → <code>finalizeUploadedPdf</code> → <code>beginProcessing</code>. Staging records
+(IndexedDB) persisted BEFORE any network work → "Resume upload / Discard" on reopen; hourly cron sweeps orphans
+(&gt;24h). Banned and absent: base64 file args, sendBeacon/keepalive for large files.</li>
+<li><strong>Idempotent processing</strong>: <code>jobProcessing.processUploadedPdf</code> walks
+uploaded → processing → parsed → ready → translating with a monotonic stageSeq gate (superseded retries no-op)
+and heartbeats; reuses the production parser (x-gap merge + paragraph clustering) and the UNCHANGED translation
+chain (translateContent → generatePdf → zipAssembly). Client-only work: file pick → raw POST → finalize
+handshake. UploadJobCard shows % progress, per-stage chips, honest physics ("Safe to close" ONLY after the
+server ACK; ~2-min POST timeout stated), and real errors verbatim with the job ID.</li>
+<li><strong>Import</strong>: ONE POST to <code>uploadAndImport</code>; server validates
+{type:"onyx-translate-project"} BEFORE any write (malformed/corrupt/incompatible → visible 400, zero partial
+writes), restores project+fullText+pageData+chunks+translations, assigns current clientId with a NEW session,
+returns jobId. Browser may close; the job appears in getResumableJobs.</li>
+<li><strong>Export</strong>: <code>exportProject.buildExportArtifact</code> assembles the FULL JSON backup
+server-side (metadata, fullText, pageData coordinates, parsedPages, chunks, translations incl. mergedText +
+statuses, langCodes) → Convex Storage → URL; browser only anchor-clicks the download. Unconditional — works
+idle, paused, mid-translation, complete. ZIP stays a separate flow, plus a new on-demand
+<code>buildZipNow</code> for mid-flight ZIP assembly.</li>
+<li><strong>Verification (deployed Convex, no mocks)</strong>: <code>scripts/phase2ServerTest.mjs</code> —
+17/17 PASS: Path-1 upload of a real 5-page PDF → uploadJob → auto-parse → project row (711 words, 5 pageData
+blocks, clientId+tabSessionId bound, chain auto-started server-side); duplicate submit with the same
+idempotency key returns the SAME job; malformed import → 400 with zero partial writes; wrong-type import →
+400; valid import → full restoration (fullText/chunks/translations/identity).</li>
+</ul>
+
+<h2>Phase 14 — Phase 3 client-path verification gate + ur/hi/ne/bn PDF font fixes (2026-09-15)</h2>
+<ul>
+<li><strong>Method</strong>: Playwright/headless-Chromium drove the REAL built app (vite preview of dist/,
+staged harness <code>scripts/phase3ClientTest.mjs</code> with OS-supervised launcher
+<code>scripts/phase3run.sh</code>). Server-only tests do not count; every assertion below came from the
+browser path with screenshots in /tmp/onyx/shots/. Archive untouched: verify script 175/175 before and after.</li>
+<li><strong>REAL client-path bugs found &amp; fixed</strong>: ① httpActions had NO CORS headers → every browser
+XHR to /uploadAndCreateJob etc. was blocked (Node tests never saw it) — added ACAO + OPTIONS preflight.
+② Export button silently did nothing: client called <code>issueExportToken</code> (a mutation) via
+<code>useAction</code>, and <code>artifactMutations</code> looked up kind "onyx-translate-project-backup" while
+artifacts are stored as "onyx-translate-project" — fixed hook + kind. Downloads now fetch the artifact as a
+blob → same-origin object URL (cross-origin storage URLs ignore the download attribute).</li>
+<li><strong>PDF font fixes (root-caused by local bisection, verified live)</strong>: the ur chain leg hung 20+ min
+in generating_pdf. Root cause: fontkit's layout engine OOMs on Noto Nastaliq Urdu (static AND variable) on the
+FIRST widthOfTextAtSize; the Devanagari/Bengali statics instead throw "regeneratorRuntime is not defined" from
+fontkit's UMD GSUB code; the old variable google/fonts fonts crash with the known GPOS anchor error. Fixes:
+ur → Amiri (proven shaped-Arabic font, covers Urdu presentation forms; true bidi shaping now enabled for ALL
+RTL langs), hi/ne/bn → notofonts static TTFs + <code>import "regenerator-runtime/runtime"</code> in
+generatePdf.ts, ja/zh/ko → noto-cjk static subset OTFs, and generateTranslatedPdf now CATCHES render errors,
+marks the row error + message (no more silent infinite generating_pdf) and CONTINUES the language chain.</li>
+<li><strong>Client-path results (all PASS)</strong>: T2 upload ≤19MB via file input — Path-1 POST fired once,
+jobId shown, project row created, adopt+reopen via "Your jobs", export mid-translation + idle downloads valid
+JSON (16/16). T3 &gt;20MB — createPendingUpload → XHR POST → finalize → same chain, honest "direct upload
+(large file)" badge, no rejection (12/12 incl. T4 drag-drop + T8 two-tab isolation). T5 close-during-upload →
+pending recovery Resume/Discard, retry without duplicates (3/3). T6 import valid + malformed → full restore /
+visible 400 with zero partial records (6/6). T9 image/camera regression intact. T10 preservation — translated
+PDF keeps the embedded image (image-ops=1), QA ran during chunk translation, ZIP assembled server-side and
+downloads with PK magic (7/7). T11 static gates green: convex dev --once, tsc -b --noEmit, vite build;
+forbidden-pattern greps clean (no base64 file args, no sendBeacon/keepalive, no 10MB/300-page limits, no
+runtime _universal imports).</li>
+</ul>
+
+<h2>Phase 15 — Adaptive Parallel Translation Pipeline (quota-aware dispatcher, 2026-09-17)</h2>
+<ul>
+<li><strong>Why</strong>: the legacy chain was strictly sequential (1 chunk in flight) with fixed 10s sleeps per
+429 attempt across 5 keys (up to ~150s dead sleep per chunk) and any thrown error silently killed the language
+chain — hence ~40 min per chunk. All five Gemini keys share ONE Google project, so throughput cannot be
+multiplied by keys; the pipeline now adapts to measured quota instead of assuming it.</li>
+<li><strong>Central config</strong> (<code>convex/translationConfig.ts</code>): targetRpm 10 (ceiling 12),
+dailyRequestBudget 1200 (Pacific-date keyed), workers 2, heartbeatTtl 3m, action safety deadline 20s, watchdog
+every 3m, dispatcher tick 15s, maxAttempts 6, backoff 2s→120s with 25% jitter + Retry-After floor, pair merge
+cap 6000 estimated tokens (+20% headroom, 4 chars/token), PDF batches 50→25→10 pages, claim budget 2/tick,
+50 DB writes/action cap. These are OnyxTranslate's SAFE OPERATING TARGETS — not Google-official limits.</li>
+<li><strong>Job model</strong>: <code>translationJobs</code> rows keyed <code>projectId:langCode:chunkIndex</code>
+(idempotent — duplicate starts create zero new jobs), statuses pending→claimed→done/retry_wait/failed,
+transactional claimToken claims (late workers with stale tokens lose), stale claims reclaimed after heartbeat
+TTL, results written back into the EXISTING chunks/translations tables so merge → PDF → ZIP → export → preview
+all keep working unchanged. <code>rateLimits</code> holds ONE rolling-60s window per project (all five keys = one
+quota pool), slots counted ONLY when a request is actually sent. <code>pdfBatches</code> makes PDF generation
+idempotent per page range.</li>
+<li><strong>Dispatcher</strong> (<code>adaptiveJobs.ts</code> + <code>adaptiveDispatcher.ts</code>): bounded
+self-rescheduling ticks (exit before the 20s action deadline), one Gemini request per claim, adjacent chunks
+pair-merged when the safe token estimate fits (never truncated; oversized → single). 429 ladder: backoff with
+jitter → worker reduction (3×429 → −1 worker, floor 1) → waiting_retry. 5xx/timeout retry with backoff;
+401/403 rotate keys; malformed pairs save raw output, requeue both chunks as singles, circuit-break pairing per
+language after 2 failures. Bible Pass (glossary lock) runs BEFORE the request — placeholders restored after,
+identical to legacy. runQA + English-echo gate rejects wrong-language/garbage output (retry, never silently
+done).</li>
+<li><strong>Daily governor</strong>: at 1200 requests → governorState=daily_paused, all jobs preserved, auto-resume
+after midnight Pacific (nominal gap computed server-side, counter resets on the Pacific date change). The UI
+shows the honest state: "quota reached — auto-resumes HH:MM · progress saved, safe to close". Never reported as
+a failure.</li>
+<li><strong>PDF batching + watchdog</strong>: whole-book render stays default (proven fidelity); oversized books
+that fail get idempotent 50→25→10-page batches (retry-then-shrink; a failed 10-page batch fails ONLY that batch
+with its exact page range; restarts skip completed batches; stuck batches recovered by watchdog). A 3-min cron
+watchdog promotes retryable jobs, reclaims expired claims, recovers stuck batches, and re-kicks a missing
+dispatcher lease — the chain never dies silently. Stage progression stays monotonic (never backward).</li>
+<li><strong>Feature flag + UI</strong>: <code>translationMode</code> legacy|adaptive_parallel on every project;
+Begin runs adaptive first with a VISIBLE legacy fallback (console + toast); Resume is adaptive-aware; completed
+chunks are never re-translated. Honest status strip: jobs done/total, waiting/failed counts, workers, RPM
+target, requests today vs budget, quota-paused + auto-resume time, safe-to-close after server ACK — no fake
+progress anywhere.</li>
+<li><strong>Gates + honest limits</strong>: convex dev --once ✓ every phase, tsc -b --noEmit ✓, vite build ✓;
+archive 175/175 SHA-256 verified before AND after; zero runtime _universal imports; no secrets in logs or
+reports. Quota-free probes (estimator, pair parser, backoff, limiter refusal at target, governor stop/reset,
+idempotent enqueue) ship in <code>adaptiveTestProbes.ts</code> + <code>scripts/verifyAdaptivePipeline.mjs</code>.
+Measured RPM/429/retry counts and the honest 92×20 projection (1,840 calls ≈ 184 min floor at 10 rpm; pair
+merge can roughly halve it; 2–4h plausible, NOT guaranteed) require a real run — pending deployment resume.</li>
+<li><strong>Deployment migration (2026-09-18)</strong>: the platform deployment (<code>successful-iguana-419</code>) auto-paused with no user-side resume path — Convex pause skips crons and rejects every function call, the direct mechanism behind the 2026-09-16 freeze. The project was migrated to the owner-controlled deployment <code>trustworthy-clownfish-652</code> in the user's own Convex account: all functions pushed, all 5 Gemini keys migrated, frontend switched via the <code>src/lib/convexUrl.ts</code> runtime shim (stale baked env overridden). Proof gates then ran LIVE on the new deployment: T2/T3/T4/T5/T6 PASS, T1 mechanism PASS; T1 completion + T8 remain blocked ONLY by the Google free-tier quota pool (429 "exceeded your current quota" — valid auth proven by the 400-bad-key vs 429-deployment-key control probe). Forensic probe <code>convex/forensicProbe.ts</code> + <code>scripts/p0Forensic.mjs</code> deployed to capture the frozen 14/92 project's per-job state the moment functions run. Harness wait-scale (WSCALE) added to <code>scripts/proofGate.mjs</code> — client sleeps compressed, server work real. Gemini model default fixed to <code>gemini-3.6-flash</code> via <code>GEMINI_MODEL</code> — the retired model name probed earlier had produced a misleading 404 on top of the quota 429s.</li>
+</ul>
+
+<hr>
+<p class="meta">OnyxTranslate static documentation mirror — plain HTML, no JavaScript. Interactive version: <a href="/#/overview">/#/overview</a></p>
+</body>
+</html>

@@ -1,0 +1,1157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Convex Functions — translateContent.ts (Unified Translation Action) — OnyxTranslate Docs</title>
+<style>
+body{background:#0a0a0f;color:#e0e0e0;font-family:Georgia,'Times New Roman',serif;max-width:960px;margin:0 auto;padding:24px;line-height:1.6}
+h1{color:#8B5CF6;border-bottom:2px solid rgba(139,92,246,.3);padding-bottom:8px}
+h2{color:#00e5ff;margin-top:28px}
+h3{color:#fbbf24}
+a{color:#00e5ff}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#F59E0B}
+pre{background:rgba(0,0,0,.45);border:1px solid rgba(139,92,246,.25);border-radius:8px;padding:12px;overflow-x:auto}
+pre code{color:#e0e0e0;font-size:11px;line-height:1.5;white-space:pre}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border:1px solid rgba(139,92,246,.25);padding:6px 10px;text-align:left;vertical-align:top}
+th{color:#8B5CF6;background:rgba(139,92,246,.08)}
+td code{color:#00e5ff}
+.meta{color:#8b8ba0;font-size:12px;font-family:ui-monospace,monospace}
+.note{border-left:3px solid #fbbf24;background:rgba(251,191,36,.06);padding:8px 14px;font-size:13px}
+</style>
+</head>
+<body>
+<p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
+<h1>Convex Functions — translateContent.ts (Unified Translation Action)</h1>
+<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-19 15:18 UTC</p>
+<p>Files on this page: <code>convex/translateContent.ts</code></p><h2>convex/translateContent.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>translateLanguage</code> — action</li></ul></p><pre><code>"use node";
+/**
+ * convex/translateContent.ts — Unified translation action.
+ *
+ * ONE action per language. Processes ALL chunks in a single loop.
+ * Client calls this for each language — same pattern as image translation.
+ * No scheduler chain between chunks. No fragile multi-action pipeline.
+ */
+import { action } from "./_generated/server";
+import { v } from "convex/values";
+import { filterGeneratedArtifacts, normalizePunctuationForLanguage } from "./languageRules";
+import { api } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
+
+// Re-use helpers from translateQueue (they're defined there, we replicate the essentials)
+import glossaryData from "../src/data/glossary.json";
+import { getLocalizationConfig } from "../src/data/localization";
+import { characterVoices } from "../src/lib/translator/voices";
+import { applyCulturalFilters } from "../src/lib/translator/cultural";
+import { formatDragonTelepathy, isRTL as isRTLLang } from "../src/lib/translator/formatters";
+import { runQA } from "../src/lib/translator/qa";
+
+// ════════════════════════════════════════════════════════════
+// Constants (same as translateQueue.ts)
+// ════════════════════════════════════════════════════════════
+
+const GEMINI_ENDPOINT =
+  "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+const CHUNK_SIZE = 2500;
+// FIX 5: Convex actions time out; cap fresh Gemini translations per run and
+// continue in a fresh scheduled run (completed chunks are always skipped).
+const MAX_CHUNKS_PER_RUN = 6;
+
+const LOCKED_TERM_LIST = [
+  "Signet", "Venin", "Sages", "Mavens", "Wards", "Empyrean", "Conduits",
+  "Alloy", "Irid", "Dragon Rider", "Battle Wards", "Mending", "Squadron",
+  "Basgiath", "Rune", "Scribe", "Rider",
+];
+
+const PHASE_RULES: [string, string, string][] = [
+  ["P1", "GLOSSARY &amp; TERM FIDELITY", "Use EXACTLY the per-language terms from the locked glossary below (magic/military terms + proper nouns). Never invent synonyms."],
+  ["P2", "PROPER NOUN &amp; NAME CONSISTENCY", "Use the language's locked name spellings from the Name Map. Same name = same spelling every time, book-wide."],
+  ["P3", "LITERAL-TO-NATURAL BRIDGE", "Translate the meaning, not word-for-word. If a literal rendering sounds unnatural, rephrase naturally while preserving meaning, imagery, and the book's voice."],
+  ["P4", "CHARACTER VOICE &amp; DIALOGUE", "Apply the Voice Matrix. Keep speaker attributions and line breaks intact; preserve dialogue turns 1:1."],
+  ["P5", "TONE &amp; REGISTER", "Match the register of this language's literary fantasy (poetic where the culture expects it, grounded where it doesn't). First-person internal monologue stays intimate; narration stays immersive."],
+  ["P6", "CULTURAL CONTEXTUALIZATION &amp; CENSORSHIP", "Apply market rules from the Market Context and the Profanity/Cultural map: euphemize profanity per market, handle intimacy per cultural norms, adapt political/religious content."],
+  ["P7", "HONORIFICS &amp; FORMALITY", "Apply the language's formality system (Japanese keigo, Korean jondaetmal, Urdu adab, French vous/tu, German Sie/du\u2026). Drop formality in emotional-breaking scenes; escalate in formal/military scenes."],
+  ["P8", "MULTI-SCRIPT &amp; RTL FORMATTING", "Use the correct script. For RTL languages (ur/ar/ks) render naturally with ZERO English-order artifacts; use the language's native punctuation. For script languages, ZERO Latin-script words outside the allowed names."],
+  ["P9", "MAGIC SYSTEM &amp; FANTASY TERMINOLOGY", "Translate the magic system as a coherent hierarchy per the Magic System note (French: sceau/\u00e9tatiser/puiser; German: Wappen|Siegel/handhaben/sch\u00f6pfen; Korean: \uc778\uc7a5/\uad6c\uc0ac\ud558\ub2e4\u2026). 'Rune' must never become a generic spell; keep ward/conduit/signet consistent."],
+  ["P10", "DIALOGUE FLOW &amp; PUNCTUATION", "Use this language's dialogue punctuation from the Dialogue Marks (French \u00ab \u00bb, German \u201e\u2026, Japanese \u300c\u300d, Spanish \u2014, etc.). Keep interruptions, mid-sentence cuts (em-dashes) and beat breaks natural."],
+  ["P11", "INTERNAL MONOLOGUE", "Keep Violet's first-person inner voice intimate, urgent, and emphasis-aware (reproduce italics/emphasis naturally in the target language); keep self-interruption and the 'I won't. I refuse.' rhythm."],
+  ["P12", "ACTION PACING", "Keep fight scenes short, punchy, and immediate; preserve the sentence rhythm of action and chapter momentum."],
+  ["P13", "ROMANCE &amp; INTIMACY FILTERS", "Apply the language's market norms for romantic/intimate content \u2014 tasteful, natural, never clinical, never overly sanitized unless the market requires it."],
+  ["P14", "PROFANITY &amp; SLANG LOCALIZATION", "Replace English profanity with culturally equivalent (not literal) expressions; keep intensity levels matching the scene (mild vs. strong)."],
+  ["P15", "POLITICAL &amp; MILITARY SENSITIVITY", "Adapt war and political content per market rules; keep the story's meaning, don't editorialize. Use the Rank Map for military hierarchy."],
+  ["P16", "DRAGON TELEPATHY FORMATTING", "Format dragon mental speech per language convention (\u300c\u300d/\u3010\u3011 for ja/ko/zh, italics or guillemets elsewhere); keep it distinct from spoken dialogue and keep the bond's intimacy."],
+  ["P17", "VISUAL-ELEMENT EXTRACTION (PDF-AWARE)", "When translating text near images, maps or illustrations, keep captions and map labels translated and short enough to fit their text boxes."],
+  ["P18", "SELF-VERIFICATION PASS", "Before replying, self-check this chunk against P1-P17 and fix violations silently."],
+  ["P19", "CHAPTER HEADINGS, TOC &amp; FRONT/BACK MATTER", "Translate chapter titles, the Contents list, the copyright page and acknowledgments in the same style as the body; keep chapter numbering consistent."],
+  ["P20", "POETRY, SONGS, RITUALS &amp; PROVERBS", "For verse, songs and ritual chants, prioritize naturalness and rhythm over literalness; keep line structure where possible; adapt proverbs idiomatically."],
+  ["P21", "BOOK-WIDE CONSISTENCY &amp; MEMORY LOCK", "The glossary, names, terms and style are locked: the same term must translate identically in every chapter, forever."],
+  ["P22", "LAYOUT &amp; TEXT-FIT", "Keep translated lines reasonably short so they fit the PDF text boxes; prefer concise phrasings; for RTL, expect right-aligned flow."],
+  ["P23", "FINAL QA &amp; PROOFREAD (deep reasoning)", "Do a final read-through as a native editor: fix grammar, unnatural phrasing, typos and any phase violations; the chunk must read like published fiction."],
+];
+
+const REASONING_PROTOCOL = [
+  "1. PLAN \u2014 identify dialogue vs. narration vs. telepathy; spot glossary and name hits; flag culturally sensitive lines.",
+  "2. DRAFT \u2014 translate with the language's natural grammar and register.",
+  "3. SELF-CRITIQUE \u2014 check P1-P23 violations, unnatural phrasing, Latin leftovers.",
+  "4. REFINE \u2014 rewrite once, silently fixing everything found.",
+  "The user only ever sees the final refined text \u2014 never show the reasoning.",
+];
+
+const VOICE_MATRIX: [string, string, string][] = [
+  ["Violet Sorrengail", characterVoices.violet.internalThought, characterVoices.violet.dialogueStyle],
+  ["Xaden Riorson", "Clipped, arrogant, icily possessive. Short declarative sentences. No polite/formal honorifics with Violet. Deep possessive pronouns.", ""],
+  ["Ridoc Gamlyn", "Modern, sarcastic, comedic relief. Sacrifice literal English jokes for culturally equivalent humor.", ""],
+  ["Dain Aetos", "Controlled, political, strategic. Formal and precise, uses titles and protocol.", ""],
+  ["Tairn", "Gruff, formal, ancient. Speaks through the bond in short commands.", ""],
+  ["Andarna", "Young, teasing, affectionate. Lighter register than Tairn.", ""],
+];
+
+// ════════════════════════════════════════════════════════════
+// Helper functions (same as translateQueue.ts)
+// ════════════════════════════════════════════════════════════
+
+function buildGlossaryColumn(langCode: string): string {
+  const glossary = glossaryData.magicMilitary as Record&lt;string, Record&lt;string, string&gt;&gt;;
+  const lines: string[] = [];
+  for (const term of LOCKED_TERM_LIST) {
+    const entry = glossary[term];
+    if (!entry) continue;
+    const target = entry[langCode] || entry.en;
+    lines.push(`  - ${term} \u2192 ${target}`);
+  }
+  return lines.join("\n");
+}
+
+function buildNameMap(langCode: string): string {
+  const cfg = getLocalizationConfig(langCode);
+  if (!cfg) return "(no name map)";
+  return Object.entries(cfg.names)
+    .map(([en, localized]) =&gt; `  - ${en} \u2192 ${localized}`)
+    .join("\n");
+}
+
+function buildMarketContext(marketContext: string): string {
+  switch (marketContext) {
+    case "high-censorship":
+      return "HIGH-CENSORSHIP market: keep all intimacy strictly implied, euphemize profanity heavily, and adapt any political/religious content to local norms.";
+    case "romance-focused":
+      return "ROMANCE-FOCUSED market: lean into fated-pair emotion and chemistry with cultural subtlety; keep intimacy tasteful per local norms.";
+    default:
+      return "STANDARD market: publish-grade literary fantasy localization with age-appropriate content handling.";
+  }
+}
+
+// Thin Motherboard Phase 1: single canonical prompt source (code asks, Gemini thinks).
+import { buildTranslationPrompt } from "./buildTranslationPrompt";
+
+function buildSystemPrompt(langCode: string, marketContext = "standard"): string {
+  // Delegates to THE canonical builder — legacy prose contract until Phase 3 flips the flag.
+  return buildTranslationPrompt({
+    sourceLanguage: "en",
+    targetLanguage: langCode,
+    langCode,
+    marketContext: (marketContext as "standard" | "high-censorship" | "romance-focused") || "standard",
+    contract: "plain",
+    sourceText: "",
+  }).system;
+}
+
+// Phase 4 will delete this retired duplicate body (kept until new-mode gates pass).
+function buildSystemPromptLegacyRetired(langCode: string, marketContext = "standard"): string {
+  const cfg = getLocalizationConfig(langCode);
+  const langLine = cfg
+    ? `${cfg.name} (${cfg.nativeName}) \u2014 ${cfg.script} script${cfg.rtl ? ", RTL" : ""}`
+    : langCode;
+  const dialogueMarks = cfg
+    ? `Open: ${cfg.dialogue.open} | Close: ${cfg.dialogue.close} | ${cfg.dialogue.note}`
+    : "Use the language's standard quotation marks";
+  const profanityMap = cfg
+    ? Object.entries(cfg.profanity).map(([en, local]) =&gt; `  - ${en} \u2192 ${local}`).join("\n")
+    : "  - (none configured)";
+  const rankMap = cfg
+    ? Object.entries(cfg.ranks).map(([en, local]) =&gt; `  - ${en} \u2192 ${local}`).join("\n")
+    : "  - (none configured)";
+  const fanNames = cfg &amp;&amp; Object.keys(cfg.fanNames).length
+    ? Object.entries(cfg.fanNames).map(([en, fan]) =&gt; `  - ${en} \u2192 ${fan}`).join("\n")
+    : "  - (none for this language)";
+  const styleSheet = cfg
+    ? `Register: ${cfg.styleSheet.register}\n  Sentence length: ${cfg.styleSheet.sentenceLength}\n  Gender handling: ${cfg.styleSheet.gender}\n  Archaic vs modern: ${cfg.styleSheet.archaic}\n  Numerals: ${cfg.styleSheet.numerals}`
+    : "(none)";
+  const magicSystem = cfg ? cfg.magicSystem : "(none)";
+  const phaseRules = PHASE_RULES.map(([id, name, rule]) =&gt; `### ${id}. ${name}\n${rule}`).join("\n\n");
+  const reasoning = REASONING_PROTOCOL.join("\n");
+  const voices = VOICE_MATRIX.map(
+    ([name, style, example], i) =&gt; `${i + 1}. ${name}: ${style}${example ? `\n   Example: ${example}` : ""}`
+  ).join("\n");
+
+  // FIX 4c: Per-language punctuation map
+  const PUNCTUATION_MAP: Record&lt;string, string&gt; = {
+    fr: "Dialogue uses « » guillemets. Non-breaking space before » and after « is correct.",
+    it: "Dialogue uses « » guillemets (Italian preference).",
+    de: "Dialogue uses German quotes: opening „ (low), closing “ (high).",
+    es: "Dialogue uses em-dash (—) at the start of speaker turns; « » optional.",
+    pt: 'Dialogue uses em-dash (—) or " " quotes.',
+    ru: "Dialogue uses « » guillemets and — dashes for speaker turns.",
+    ar: 'Dialogue uses « » or " " quotes. Full stop is \u06DB where natural; RTL flow must be native.',
+    ur: 'Dialogue uses " " quotes; full stop is \u06DB (Urdu full stop) — NEVER use the Latin period.',
+    ks: 'Dialogue uses " " quotes; use Kashmiri/Arabic-script punctuation, never Latin periods.',
+    hi: 'Dialogue uses " " quotes; sentence end uses danda (।) optionally, otherwise standard full stop.',
+    ne: 'Dialogue uses " " quotes; danda (।) is the natural sentence end.',
+    bn: 'Dialogue uses " " quotes; sentence end uses daṛi (।).',
+    ja: "Dialogue uses 「」; internal thoughts use 「」 (or 『』 for nested).",
+    ko: 'Dialogue uses " " or 「」; internal thoughts use 「」.',
+    zh: 'Dialogue uses " " (or 「」 in traditional contexts); internal thoughts use 「」.',
+    la: 'Standard " " quotes and classical punctuation conventions.',
+    id: 'Standard " " quotes and standard punctuation.',
+    sw: 'Standard " " quotes and standard punctuation.',
+    tr: 'Standard " " quotes and standard punctuation.',
+    ro: 'Standard " " quotes and standard punctuation.',
+  };
+
+  return [
+    "# ─── ABSOLUTE OUTPUT CONTRACT (read first, violate nothing) ───",
+    "// FIX 4a: PURE OUTPUT — Your ENTIRE reply must be ONLY the translated prose.",
+    "NEVER output: 'Paragraph 9' style labels, 【】/[]/{} brackets with numbers or annotations, numbered list markers, 'Here is the translation', any meta-commentary, explanations, apologies, or notes.",
+    "If the source itself contains such labels/markers, translate the text they wrap but DO NOT reproduce the label markers themselves.",
+    "// FIX 4b: FULL TRANSLATION — Every source word must be rendered in the target language.",
+    "ZERO English leakage is permitted except: character names and fantasy proper nouns exactly as given in the Name Map and locked glossary (Violet, Xaden, Tairn, Andarna, Ridoc, Dain, Basgiath, Navarre, Tyrrendor, Venin, and every term in the LOCKED GLOSSARY below).",
+    "Low-resource languages (Kashmiri, Nepali, Swahili, Latin) must be written FULLY in their native script — never mixed English/script.",
+    "// FIX 4e: STRUCTURAL CONSISTENCY — one source paragraph → one target paragraph.",
+    "Preserve blank-line separations and paragraph ORDER exactly. Do not merge, split, reorder, or drop paragraphs. Never add narration, chapter exits, or continuation that is not in the source.",
+    "",
+    "# CHARACTER VOICE CALIBRATION (FIX 4d — voices must stay distinct in every language)",
+    "- Violet Sorrengail — determined, vulnerable, dry wit.",
+    "- Xaden Riorson — terse, possessive, dark; short declaratives.",
+    "- Ridoc Gamlyn — informal, comic relief; slang must be natural to the target language.",
+    "- Dain Aetos — formal military register; titles and protocol.",
+    "- Dragons (Tairn, Andarna) — alien, NO contractions, telepathy formatted per P16 with 「」 convention.",
+    "",
+    "You are the Empyrean Translator \u2014 a world-class literary localization engine for the epic high-fantasy novel ONYX STORM (English source).",
+    "You translate the source text into a professionally localized edition that reads as NATIVE fiction in the target market \u2014 never as word-swapped English. You follow every phase below, in order, before producing your output.",
+    "",
+    `TARGET LANGUAGE: ${langLine}`,
+    `MARKET CONTEXT: ${buildMarketContext(marketContext)}`,
+    `// FIX 4c — PUNCTUATION CONTRACT: ${PUNCTUATION_MAP[langCode] || "Use the language's standard punctuation conventions."}`,
+    "",
+    "# THE 23 PHASES",
+    phaseRules,
+    "",
+    "# DEEP REASONING PROTOCOL (think before you write)",
+    reasoning,
+    "",
+    "# PART C \u2014 PER-LANGUAGE CONFIG",
+    `DIALOGUE MARKS:\n${dialogueMarks}`,
+    `FORMALITY SYSTEM: ${cfg ? `${cfg.formality.system} \u2014 informal: ${cfg.formality.informal}, formal: ${cfg.formality.formal}. ${cfg.formality.note}` : "(none)"}`,
+    "",
+    "PROFANITY MAP (use these or milder equivalents):",
+    profanityMap,
+    "",
+    "RANK MAP:",
+    rankMap,
+    "",
+    "MAGIC SYSTEM NOTE:",
+    magicSystem,
+    "",
+    "FAN NAMES (zh/ko/ru only):",
+    fanNames,
+    "",
+    "STYLE SHEET:",
+    styleSheet,
+    "",
+    "# LOCKED GLOSSARY (use EXACTLY these, book-wide)",
+    buildGlossaryColumn(langCode),
+    "",
+    "# NAME MAP (same name = same spelling, always)",
+    buildNameMap(langCode),
+    "",
+    "# PLACEHOLDER PROTOCOL (CRITICAL — Bible Pass is active)",
+    "Some terms in the source text are hidden behind placeholder tokens like __PH0__, __PH1__, __PH2__.",
+    "1. Copy EVERY __PHn__ token into your output EXACTLY as written — never translate, transliterate, rename, reorder, merge, split or drop them.",
+    "2. NEVER substitute a placeholder with any other name or term from this prompt (for example never replace a placeholder with 'Basgiath' or 'Navarre'). Each token stands for exactly the term it replaced.",
+    "3. Treat a placeholder as one indestructible word: local grammar/case endings go OUTSIDE the token (e.g. Turkish __PH2__'da, Japanese __PH2__で), and punctuation stays natural around it.",
+    "",
+    "# CHARACTER VOICE MATRIX",
+    voices,
+    "",
+    "# OUTPUT RULES",
+    "1. Return ONLY the translated text \u2014 no explanations, no notes, no metadata, no markdown fences, and no quotation marks around the reply.",
+    "2. Preserve paragraph breaks, speaker turns and dialogue lines 1:1 with the source.",
+    "3. Use the language's dialogue punctuation (P10) and telepathy markers (P16).",
+    "4. For script languages (non-Latin scripts): ZERO Latin-script words may remain, except the allowed names listed in the Name Map.",
+    "5. Translate chapter titles and headings with the same fidelity as body text.",
+    "6. The result must read like it was written in the target language by a native literary translator.",
+  ].join("\n");
+}
+
+/**
+ * FIX 2a: Paragraph-aware chunking.
+ *
+ * Accumulates whole paragraphs (split on blank lines) until the word cap is
+ * reached, then closes the chunk at a PARAGRAPH boundary. A single oversized
+ * paragraph is split at sentence boundaries — never mid-sentence. Page text
+ * (from PDF extraction) already uses blank-line separation, so page boundaries
+ * are respected automatically.
+ */
+function chunkText(text: string, maxWords: number): string[] {
+  const normalized = text.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return [];
+  const paragraphs = normalized.split(/\n{2,}/).map((p) =&gt; p.trim()).filter(Boolean);
+
+  const chunks: string[] = [];
+  let currentParas: string[] = [];
+  let currentWords = 0;
+
+  const flush = () =&gt; {
+    if (currentParas.length &gt; 0) {
+      chunks.push(currentParas.join("\n\n"));
+      currentParas = [];
+      currentWords = 0;
+    }
+  };
+
+  for (const para of paragraphs) {
+    const paraWords = para.split(/\s+/).filter(Boolean).length;
+
+    if (paraWords &gt; maxWords) {
+      // Oversized single paragraph: flush what we have, then split the
+      // paragraph at SENTENCE boundaries (never mid-sentence).
+      flush();
+      const sentences = para.match(/[^.!?\u06D4\u3002\uFF01\uFF1F]+[.!?\u06D4\u3002\uFF01\uFF1F]+["'\u00BB\u300D\u300F]?\s*|[^.!?\u06D4\u3002\uFF01\uFF1F]+$/g) || [para];
+      let sentenceBuf = "";
+      let sentenceWords = 0;
+      for (const sentence of sentences) {
+        const w = sentence.split(/\s+/).filter(Boolean).length;
+        if (sentenceBuf &amp;&amp; sentenceWords + w &gt; maxWords) {
+          chunks.push(sentenceBuf.trim());
+          sentenceBuf = sentence;
+          sentenceWords = w;
+        } else {
+          sentenceBuf += sentence;
+          sentenceWords += w;
+        }
+      }
+      if (sentenceBuf.trim()) chunks.push(sentenceBuf.trim());
+      continue;
+    }
+
+    if (currentWords + paraWords &gt; maxWords &amp;&amp; currentParas.length &gt; 0) {
+      flush();
+    }
+    currentParas.push(para);
+    currentWords += paraWords;
+  }
+  flush();
+
+  return chunks;
+}
+
+// Bible Pass — lock glossary terms with placeholders before AI
+interface BiblePassResult {
+  lockedText: string;
+  placeholders: Map&lt;string, string&gt;;
+}
+
+function applyBiblePassServer(text: string, targetLanguage: string): BiblePassResult {
+  const glossary = glossaryData.magicMilitary as Record&lt;string, Record&lt;string, string&gt;&gt;;
+  const properNouns = glossaryData.properNouns as Record&lt;string, string[]&gt;;
+  const langIndex = [
+    "en", "ar", "ur", "fr", "ja", "es", "hi", "tr", "zh", "ru", "ko", "de",
+    "ks", "ro", "sw", "it", "la", "id", "ne", "bn", "pt",
+  ];
+  const idx = langIndex.indexOf(targetLanguage);
+
+  let result = text;
+  const placeholders = new Map&lt;string, string&gt;();
+  let phIdx = 0;
+
+  for (const [term] of Object.entries(properNouns)) {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&amp;");
+    const regex = new RegExp("\\b" + escaped + "\\b", "g");
+    if (regex.test(result)) {
+      const translated = properNouns[term]?.[idx] || properNouns[term]?.[0] || term;
+      const ph = "__PH" + phIdx++ + "__";
+      placeholders.set(ph, translated);
+      result = result.replace(regex, ph);
+    }
+  }
+
+  for (const term of Object.keys(glossary)) {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&amp;");
+    const regex = new RegExp("\\b" + escaped + "\\b", "gi");
+    if (regex.test(result)) {
+      const translation = glossary[term]?.[targetLanguage] || glossary[term]?.["en"] || term;
+      if (translation !== term) {
+        const ph = "__PH" + phIdx++ + "__";
+        placeholders.set(ph, translation);
+        result = result.replace(regex, ph);
+      }
+    }
+  }
+
+  return { lockedText: result, placeholders };
+}
+
+/**
+ * Restore Bible-Pass placeholder tokens back to their locked target-language
+ * values. HARDENED (Phase D2): Gemini occasionally mangles a token —
+ * "__PH2__" → "PH2", "__ PH2 __", "__PHO__", or substitutes a different
+ * known name. After exact restore, any残 leftover token-ish artifact is
+ * repaired by index (insertion order of the placeholders map IS the token
+ * numbering), so a locked name can never vanish from the output.
+ */
+function restorePlaceholdersServer(text: string, placeholders: Map&lt;string, string&gt;): string {
+  let result = text;
+  for (const [ph, value] of placeholders) {
+    result = result.split(ph).join(value);
+  }
+  if (placeholders.size === 0) return result;
+
+  const entries = [...placeholders.entries()];
+
+  // Repair mangled underscore forms: "__PH2__", "__ PH2 __", "PH2__", "__PHO" (O/0 confusion is fixed by index lookup)
+  result = result.replace(/_{0,4}\s*PH\s*([0-9OQoIl]{1,3})\s*_{0,4}/gi, (m, digits: string) =&gt; {
+    const normalized = digits.replace(/[OQoIl]/g, (c) =&gt; (c.toLowerCase() === "l" ? "1" : "0"));
+    const idx = parseInt(normalized, 10);
+    if (Number.isInteger(idx) &amp;&amp; idx &gt;= 0 &amp;&amp; idx &lt; entries.length) {
+      return entries[idx][1];
+    }
+    return m;
+  });
+
+  // Repair fully bare tokens: "PH2" (model stripped the underscores)
+  result = result.replace(/(^|[^A-Za-z0-9])PH\s*([0-9OQoIl]{1,3})(?![A-Za-z0-9])/g, (m, pre: string, digits: string) =&gt; {
+    const normalized = digits.replace(/[OQoIl]/g, (c) =&gt; (c.toLowerCase() === "l" ? "1" : "0"));
+    const idx = parseInt(normalized, 10);
+    if (Number.isInteger(idx) &amp;&amp; idx &gt;= 0 &amp;&amp; idx &lt; entries.length) {
+      return `${pre}${entries[idx][1]}`;
+    }
+    return m;
+  });
+
+  return result;
+}
+
+/**
+ * FIX 1b: Strip leaked meta-commentary from the model output.
+ *
+ * Gemini sometimes leaks its internal self-check ("Check QA rules:",
+ * "Ready to generate output.", "Here is the translation") into the content.
+ * For non-Latin target scripts, any line that is predominantly Latin letters
+ * is by definition leaked English meta-text (legitimate prose is in the
+ * target script; allowed names are single inline words), so whole offending
+ * lines are dropped. Known meta phrases are also removed inline so a mixed
+ * line like "Ready to generate output.باب ۱" keeps its translated part.
+ */
+function stripMetaCommentary(text: string, langCode: string): string {
+  const cfg = getLocalizationConfig(langCode);
+  const script = cfg?.script || "Latin";
+  const isNonLatinScript = script !== "Latin";
+
+  let out = text;
+
+  // Known meta phrases — removed inline (keeps any translated text around them)
+  out = out.replace(/\bready\s+to\s+generate\s+(?:the\s+)?output\s*[.!:]*\s*/gi, "");
+  out = out.replace(/\bcheck(?:ing)?\s+qa\s+rules?\s*:\s*/gi, "");
+  out = out.replace(/\boutput\s+only\s+the\s+translated\s+text\s*[.!:]*\s*/gi, "");
+  out = out.replace(/^\s*here(?:'s|\s+is)\s+(?:the\s+)?translation\s*[.!:]*\s*/gim, "");
+
+  if (isNonLatinScript) {
+    // Whole lines of English prose are always leaked meta-commentary
+    out = out
+      .split("\n")
+      .filter((line) =&gt; {
+        const trimmed = line.trim();
+        if (!trimmed) return true;
+        const latin = (trimmed.match(/[A-Za-z]/g) ?? []).length;
+        const total = [...trimmed].length;
+        return latin / total &lt; 0.5;
+      })
+      .join("\n");
+  }
+
+  return out.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/**
+ * FIX 1b: Normalize dictionary-format output.
+ *
+ * A failure mode where the model emits a numbered EN→X dictionary instead of
+ * pure prose:
+ *   27.
+ *   English:
+ *   The war was not between...
+ *   Urdu:
+ *   جنگ ...
+ *
+ * If the output contains English:/Urdu:-style pairs, extract ONLY the target-
+ * language values in order (the English sides are meta-text, not content).
+ */
+function normalizeDictionaryFormat(text: string): string {
+  const hasPairs = /(^|\n)\s*\d+\s*\.\s*\n\s*(?:English|Source)\s*:\s*\n/i.test(text) &amp;&amp;
+    /(^|\n)\s*(?:Urdu|Arabic|French|Japanese|Spanish|Hindi|Turkish|Chinese|Russian|Korean|German|Kashmiri|Romanian|Swahili|Italian|Latin|Indonesian|Nepali|Bangla|Portuguese|Target|Translation)\s*:\s*\n/i.test(text);
+  if (!hasPairs) return text;
+
+  const lines = text.split("\n");
+  const values: string[] = [];
+  let inTarget = false;
+  let buf: string[] = [];
+  const targetLabelRe = /^\s*(?:Urdu|Arabic|French|Japanese|Spanish|Hindi|Turkish|Chinese|Russian|Korean|German|Kashmiri|Romanian|Swahili|Italian|Latin|Indonesian|Nepali|Bangla|Portuguese|Target|Translation)\s*:\s*$/i;
+  const englishLabelRe = /^\s*(?:English|Source)\s*:\s*$/i;
+  const numberLabelRe = /^\s*\d+\s*\.\s*$/;
+
+  const flush = () =&gt; {
+    const v = buf.join("\n").trim();
+    if (v) values.push(v);
+    buf = [];
+  };
+
+  for (const line of lines) {
+    if (targetLabelRe.test(line)) {
+      flush();
+      inTarget = true;
+      continue;
+    }
+    if (englishLabelRe.test(line) || numberLabelRe.test(line)) {
+      flush();
+      inTarget = false;
+      continue;
+    }
+    if (inTarget) buf.push(line);
+  }
+  flush();
+
+  return values.length &gt; 0 ? values.join("\n\n") : text;
+}
+
+function escapeRegex(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&amp;");
+}
+
+function extractLastSentences(text: string): string {
+  const sentences = text.split(/(?&lt;=[.!?])\s+/).filter(Boolean);
+  return sentences.slice(-2).join(" ");
+}
+
+// Gemini call with 5-key rotation + retries.
+/**
+ *
+ * Uses the NATIVE generateContent API (not the OpenAI-compat layer) because
+ * gemini-3.6-flash is a thinking model: through the OpenAI-compat endpoint
+ * its invisible reasoning consumed ~3.8k tokens of the output budget and
+ * every chunk came back truncated at ~160 visible tokens with finish_reason
+ * "stop" (so truncation recovery never triggered). The native API exposes
+ * thinkingConfig.thinkingBudget — we disable thinking entirely; the 23-phase
+ * QA layer provides the quality control instead.
+ */
+async function callGemini(
+  keys: string[],
+  systemPrompt: string,
+  userMessage: string,
+): Promise&lt;{ text: string; model: string; usage: unknown; finishReason: string }&gt; {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+
+  for (const key of keys) {
+    for (let attempt = 0; attempt &lt; 3; attempt++) {
+      // Attempt 0-1: thinking disabled. Attempt 2: fallback WITHOUT
+      // thinkingConfig in case this model rejects thinkingBudget: 0.
+      const disableThinking = attempt &lt; 2;
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": key,
+          },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ role: "user", parts: [{ text: userMessage }] }],
+            generationConfig: {
+              temperature: 0.3,
+              maxOutputTokens: 16384,
+              ...(disableThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+            },
+          }),
+        });
+
+        if (res.ok) {
+          const data: {
+            candidates?: Array&lt;{
+              content?: { parts?: Array&lt;{ text?: string }&gt; };
+              finishReason?: string;
+            }&gt;;
+            modelVersion?: string;
+            usageMetadata?: {
+              promptTokenCount?: number;
+              candidatesTokenCount?: number;
+              totalTokenCount?: number;
+            };
+          } = await res.json();
+          const cand = data.candidates?.[0];
+          const raw = (cand?.content?.parts ?? []).map((p) =&gt; p.text || "").join("");
+          const finishReason = String(cand?.finishReason || "STOP");
+          if (!raw.trim()) break;
+          const cleaned = raw.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim();
+          return {
+            text: cleaned,
+            model: data.modelVersion || GEMINI_MODEL,
+            usage: {
+              promptTokens: data.usageMetadata?.promptTokenCount ?? 0,
+              completionTokens: data.usageMetadata?.candidatesTokenCount ?? 0,
+              totalTokens: data.usageMetadata?.totalTokenCount ?? 0,
+            },
+            finishReason,
+          };
+        }
+
+        if (res.status === 429) {
+          await new Promise((r) =&gt; setTimeout(r, (attempt + 1) * 10000));
+          continue;
+        }
+        if (res.status &gt;= 500) {
+          await new Promise((r) =&gt; setTimeout(r, (attempt + 1) * 5000));
+          continue;
+        }
+        // 400/404: model may reject thinkingBudget — retry WITHOUT
+        // thinkingConfig (attempt 2) before giving up on this key.
+        if (res.status === 400 || res.status === 404) {
+          const errBody = await res.text().catch(() =&gt; "");
+          console.warn(`[callGemini] HTTP ${res.status}: ${errBody.slice(0, 200)}`);
+          if (disableThinking) continue;
+          break;
+        }
+        break;
+      } catch {
+        await new Promise((r) =&gt; setTimeout(r, (attempt + 1) * 5000));
+      }
+    }
+  }
+  throw new Error("All Gemini keys exhausted for this chunk");
+}
+
+// ════════════════════════════════════════════════════════════
+// MAIN ACTION: translateLanguage — Process ALL chunks for ONE language
+//
+// Same pattern as image translation: one direct action call per language.
+// Client loops through languages, calling this action for each.
+// No scheduler chain between chunks. No fragile multi-action pipeline.
+// ════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════
+// LIVE TEST EXPORTS (used by convex/liveTest.ts)
+// Additive: nothing existing is renamed or removed.
+// ════════════════════════════════════════════════════════════
+
+/** The single locked baseline sentence every market must reproduce. */
+export const LIVE_TEST_SOURCE =
+  `Violet wakes up in Aretia confused, with a ring and a note from Xaden: "Don't look for me." ` +
+  `She realizes she is married, but her husband is lost in the dark.`;
+
+export const buildSystemPromptForTest = buildSystemPrompt;
+export const applyBiblePassForTest = applyBiblePassServer;
+export const restorePlaceholdersForTest = restorePlaceholdersServer;
+export const callGeminiForTest = callGemini;
+
+export const postProcessTranslationForTest = (
+  raw: string,
+  langCode: string,
+  marketContext: string,
+  placeholders: Map&lt;string, string&gt;,
+): string =&gt; {
+  let out = restorePlaceholdersServer(raw, placeholders);
+  out = normalizeDictionaryFormat(out);
+  out = stripMetaCommentary(out, langCode);
+  out = out.replace(/\s*[\u3010\[](?:\s*)Paragraph(?:\s*#?\s*\d+)?[\u3011\]]\s*/gi, "\n");
+  out = out.replace(/\s*\u3010\s*\d+\s*\u3011\s*/g, "\n");
+  // P4: central language-quality layer — evidence-logged artifact filter +
+  // per-language punctuation normalization (kills 「」 pollution in non-CJK).
+  const filtered = filterGeneratedArtifacts(out);
+  if (filtered.removals.length &gt; 0) {
+    console.log(
+      `[languageRules] ${langCode}: removed ${filtered.removals.length} artifact(s):` +
+        filtered.removals.slice(0, 5).map((r) =&gt; ` ${r.kind}("${r.sample}")`).join(","),
+    );
+  }
+  out = normalizePunctuationForLanguage(filtered.text, langCode);
+  out = applyCulturalFilters(out, langCode, marketContext);
+  out = out.replace(/\*([^*]+)\*/g, (_: string, thought: string) =&gt;
+    formatDragonTelepathy(thought, langCode)
+  );
+  if (isRTLLang(langCode) &amp;&amp; !out.startsWith("\u200F")) {
+    out = `\u200F${out}`;
+  }
+  return out.trim();
+};
+
+export const translateLanguage = action({
+  args: {
+    projectId: v.id("projects"),
+    langCode: v.string(),
+    marketContext: v.optional(v.string()),
+    nextLangCode: v.optional(v.string()),
+    remainingLangs: v.optional(v.array(v.string())),  // all remaining languages after this one
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise&lt;{
+    ok: boolean;
+    langCode: string;
+    chunksProcessed: number;
+    totalChunks: number;
+    mergedText?: string;
+    error?: string;
+    chained?: boolean;
+  }&gt; =&gt; {
+    const project = await ctx.runQuery(api.queries.getProjectRaw, { projectId: args.projectId });
+    if (!project) return { ok: false, langCode: args.langCode, chunksProcessed: 0, totalChunks: 0, error: "Project not found" };
+    if (project.status === "cancelled") return { ok: false, langCode: args.langCode, chunksProcessed: 0, totalChunks: 0, error: "Cancelled" };
+
+    // Guard against empty/invalid langCode — a scheduler bug elsewhere must
+    // never cause an infinite chain loop.
+    if (!args.langCode || !args.langCode.trim()) {
+      return { ok: false, langCode: args.langCode, chunksProcessed: 0, totalChunks: 0, error: "Empty langCode — chain loop prevented" };
+    }
+
+    const keys = [
+      process.env.Gemini_API_Key_1,
+      process.env.Gemini_API_Key_2,
+      process.env.Gemini_API_Key_3,
+      process.env.Gemini_API_Key_4,
+      process.env.Gemini_API_Key_5,
+    ].filter((k): k is string =&gt; !!k);
+
+    if (keys.length === 0) return { ok: false, langCode: args.langCode, chunksProcessed: 0, totalChunks: 0, error: "No Gemini API keys" };
+
+    // ═══════ FIX 2b: SINGLE-SOURCE CHUNKING ═══════
+    // If chunk records already exist for this language, they are the ONLY
+    // source of truth (never re-chunk fullText). Otherwise chunk once,
+    // deterministically, and persist the records.
+    let existingChunks: Array&lt;{
+      _id: Id&lt;"chunks"&gt;;
+      chunkIndex: number;
+      status: string;
+      sourceText: string;
+      translatedText?: string;
+    }&gt; = await ctx.runQuery(api.queries.getChunksForLang, {
+      projectId: args.projectId,
+      langCode: args.langCode,
+    });
+
+    if (existingChunks.length === 0) {
+      // FIX (1MiB limit): if fullText was offloaded to Storage (empty on the
+      // row with a ref present), read it back before chunking.
+      let sourceText = project.fullText;
+      if (!sourceText &amp;&amp; project.fullTextStorageId) {
+        const blob = await ctx.storage.get(project.fullTextStorageId);
+        if (blob) sourceText = (JSON.parse(await blob.text()) as string) ?? "";
+      }
+      // First run for this language: chunk ONCE from fullText (paragraph-aware)
+      const sourceChunks = chunkText(sourceText, CHUNK_SIZE);
+      for (let i = 0; i &lt; sourceChunks.length; i++) {
+        await ctx.runMutation(api.mutations.upsertChunk, {
+          projectId: args.projectId,
+          langCode: args.langCode,
+          chunkIndex: i,
+          sourceText: sourceChunks[i],
+        });
+      }
+      existingChunks = await ctx.runQuery(api.queries.getChunksForLang, {
+        projectId: args.projectId,
+        langCode: args.langCode,
+      });
+    }
+    existingChunks.sort((a, b) =&gt; a.chunkIndex - b.chunkIndex);
+    const totalChunks = existingChunks.length;
+    if (totalChunks === 0) {
+      return { ok: false, langCode: args.langCode, chunksProcessed: 0, totalChunks: 0, error: "No text to translate" };
+    }
+    // From here on, ONLY stored chunk records are read — no re-chunking.
+    const sourceChunks = existingChunks.map((c) =&gt; c.sourceText);
+
+    // Build system prompt ONCE (expensive — don't rebuild per chunk)
+    const systemPrompt = buildSystemPrompt(args.langCode, args.marketContext || "standard");
+
+    // ═══════ P0 FIX: Update project status + create translation record ═══════
+    await ctx.runMutation(api.mutations.updateProject, {
+      projectId: args.projectId,
+      status: "translating",
+    });
+
+    const existingTranslation = await ctx.runQuery(api.queries.getTranslationsRaw, {
+      projectId: args.projectId,
+    }).then((ts) =&gt; ts.find((t) =&gt; t.langCode === args.langCode));
+
+    if (!existingTranslation) {
+      await ctx.runMutation(api.mutations.upsertTranslation, {
+        projectId: args.projectId,
+        langCode: args.langCode,
+        totalChunks,
+        status: "in_progress",
+        completedChunks: 0,
+        mergedText: "",
+      });
+    }
+    // ═══════ END P0 FIX ═══════
+
+    let processedCount = 0;
+    // FIX 1d: translation memory accumulated across chunks of this language
+    const translationMemory: Array&lt;{ source: string; translation: string }&gt; = [];
+    // FIX 1c: current QA failures (fed into corrective retry)
+    let qaFailures: string[] = [];
+    // FIX 5c: track a chunk-level failure so the language can be retried
+    let chunkFailure: string | null = null;
+    // FIX 5: action-timeout safety — cap fresh chunks per run, then continue
+    let chunksTranslatedThisRun = 0;
+    let needContinuation = false;
+
+    for (let i = 0; i &lt; totalChunks; i++) {
+      // Skip already-done chunks
+      const existing = existingChunks.find((c) =&gt; c.chunkIndex === i);
+      if (existing?.status === "done" &amp;&amp; existing.translatedText) {
+        processedCount++;
+        continue;
+      }
+
+      // Check cancellation before each chunk
+      const proj = await ctx.runQuery(api.queries.getProjectRaw, { projectId: args.projectId });
+      if (!proj || proj.status === "cancelled") break;
+
+      // FIX 5: cap fresh chunks per action run (Convex action timeout safety)
+      if (chunksTranslatedThisRun &gt;= MAX_CHUNKS_PER_RUN) {
+        needContinuation = true;
+        break;
+      }
+
+      // FIX 5c: A chunk failure must NOT abort the whole action — mark the
+      // language incomplete and let the watchdog/single retry pick it up.
+      try {
+
+      const sourceText = sourceChunks[i];
+
+      // Sliding window context (P21)
+      let previousContext: string | undefined;
+      if (i &gt; 0) {
+        const prevChunk = existingChunks.find((c) =&gt; c.chunkIndex === i - 1 &amp;&amp; c.status === "done");
+        if (prevChunk?.translatedText) {
+          previousContext = extractLastSentences(prevChunk.translatedText);
+        }
+      }
+
+      // Bible Pass
+      const { lockedText, placeholders } = applyBiblePassServer(sourceText, args.langCode);
+
+      let userContent = lockedText;
+      if (previousContext) {
+        userContent = `Previous chunk ended with: ${previousContext}\n\nContinue seamlessly.\n\n${userContent}`;
+      }
+
+      // FIX 1d: Translation memory — running glossary of term→translation
+      // locked by EARLIER chunks of this language, included so the same term
+      // is translated identically every time it recurs.
+      const memoryLines: string[] = [];
+      for (const entry of translationMemory) {
+        const re = new RegExp(`\\b${escapeRegex(entry.source)}\\b`, "i");
+        if (re.test(sourceText)) {
+          memoryLines.push(`- "${entry.source}" \u2192 "${entry.translation}"`);
+        }
+      }
+      if (memoryLines.length &gt; 0) {
+        userContent = `# TRANSLATION MEMORY (mandatory — reuse these exact translations for consistency)\n${memoryLines.join("\n")}\n\n${userContent}`;
+      }
+      // Anti-leak instruction: reply must START with the first translated word
+      userContent = `${userContent}\n\nTranslate ALL of the text above as one continuous piece of prose in ${args.langCode}. Begin your reply with the first translated word — no preamble, no self-checks, no notes. NEVER output a numbered list, NEVER output "English:"/"Urdu:" (or any language-label) pairs, NEVER a dictionary/line-by-line format — only the running translated story. Preserve every __PHn__ placeholder token EXACTLY as written — never translate, rename or substitute them.`;
+
+      // FIX 1c: Call Gemini + QA retry loop (max 2 attempts)
+      let geminiResult: { text: string; model: string; usage: unknown; finishReason: string } | null = null;
+      let processedText = "";
+      let qaScore = 0;
+      let qaOverall = "unknown";
+
+      for (let qaAttempt = 0; qaAttempt &lt; 2; qaAttempt++) {
+        const attemptUserContent =
+          qaAttempt === 0
+            ? userContent
+            : `${userContent}\n\n# CRITICAL QUALITY CORRECTION\nYour previous attempt scored ${qaScore}/100 in automated QA. Regenerate the translation fixing ALL of these violations:\n${qaFailures.join("\n")}\nReturn ONLY the corrected translated text.`;
+
+        geminiResult = await callGemini(keys, systemPrompt, attemptUserContent);
+
+        // Truncation recovery: if the model hit the token ceiling mid-chunk,
+        // ask it to continue EXACTLY where it stopped and concatenate.
+        // (OpenAI-compat returns "length"; native Gemini returns "MAX_TOKENS".)
+        if (geminiResult.finishReason === "length" || geminiResult.finishReason === "MAX_TOKENS") {
+          console.warn(`[translateContent] ${args.langCode} chunk ${i}: output truncated — requesting continuation`);
+          try {
+            const cont = await callGemini(
+              keys,
+              systemPrompt,
+              `${attemptUserContent}\n\n# CONTINUATION INSTRUCTION\nYour previous reply was cut off mid-sentence. Continue EXACTLY where you stopped — repeat nothing already translated, add no commentary. Translate the REMAINING source text to the very end.`,
+            );
+            geminiResult = {
+              ...geminiResult,
+              text: `${geminiResult.text}\n${cont.text}`.replace(/\n{3,}/g, "\n\n"),
+              finishReason: cont.finishReason,
+            };
+          } catch {
+            // keep the truncated best-effort text
+          }
+        }
+
+        // ── FIX 1b: Post-processing pipeline ──
+        let out = restorePlaceholdersServer(geminiResult.text, placeholders);
+        // Normalize dictionary-format output (27.\nEnglish:\n...\nUrdu:\n...)
+        out = normalizeDictionaryFormat(out);
+        // Strip leaked meta-commentary (self-check text, "Ready to generate output")
+        out = stripMetaCommentary(out, args.langCode);
+        // Strip accidental paragraph-number labels like 【Paragraph 9】/ [Paragraph 3] / (Paragraph 2)
+        out = out.replace(/\s*[\u3010\[](?:\s*)Paragraph(?:\s*#?\s*\d+)?[\u3011\]]\s*/gi, "\n");
+        // Also strip localized variants with bare numbers in CJK brackets
+        out = out.replace(/\s*\u3010\s*\d+\s*\u3011\s*/g, "\n");
+        out = applyCulturalFilters(out, args.langCode, args.marketContext || "standard");
+        out = out.replace(/\*([^*]+)\*/g, (_: string, thought: string) =&gt;
+          formatDragonTelepathy(thought, args.langCode)
+        );
+        if (isRTLLang(args.langCode) &amp;&amp; !out.startsWith("\u200F")) {
+          out = `\u200F${out}`;
+        }
+        processedText = out;
+
+        // FIX 1c: QA check
+        try {
+          const qaReport = runQA(sourceText, processedText, args.langCode, translationMemory);
+          qaScore = qaReport.score;
+          qaOverall = qaReport.overall;
+          qaFailures = qaReport.summary
+            .filter((s) =&gt; s.includes("\u2717") || s.includes("\u26A0"))
+            .slice(0, 5);
+          if (qaReport.overall !== "fail" || qaAttempt === 1) break;
+        } catch (qaErr) {
+          console.warn(`[QA] Failed for ${args.langCode} chunk ${i}:`, qaErr);
+          break;
+        }
+      }
+
+      if (!geminiResult) {
+        throw new Error(`Gemini returned nothing for chunk ${i}`);
+      }
+      if (qaOverall !== "pass") {
+        // FIX 1c: Log QA failure — never silent
+        console.warn(`[QA] ${args.langCode} chunk ${i}: score ${qaScore}/100 (${qaOverall}) — stored best-effort result`);
+      }
+
+      // FIX 1d: Lock new glossary hits into translation memory for later chunks
+      const glossary = glossaryData.magicMilitary as Record&lt;string, Record&lt;string, string&gt;&gt;;
+      for (const term of LOCKED_TERM_LIST) {
+        const re = new RegExp(`\\b${escapeRegex(term)}\\b`, "i");
+        if (re.test(sourceText) &amp;&amp; !translationMemory.some((m) =&gt; m.source === term)) {
+          const target = glossary[term]?.[args.langCode] || glossary[term]?.en;
+          if (target) translationMemory.push({ source: term, translation: target });
+        }
+      }
+
+      // Save chunk
+      if (existing) {
+        await ctx.runMutation(api.mutations.updateChunk, {
+          chunkId: existing._id,
+          translatedText: processedText,
+          status: "done",
+          model: geminiResult.model,
+          usage: { ...(geminiResult.usage as Record&lt;string, unknown&gt;), qaScore },
+        });
+      } else {
+        const chunkId = await ctx.runMutation(api.mutations.upsertChunk, {
+          projectId: args.projectId,
+          langCode: args.langCode,
+          chunkIndex: i,
+          sourceText,
+        });
+        await ctx.runMutation(api.mutations.updateChunk, {
+          chunkId,
+          translatedText: processedText,
+          status: "done",
+          model: geminiResult.model,
+          usage: { ...(geminiResult.usage as Record&lt;string, unknown&gt;), qaScore },
+        });
+      }
+
+      // Update in-memory list so sliding window sees the latest
+      existingChunks.push({
+        _id: "temp" as Id&lt;"chunks"&gt;,
+        chunkIndex: i,
+        status: "done",
+        sourceText,
+        translatedText: processedText,
+      });
+
+      processedCount++;
+      chunksTranslatedThisRun++;
+
+      // Update translation progress (heartbeat for the watchdog)
+      const translations: Array&lt;{ _id: Id&lt;"translations"&gt;; langCode: string; startedAt?: number }&gt; =
+        await ctx.runQuery(api.queries.getTranslationsRaw, { projectId: args.projectId });
+      const translation = translations.find((t) =&gt; t.langCode === args.langCode);
+      if (translation) {
+        await ctx.runMutation(api.mutations.updateTranslation, {
+          translationId: translation._id,
+          status: "in_progress",
+          completedChunks: processedCount,
+          startedAt: translation.startedAt || Date.now(),
+          lastChunkAt: Date.now(),
+        });
+      }
+      } catch (chunkErr) {
+        // FIX 5c: chunk-level resilience — log, keep completed chunks (no
+        // progress loss), mark incomplete; watchdog/single retry picks it up.
+        chunkFailure = chunkErr instanceof Error ? chunkErr.message : String(chunkErr);
+        console.error(`[translateContent] ${args.langCode} chunk ${i} failed:`, chunkErr);
+        break;
+      }
+    }
+
+    // ── FIX 5: Post-loop resolution ──
+    // Case A: action-timeout safety — more chunks remain, continue in a new run
+    if (needContinuation) {
+      const translationsCont: Array&lt;{ _id: Id&lt;"translations"&gt;; langCode: string }&gt; =
+        await ctx.runQuery(api.queries.getTranslationsRaw, { projectId: args.projectId });
+      const translationCont = translationsCont.find((t) =&gt; t.langCode === args.langCode);
+      if (translationCont) {
+        await ctx.runMutation(api.mutations.updateTranslation, {
+          translationId: translationCont._id,
+          status: "in_progress",
+          completedChunks: processedCount,
+        });
+      }
+      await ctx.scheduler.runAfter(0, api.translateContent.translateLanguage, {
+        projectId: args.projectId,
+        langCode: args.langCode,
+        marketContext: args.marketContext,
+        nextLangCode: args.nextLangCode,
+        remainingLangs: args.remainingLangs,
+      });
+      return {
+        ok: true,
+        langCode: args.langCode,
+        chunksProcessed: processedCount,
+        totalChunks,
+        chained: true,
+      };
+    }
+
+    // Case B: chunk failure — mark stalled/error, schedule ONE retry, keep chain alive
+    if (chunkFailure) {
+      const translationsErr: Array&lt;{ _id: Id&lt;"translations"&gt;; langCode: string }&gt; =
+        await ctx.runQuery(api.queries.getTranslationsRaw, { projectId: args.projectId });
+      const translationErr = translationsErr.find((t) =&gt; t.langCode === args.langCode);
+      if (translationErr) {
+        await ctx.runMutation(api.mutations.updateTranslation, {
+          translationId: translationErr._id,
+          status: "stalled",
+          completedChunks: processedCount,
+        });
+      }
+      console.warn(
+        `[translateContent] ${args.langCode}: chunk failure (${chunkFailure}). Single retry scheduled in 60s; chain continues.`,
+      );
+      await ctx.scheduler.runAfter(60_000, api.translateContent.translateLanguage, {
+        projectId: args.projectId,
+        langCode: args.langCode,
+        marketContext: args.marketContext,
+        nextLangCode: args.nextLangCode,
+        remainingLangs: args.remainingLangs,
+      });
+      return {
+        ok: false,
+        langCode: args.langCode,
+        chunksProcessed: processedCount,
+        totalChunks,
+        error: chunkFailure,
+        chained: true,
+      };
+    }
+
+    // Case C: language finished — merge, mark complete, generate PDF, chain next
+    const allChunks: Array&lt;{ chunkIndex: number; translatedText?: string; status: string }&gt; =
+      await ctx.runQuery(api.queries.getChunksForLang, { projectId: args.projectId, langCode: args.langCode });
+    const mergedText = allChunks
+      .sort((a, b) =&gt; a.chunkIndex - b.chunkIndex)
+      .map((c) =&gt; c.translatedText || "")
+      .join("\n\n");
+
+    const translations: Array&lt;{ _id: Id&lt;"translations"&gt;; langCode: string }&gt; =
+      await ctx.runQuery(api.queries.getTranslationsRaw, { projectId: args.projectId });
+    const translation = translations.find((t) =&gt; t.langCode === args.langCode);
+    if (translation) {
+      await ctx.runMutation(api.mutations.updateTranslation, {
+        translationId: translation._id,
+        status: "complete",
+        completedChunks: totalChunks,
+        mergedText,
+        completedAt: Date.now(),
+      });
+    }
+
+    // Determine next language: explicit nextLangCode takes priority, then remainingLangs
+    const nextLang = args.nextLangCode || (args.remainingLangs &amp;&amp; args.remainingLangs.length &gt; 0 ? args.remainingLangs[0] : undefined);
+    const restLangs = args.nextLangCode
+      ? (args.remainingLangs || [])
+      : (args.remainingLangs || []).slice(1);
+
+    // UNIFIED: after each language completes, generate its PDF server-side,
+    // then chain to the next language. generateTranslatedPdf itself chains to
+    // the next translateLanguage run (or the final ZIP) when it finishes.
+    if (translation) {
+      await ctx.runMutation(api.mutations.updateTranslation, {
+        translationId: translation._id,
+        status: "generating_pdf",
+        completedChunks: totalChunks,
+        mergedText,
+        pdfGenerating: true,
+      });
+      await ctx.scheduler.runAfter(0, api.generatePdf.generateTranslatedPdf, {
+        projectId: args.projectId,
+        langCode: args.langCode,
+        translationId: translation._id,
+        mergedText,
+        nextLangCode: nextLang,
+        remainingLangs: restLangs.length &gt; 0 ? restLangs : undefined,
+        marketContext: args.marketContext,
+      });
+      return {
+        ok: true,
+        langCode: args.langCode,
+        chunksProcessed: processedCount,
+        totalChunks,
+        mergedText,
+        chained: true,
+      };
+    }
+
+    // No translation record (shouldn't happen) — chain directly
+    let chainedDirect = false;
+    if (nextLang) {
+      await ctx.scheduler.runAfter(0, api.translateContent.translateLanguage, {
+        projectId: args.projectId,
+        langCode: nextLang,
+        marketContext: args.marketContext,
+        nextLangCode: restLangs.length &gt; 0 ? restLangs[0] : undefined,
+        remainingLangs: restLangs.length &gt; 1 ? restLangs.slice(1) : undefined,
+      });
+      chainedDirect = true;
+    }
+
+    return {
+      ok: true,
+      langCode: args.langCode,
+      chunksProcessed: processedCount,
+      totalChunks,
+      mergedText,
+      chained: chainedDirect,
+    };
+  },
+});
+</code></pre>
+<hr>
+<p class="meta">OnyxTranslate static documentation mirror — plain HTML, no JavaScript. Interactive version: <a href="/#/overview">/#/overview</a></p>
+</body>
+</html>

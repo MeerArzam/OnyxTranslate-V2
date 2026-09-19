@@ -1,0 +1,51 @@
+{
+  "code": "ks",
+  "name": "Kashmiri",
+  "nativeName": "کٲشُر",
+  "script": "Arabic",
+  "rtl": true,
+  "dialogue": { "open": "«", "close": "»", "note": "Use « » for dialogue; dash — for interruptions." },
+  "formality": {
+    "system": "adab / تُہ",
+    "informal": "تُہ",
+    "formal": "تُہہ / صاحب",
+    "note": "Intimate pairs drop honorifics; authority figures receive respectful address."
+  },
+  "profanity": {
+    "fuck": "پھٹکڑی",
+    "shit": "بکواس",
+    "bastard": "حرامی",
+    "damn": "لَعنت",
+    "hell": "دوزخ"
+  },
+  "ranks": {
+    "Wingleader": "فوجی سردار",
+    "Squad Leader": "دستہ نِگر",
+    "Cadet": "کیڈٹ",
+    "General": "جنرل",
+    "Scribe": "کاتب",
+    "Rider": "سوار"
+  },
+  "magicSystem": "Signet = مہر؛ Wards = حراستیں؛ Conduit = ذریعہ؛ Venin = وینن؛ Empyrean = آسمانی۔ قدرت سوار → مہر → ذریعہ → حراست سہ ترتیبس پٲٹھؠ قٲئم تھٲوِو۔",
+  "fanNames": {},
+  "blurb": "وائلٹ ایرٹیا مَنٛز پَریشانہٕ جاگِتھ، اَکھ گَژھ تہٕ زیرن ہنٛز اَکھ نوس: 'مےٚ پرَنس مُتھ۔' تَسی سمجھان چھِ زِ تَسی خانٛدر کَرِتھ چھِ، مگر تِس ہنٛد خانٛدر دَرٕ اندھارَس مَنٛز گۆمُتھ۔",
+  "styleSheet": {
+    "register": "poetic-folk",
+    "sentenceLength": "balanced",
+    "gender": "verb agreement with speaker's gender",
+    "archaic": "literary Kashmiri, folk cadence for dialogue",
+    "numerals": "Western Arabic numerals"
+  },
+  "names": {
+    "Violet": "وائلٹ",
+    "Xaden": "زیرن",
+    "Tairn": "تیرن",
+    "Andarna": "اندرنا",
+    "Sgaeyl": "سگل",
+    "Navarre": "نوار",
+    "Tyrrendor": "ٹائرینڈر",
+    "Aretia": "ایرٹیا",
+    "Poromiel": "پورومیال",
+    "Deverelli": "دیوریلی"
+  }
+}

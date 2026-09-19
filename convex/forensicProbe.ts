@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internalQuery, query } from "./_generated/server";
 import { api } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 
 /**
  * convex/forensicProbe.ts — PHASE 0 forensic diagnosis (read-only).
@@ -168,6 +169,98 @@ export const diagnoseProject = query({
   },
 });
 
+/** Full-project census: identify the real book vs. proof-gate zombies. READ-ONLY. */
+export const listAllProjects = query({
+  args: {},
+  handler: async (ctx) => {
+    const rows = (await ctx.db.query("projects").collect()) as unknown as Array<{
+      _id: Id<"projects">;
+      fileName?: string;
+      wordCount?: number;
+      pageCount?: number;
+      status?: string;
+      translationMode?: string;
+      translationIntelligenceMode?: string;
+      fullText?: string;
+      createdAt?: number;
+      updatedAt?: number;
+      lastDispatcherAt?: number;
+    }>;
+    const out: Array<{
+      projectId: string;
+      fileName: string | null;
+      wordCount: number | null;
+      pageCount: number | null;
+      fullTextLen: number;
+      status: string | null;
+      translationMode: string;
+      intelMode: string;
+      translationJobs: number;
+      jobsDone: number;
+      createdAt: number | null;
+      lastDispatcherAt: number | null;
+    }> = [];
+    for (const p of rows) {
+      const jobs = await ctx.db
+        .query("translationJobs")
+        .withIndex("by_project", (q) => q.eq("projectId", p._id))
+        .collect();
+      const done = jobs.filter((j) => j.status === "done").length;
+      out.push({
+        projectId: String(p._id),
+        fileName: p.fileName ?? null,
+        wordCount: p.wordCount ?? null,
+        pageCount: p.pageCount ?? null,
+        fullTextLen: (p.fullText ?? "").length,
+        status: p.status ?? null,
+        translationMode: p.translationMode ?? "(unset)",
+        intelMode: p.translationIntelligenceMode ?? "(unset)",
+        translationJobs: jobs.length,
+        jobsDone: done,
+        createdAt: p.createdAt ?? null,
+        lastDispatcherAt: p.lastDispatcherAt ?? null,
+      });
+    }
+    return out.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  },
+});
+
+/** Per-job timing evidence for T8 (avg/P95 duration + projection). READ-ONLY. */
+export const jobTimingEvidence = query({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const jobs = (await ctx.db
+      .query("translationJobs")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect()) as unknown as Array<{
+      langCode: string;
+      chunkIndex: number;
+      status: string;
+      attempts: number;
+      requestGroupId?: string;
+      startedAt?: number;
+      completedAt?: number;
+      contractRetried?: boolean;
+      lastError?: string;
+    }>;
+    const done = jobs
+      .filter((j) => j.status === "done" && j.startedAt && j.completedAt)
+      .map((j) => ({
+        langCode: j.langCode,
+        chunkIndex: j.chunkIndex,
+        durationMs: (j.completedAt ?? 0) - (j.startedAt ?? 0),
+        attempts: j.attempts,
+        paired: j.requestGroupId != null,
+        contractRetried: j.contractRetried === true,
+        completedAt: j.completedAt ?? 0,
+      }))
+      .sort((a, b) => a.completedAt - b.completedAt);
+    const counts: Record<string, number> = {};
+    for (const j of jobs) counts[j.status] = (counts[j.status] ?? 0) + 1;
+    return { counts, total: jobs.length, done };
+  },
+});
+
 /** Watchdog run evidence across ALL projects (cron liveness). */
 export const watchdogEvidence = query({
   args: {},
@@ -203,11 +296,13 @@ void api;
 import { internalAction } from "./_generated/server";
 
 export const probeGeminiOnce = internalAction({
-  args: {},
-  handler: async (ctx) => {
+  args: { model: v.optional(v.string()) },
+  returns: v.any(),
+  handler: async (ctx, args) => {
     void ctx;
     const key = process.env.Gemini_API_Key_1;
     if (!key) return { ok: false, reason: "no key in deployment env" } as const;
+    const model = args.model || process.env.GEMINI_MODEL || "gemini-3.6-flash";
     let resp: Response;
     try {
       resp = await fetch(
@@ -216,16 +311,54 @@ export const probeGeminiOnce = internalAction({
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
           body: JSON.stringify({
-            model: process.env.GEMINI_MODEL || "gemini-3.6-flash",
+            model,
             messages: [{ role: "user", content: "Reply with the single word OK." }],
             max_tokens: 5,
           }),
         },
       );
     } catch (e) {
-      return { ok: false, reason: `fetch threw: ${e instanceof Error ? e.message : String(e)}` } as const;
+      return { ok: false, model, reason: `fetch threw: ${e instanceof Error ? e.message : String(e)}` } as const;
     }
-    const body = (await resp.text()).slice(0, 240);
-    return { ok: resp.status === 200, httpStatus: resp.status, bodySample: body } as const;
+    const body = (await resp.text()).slice(0, 1500);
+    return { ok: resp.status === 200, httpStatus: resp.status, model, bodySample: body } as const;
+  },
+});
+
+/** Probe ALL five keys with the same tiny request (429s cost no quota). */
+export const probeAllKeys = internalAction({
+  args: { model: v.optional(v.string()) },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    void ctx;
+    const keys = [
+      process.env.Gemini_API_Key_1,
+      process.env.Gemini_API_Key_2,
+      process.env.Gemini_API_Key_3,
+      process.env.Gemini_API_Key_4,
+      process.env.Gemini_API_Key_5,
+    ].filter((k): k is string => typeof k === "string" && k.length > 0);
+    const results: Array<{ keyIndex: number; httpStatus?: number; bodyHead: string }> = [];
+    for (let i = 0; i < keys.length; i++) {
+      try {
+        const resp = await fetch(
+          "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${keys[i]}` },
+            body: JSON.stringify({
+              model: args.model || process.env.GEMINI_MODEL || "gemini-3.6-flash",
+              messages: [{ role: "user", content: "Reply with the single word OK." }],
+              max_tokens: 5,
+            }),
+          },
+        );
+        const body = (await resp.text()).slice(0, 1200);
+        results.push({ keyIndex: i + 1, httpStatus: resp.status, bodyHead: body });
+      } catch (e) {
+        results.push({ keyIndex: i + 1, bodyHead: `fetch threw: ${e instanceof Error ? e.message : String(e)}` });
+      }
+    }
+    return { keysSeen: keys.length, results } as const;
   },
 });

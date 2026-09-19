@@ -24,7 +24,7 @@ td code{color:#00e5ff}
 <body>
 <p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
 <h1>Convex Functions — Mutations, Queries, History, Upload, Identity, HTTP</h1>
-<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-18 17:55 UTC</p>
+<p class="meta">Exact signatures + real handler code &middot; generated 2026-09-19 15:18 UTC</p>
 <p>Files on this page: <code>convex/mutations.ts</code>, <code>convex/queries.ts</code>, <code>convex/history.ts</code>, <code>convex/upload.ts</code>, <code>convex/identity.ts</code>, <code>convex/jobMutations.ts</code>, <code>convex/importJob.ts</code>, <code>convex/exportProject.ts</code>, <code>convex/artifactMutations.ts</code>, <code>convex/http.ts</code>, <code>convex/crons.ts</code></p><h2>convex/mutations.ts — full real source</h2><p><strong>Exports:</strong><ul><li><code>generateUploadUrl</code> — mutation</li><li><code>createProject</code> — mutation</li><li><code>updateProject</code> — mutation</li><li><code>deleteProject</code> — mutation</li><li><code>upsertChunk</code> — mutation</li><li><code>updateChunk</code> — mutation</li><li><code>upsertTranslation</code> — mutation</li><li><code>updateTranslation</code> — mutation</li><li><code>deleteChunksForLang</code> — mutation</li><li><code>createJob</code> — mutation</li><li><code>saveImageTranslation</code> — mutation</li></ul></p><pre><code>import { v } from "convex/values";
 import { mutation } from "./_generated/server";
 import { isOversized } from "./sourceData";

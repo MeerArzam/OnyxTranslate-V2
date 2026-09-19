@@ -4,7 +4,9 @@
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../convex/_generated/api.js";
 
-const URL = "https://successful-iguana-419.convex.cloud";
+// Deployment migration 2026-09-18: default to the owner-controlled
+// deployment (old platform deployment successful-iguana-419 is retired/paused).
+const URL = process.env.CONVEX_URL || "https://trustworthy-clownfish-652.convex.cloud";
 const c = new ConvexHttpClient(URL);
 
 const HOUR = 3600_000;

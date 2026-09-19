@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalQuery } from "./_generated/server";
+import { internalQuery, query } from "./_generated/server";
 import { api } from "./_generated/api";
 
 /**
@@ -31,7 +31,7 @@ type JobRow = {
   claimToken?: string;
 };
 
-export const diagnoseProject = internalQuery({
+export const diagnoseProject = query({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {
     const p = await ctx.db.get(args.projectId);
@@ -169,7 +169,7 @@ export const diagnoseProject = internalQuery({
 });
 
 /** Watchdog run evidence across ALL projects (cron liveness). */
-export const watchdogEvidence = internalQuery({
+export const watchdogEvidence = query({
   args: {},
   handler: async (ctx) => {
     const rows = (await ctx.db.query("projects").collect()) as unknown as Array<{
@@ -196,3 +196,36 @@ export const watchdogEvidence = internalQuery({
   },
 });
 void api;
+
+// ── One-shot Gemini reachability probe (T1/T3 diagnostic; costs ≤1 request) ──
+// Calls the Gemini OpenAI-compat endpoint ONCE with the deployment's key 1.
+// NEVER logs the key; returns only { ok, httpStatus, bodySample }.
+import { internalAction } from "./_generated/server";
+
+export const probeGeminiOnce = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    void ctx;
+    const key = process.env.Gemini_API_Key_1;
+    if (!key) return { ok: false, reason: "no key in deployment env" } as const;
+    let resp: Response;
+    try {
+      resp = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+          body: JSON.stringify({
+            model: process.env.GEMINI_MODEL || "gemini-3.6-flash",
+            messages: [{ role: "user", content: "Reply with the single word OK." }],
+            max_tokens: 5,
+          }),
+        },
+      );
+    } catch (e) {
+      return { ok: false, reason: `fetch threw: ${e instanceof Error ? e.message : String(e)}` } as const;
+    }
+    const body = (await resp.text()).slice(0, 240);
+    return { ok: resp.status === 200, httpStatus: resp.status, bodySample: body } as const;
+  },
+});

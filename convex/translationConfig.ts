@@ -210,6 +210,17 @@ export function extractPairSection(raw: string, letter: "A" | "B"): string | nul
 /** Latin-ratio heuristic: catches untranslated English echo fast. */
 export function looksLikeEnglishEcho(text: string): boolean {
   if (!text.trim()) return true;
-  const letters = text.replace(/[^A-Za-z]/g, "");
-  return letters.length / text.length > 0.9;
+  // LIVE-PROOF FIX (stage 1, 2026-09-18): the previous char-ratio check
+  // (letters/length > 0.9) almost never fired on real prose — spaces kept
+  // typical English sentences at ~0.8, so untranslated English passed the
+  // gate in production. New rule: with enough linguistic content, text whose
+  // letters are ALL plain ASCII is an English echo for non-Latin targets
+  // (any accented or non-Latin script — é, ç, Cyrillic, Arabic, CJK — fails
+  // the all-ASCII test, so real translations never trip it). Short fragments
+  // (< 20 letters) are never judged: too little signal, and short Latin
+  // fragments (allowed proper nouns like Violet/Tairn) legitimately appear
+  // inside non-Latin prose.
+  const letters = text.match(/\p{L}/gu) ?? [];
+  if (letters.length < 20) return false;
+  return letters.every((ch) => ch.charCodeAt(0) < 128);
 }

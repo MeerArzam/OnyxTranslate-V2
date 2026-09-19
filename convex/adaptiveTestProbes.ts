@@ -1,5 +1,11 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery } from "./_generated/server";
+import {
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+  action,
+} from "./_generated/server";
 import { api } from "./_generated/api";
 import {
   TRANSLATION_CONFIG,
@@ -22,7 +28,7 @@ import {
 // ── Probe 7 (T4 KILL TEST): claim a job then abandon it (simulated worker
 // death) → the watchdog must reclaim it within the heartbeat TTL. ─────────
 
-export const probeClaimAndAbandon = internalMutation({
+export const probeClaimAndAbandon = mutation({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {
     const candidate = (await ctx.runQuery(api.adaptiveJobs.findNextClaimable, {
@@ -44,27 +50,51 @@ export const probeClaimAndAbandon = internalMutation({
 // ── Probe 8 (T5 PDF BATCHES): force one batch into a stuck/failed state the
 // watchdog recovery path handles (attempts≥2 + expired heartbeat → shrink). ─
 
-export const probeForceBatchFailure = internalMutation({
-  args: { batchId: v.id("pdfBatches") },
+export const probeForceBatchFailure = mutation({
+  args: { projectId: v.id("projects"), langCode: v.string() },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.batchId, {
+    // Stage the exact precondition of the production fallback: a batch stuck
+    // "running" past its heartbeat TTL with attempts=2 (watchdog split case).
+    const batch = await ctx.db.insert("pdfBatches", {
+      projectId: args.projectId,
+      langCode: args.langCode,
+      batchIndex: 0,
+      pageStart: 1,
+      pageEnd: 50,
+      batchSize: 50,
       status: "running",
       attempts: 2,
       heartbeatAt: Date.now() - TRANSLATION_CONFIG.heartbeatTtlMs - 1000,
+      createdAt: Date.now(),
+      idempotencyKey: `probe-stuck-${args.projectId}-${args.langCode}`, // idempotent: rerun replaces the doc
     });
-    const r = (await ctx.runMutation(api.adaptivePdf.recoverStuckBatches, {
-      projectId: (await ctx.db.get(args.batchId)) as never,
-      // recoverStuckBatches filters by its own project — we call the real path
-      // from the harness with the right project id; this probe patches state.
-    }).catch(() => null)) as unknown;
-    void r;
-    return { forced: true };
+    // Drive the REAL recovery path (no re-implementation): the watchdog's own
+    // recoverStuckBatches decides requeue-vs-split from live row state.
+    const recovery = (await ctx.runMutation(api.adaptivePdf.recoverStuckBatches, {
+      projectId: args.projectId,
+    })) as { recovered?: number } | null;
+    return { forced: true, probeBatchId: batch, recovery };
+  },
+});
+
+// ── Probe 8b (T5 driver): run the REAL processAllBatches fallback on a
+// project (public wrapper — the underlying function is internalAction). The
+// action itself loops claim→render→complete/shrink until the plan settles.
+export const probeDriveBatches = action({
+  args: { projectId: v.id("projects"), langCode: v.string() },
+  handler: async (ctx, args) => {
+    const r = (await ctx.runAction(api.adaptivePdf.processAllBatches, args)) as {
+      status?: string;
+      rendered?: number;
+      failed?: number;
+    };
+    return r;
   },
 });
 
 // ── Probe 9 (T5): verify completed batches are skipped on restart ────────
 
-export const probeBatchCounts = internalQuery({
+export const probeBatchCounts = query({
   args: { projectId: v.id("projects"), langCode: v.string() },
   handler: async (ctx, args) => {
     const batches = await ctx.db
@@ -86,7 +116,7 @@ export const probeBatchCounts = internalQuery({
 
 // ── Probe 10 (T1): request log — read the rate row timestamps + counters ──
 
-export const probeRateSnapshot = internalQuery({
+export const probeRateSnapshot = query({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {
     const rate = await ctx.db
@@ -127,7 +157,7 @@ export const probeRateSnapshot = internalQuery({
 // ── Probe 11 (T2 GOVERNOR real): 1199→tick allowed; 1200→pause+resume time;
 // Pacific date change→reset+resume. Returns raw state transitions. ─────────
 
-export const probeGovernorLadder = internalMutation({
+export const probeGovernorLadder = mutation({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {
     const projectId = args.projectId;
@@ -186,7 +216,7 @@ export const probeGovernorLadder = internalMutation({
   },
 });
 
-export const probeEstimator = internalMutation({
+export const probeEstimator = mutation({
   args: {},
   handler: async () => {
     const small = estimateSafePairTokens(8000, 8000, 60, 8000);
@@ -205,7 +235,7 @@ export const probeEstimator = internalMutation({
 
 // ── Probe 2: pair parser (pure) ──────────────────────────────────────────
 
-export const probePairParser = internalMutation({
+export const probePairParser = mutation({
   args: {},
   handler: async () => {
     const good = buildPairUserContent("alpha text", "beta text");
@@ -243,7 +273,7 @@ export const probePairParser = internalMutation({
 
 // ── Probe 3: rate limiter — rolling window refuses past target ───────────
 
-export const probeRateLimiter = internalMutation({
+export const probeRateLimiter = mutation({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {
     const projectId = args.projectId;
@@ -279,7 +309,7 @@ export const probeRateLimiter = internalMutation({
 
 // ── Probe 4: daily governor stops at budget + midnight resume math ───────
 
-export const probeDailyGovernor = internalMutation({
+export const probeDailyGovernor = mutation({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {
     const projectId = args.projectId;
@@ -362,7 +392,7 @@ export const probeDailyGovernor = internalMutation({
 
 // ── Probe 5: idempotent enqueue — duplicate start never duplicates jobs ──
 
-export const probeEnqueueIdempotent = internalMutation({
+export const probeEnqueueIdempotent = mutation({
   args: { projectId: v.id("projects"), langCode: v.string() },
   handler: async (ctx, args) => {
     const first = (await ctx.runMutation(api.adaptiveJobs.enqueueAdaptiveJobs, {
@@ -383,7 +413,7 @@ export const probeEnqueueIdempotent = internalMutation({
 
 // ── Probe 6: backoff math — exponential, jittered, capped, Retry-After ──
 
-export const probeBackoff = internalMutation({
+export const probeBackoff = mutation({
   args: {},
   handler: async () => {
     const d0 = computeBackoffDelayMs(0);

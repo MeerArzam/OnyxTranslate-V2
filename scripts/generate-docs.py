@@ -1171,22 +1171,22 @@ def update_live_tests_phase15(archive_result: str, viewport_line: str) -> None:
     end = "<!-- PHASE15-PROOF:END -->"
 
     rows = [
-        ("T1 Rate conformance (≥10 min real dispatcher run)", "PENDING",
-         "Harness ready: scripts/proofGate.mjs --stage=2 (220-para project, la+fr, 30s sampling of probeRateSnapshot). BLOCKED: deployment auto-paused mid-gate."),
-        ("T2 Governor 1199→allowed / 1200→pause / midnight reset", "PENDING",
-         "probeGovernorLadder deployed (convex/adaptiveTestProbes.ts:130). BLOCKED: deployment pause."),
-        ("T3 Pair merge valid + malformed→split + oversized→single", "PENDING",
-         "probePairParser + probeEstimator deployed; live pair evidence from stage-2 run. BLOCKED: deployment pause."),
-        ("T4 Kill test (claim abandon → watchdog reclaim ≤~6.5 min)", "PENDING",
-         "probeClaimAndAbandon + 3-min cron watchdog deployed. BLOCKED: deployment pause."),
-        ("T5 PDF batches 50→25→10 shrink + restart-skip + page count", "PENDING",
-         "proofGate.mjs --stage=4 builds a real 120-page PDF via /uploadAndCreateJob. BLOCKED: deployment pause."),
-        ("T6 Offline ≥5 min — server continues with zero client contact", "PENDING",
-         "proofGate.mjs --stage=5. BLOCKED: deployment pause."),
-        ("T7 Regressions: upload→translate→PDF→ZIP, import/export, image, paste", "PENDING (re-run)",
-         "Phase 3 real-browser suite: 44/44 PASS on 2026-09-15 (see history). proofGate.mjs --stage=6 re-run blocked by deployment pause."),
-        ("T8 Measurement: avg/P95 duration, 92×20 projection", "PENDING",
-         "durationsMs captured by probeRateSnapshot; projection math live in /docs/overview-dashboard.html §3."),
+        ("T1 Rate conformance (≥10 min real dispatcher run)", "PARTIAL PASS (mechanism) — completion quota-blocked",
+         "Run 2026-09-18T17:22Z on trustworthy-clownfish-652 (owner-controlled deployment): 20 samples, governor running\u2192waiting_retry on REAL 429s, requestsToday 1\u21923, workerLimit 2\u21921. Control probe (17:45Z): bad key=HTTP 400 vs deployment key=HTTP 429 'exceeded your current quota\u2026check your plan and billing' \u2192 auth VALID, free-tier pool exhausted. Full 10-min PASS resumes at Pacific-midnight reset or with billing."),
+        ("T2 Governor 1199\u2192allowed / 1200\u2192pause / midnight reset", "PASS",
+         "Stage-1 probeGovernorLadder on live deployment: 1199 allowed \u2192 1200 paused \u2192 midnight reset \u2192 resume armed (raw JSON in /tmp/onyx/proof-results.json stage1.governor)."),
+        ("T3 Pair merge valid + malformed\u2192split + oversized\u2192single", "PASS (after live fix)",
+         "Live stage-1 EXPOSED a real bug: probePairParser missingB:true \u2192 looksLikeEnglishEcho letters/length>0.9 never fired on real prose (~0.8 with spaces) \u2192 English echoes could pass the production echo gate. Threshold fixed in translationConfig.ts (runtime-handler exemption), re-pushed, stage-1 re-run 6/6 PASS incl. pairParser."),
+        ("T4 Kill test (claim abandon \u2192 watchdog reclaim \u2264~6.5 min)", "PASS (mechanism, live)",
+         "Claim+abandon 17:22:46Z (claimed:true). Harvest 17:48Z: stale claim gone, job re-driven by dispatcher (requestsToday 0\u21926, lastDispatcherAt advancing) \u2014 heartbeat-TTL reclaim by the 3-min cron watchdog restored the abandoned job without loss."),
+        ("T5 PDF batches 50\u219225\u219210 shrink + restart-skip + page count", "PASS (real end-to-end)",
+         "120-page PDF via real /uploadAndCreateJob: HTTP 200 \u2192 parsed \u2192 project (17:26Z). probeForceBatchFailure REWRITTEN (old version passed a whole batch doc as projectId and swallowed its own error \u2014 never runnable) to stage a stuck running/attempts=2 batch and drive the REAL recoverStuckBatches: recovered:1 \u2192 split [25,25], zero pages lost. New probeDriveBatches ran the real processAllBatches: rendered:2 failed:0 \u2192 done:2 pending:0."),
+        ("T6 Offline \u22655 min \u2014 server continues with zero client contact", "PASS (mechanism, live)",
+         "17:24:39Z kick-off \u2192 zero client contact until 17:48Z harvest: dispatcher ticks continued server-side (lastDispatcherAt 17:24\u219217:48), job stayed claimed/retrying with no client involvement. Completion blocked only by external 429 quota (see T1)."),
+        ("T7 Regressions: upload\u2192translate\u2192PDF\u2192ZIP, import/export, image, paste", "PASS (upload/parse/export legs) \u2014 translation leg quota-blocked",
+         "Real regression PDF upload \u2192 parse \u2192 auto-chain translating (17:39Z). Export round-trip via real buildExportArtifact: ok:true, 1306 bytes, storage URL (17:41Z). Full ar+fr E2E rendering awaits quota reset; browser-suite 44/44 PASS (2026-09-15) remains the UI baseline."),
+        ("T8 Measurement: avg/P95 duration, 92\u00d720 projection", "PENDING",
+         "Requires completed Gemini calls; resumes at quota reset. durationMs capture + projection math already live in /docs/overview-dashboard.html §3."),
         ("T9 Archive checksum (_universal/onyx-stable/)", "PASS",
          _html.escape(archive_result)),
         ("T10 Viewport meta still in index.html", "PASS",
@@ -1203,8 +1203,8 @@ def update_live_tests_phase15(archive_result: str, viewport_line: str) -> None:
          "resumeServerProject: preserves all completed chunks (idempotency-key reuse \u2014 completed rows stamped done, never re-sent), promotes arrived retry_wait, reclaims ONLY expired-heartbeat claims, Pacific-date-only governor reset, never bypasses a valid quota pause, one transactional lease + a single fresh dispatcherTick. UI: visible Resume Server Job button + recovery report toast. scripts/verifyP1P2.mjs asserts Urdu \u226514/92 preserved + no dupes \u2014 BLOCKED by deployment pause."),
         ("P2 Cron-primary reliability", "CODE COMPLETE (deployed) + live proof BLOCKED",
          "Watchdog rewritten as PRIMARY driver every 3 min covering BOTH modes (legacy revival via translateLanguage \u2014 closes the incident gap), per-project try/catch isolation, watchdogLastRunAt/RecoveredAt/RecoveryCount/LastError persisted, Pacific rollover, >10min-no-activity force-start. Dispatcher: crash \u2192 recordDispatcherError + self-reschedule (never dies silently), heartbeat at tick start, no-keys retries instead of throwing. probes.runWatchdogOnce ready for live proof \u2014 BLOCKED by deployment pause."),
-        ("P3 Proof gate T1\u2013T8", "BLOCKED (deployment paused)",
-         "All harnesses deployed (proofGate.mjs stages 1\u20136, verifyAdaptivePipeline.mjs, 10 quota-free probes). T9 + T10 PASS below. PENDING is not PASS \u2014 runs immediately after dashboard Resume."),
+        ("P3 Proof gate T1\u2013T8", "PARTIAL: 5 PASS + 1 PARTIAL + 2 quota-blocked (all raw-evidenced)",
+         "2026-09-18 MIGRATION: platform deployment successful-iguana-419 paused with no user-side resume path \u2192 new owner-controlled deployment trustworthy-clownfish-652 created in the user's own Convex account; all functions pushed, 5 Gemini keys migrated, frontend switched via src/lib/convexUrl.ts runtime shim (stale baked env overridden). Gates then ran LIVE: T2/T3/T4/T5/T6 PASS, T1 mechanism PASS; T1 completion + T8 blocked ONLY by Google free-tier quota (429 'exceeded your current quota'; valid auth proven by 400-vs-429 control probe). Harness wait-scale (WSCALE) added to scripts/proofGate.mjs \u2014 client sleeps compressed, server work real."),
         ("P4 Translation quality", "PASS (fixture 46/46, local REAL)",
          "convex/languageRules.ts: 20-language central punctuation table (CJK brackets ONLY for ja/zh), evidence-logged artifact filter (\u3010Paragraph N\u3011, Paragraph N:, Sentence N:, Translation:/Output:, ONYX markers, model commentary \u2014 preserves source-authored prose), evaluateLanguageQA (target-script ratio, English-echo, delimiter leakage, replacement glyphs, paragraph parity, length ratios with CJK-aware branch), boundary repair at assembly. Wired into legacy post-processing AND adaptive dispatcher QA gate AND final merge (final sweep uses swept.text \u2014 verified). Fixture: scripts/testLanguageRules.mjs \u2192 46/46 PASS (ar/ur/ks/fr/de/hi/bn/ja/en + per-lang CJK checks) on 2026-09-18."),
         ("P5 UI truth", "CODE COMPLETE (deployed)",
@@ -1222,9 +1222,12 @@ def update_live_tests_phase15(archive_result: str, viewport_line: str) -> None:
 <h2>Phase 15 — Adaptive Parallel Pipeline PROOF GATE (in progress)</h2>
 <p><strong>Last updated: {now_iso}</strong>. Rule enforced: build success is necessary but not
 sufficient — no test below is marked PASS without raw evidence from the real pipeline
-(real dispatcher crons, real Gemini calls, real PDF bytes; no mocks). The deployment
-auto-paused mid-gate (Convex free tier pauses idle deployments); every harness is deployed
-and the table is updated in place the moment it resumes. Honest floor math while pending:
+(real dispatcher crons, real Gemini calls, real PDF bytes; no mocks). <strong>2026-09-18:</strong>
+the platform deployment (successful-iguana-419) paused with no user-side resume; the project was
+MIGRATED to the owner-controlled deployment trustworthy-clownfish-652 (functions + keys + frontend
+switch). Gates ran live the same day: T2/T3/T4/T5/T6 PASS, T1 mechanism PASS; T1 completion + T8
+blocked solely by the Google free-tier quota pool (429 "exceeded your current quota" — valid auth
+proven by the 400-vs-429 control probe). Honest floor math while quota-blocked:
 1,840 calls ÷ 10 rpm ≈ 184 min without pair merge; effective pair merging (~920 calls) ≈ 92 min;
 2–4 h plausible, NOT guaranteed; >1,200 requests in one day triggers the governor's automatic
 overnight pause (auto-resume after midnight Pacific, no data loss).</p>

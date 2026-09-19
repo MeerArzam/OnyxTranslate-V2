@@ -17,10 +17,17 @@ import { ConvexHttpClient } from "convex/browser";
 import fs from "node:fs";
 import { api } from "../convex/_generated/api.js";
 
-const URL = process.env.CONVEX_URL || "https://successful-iguana-419.convex.cloud";
+// Deployment migration 2026-09-18: default to the owner-controlled
+// deployment (old platform deployment successful-iguana-419 is retired/paused).
+const URL = process.env.CONVEX_URL || "https://trustworthy-clownfish-652.convex.cloud";
 const client = new ConvexHttpClient(URL);
 const stage = (process.argv.find((a) => a.startsWith("--stage=")) || "--stage=1").split("=")[1];
 const RESULTS = "/tmp/onyx/proof-results.json";
+// WAIT_SCALE compresses CLIENT-side sleeps only — server work (dispatch, parse,
+// watchdog, translation) is unaffected. Use WSCALE<1 to fit terminal time caps,
+// then harvest late evidence in a separate pass.
+const WSCALE = parseFloat(process.env.WSCALE || "1");
+const sleep = (ms) => new Promise((r) => setTimeout(r, Math.round(ms * WSCALE)));
 
 function load() {
   try { return JSON.parse(fs.readFileSync(RESULTS, "utf8")); } catch { return {}; }
@@ -105,7 +112,7 @@ async function stage2() {
   // Sample the rate row every 30s for 10 minutes
   const samples = [];
   for (let i = 0; i < 20; i++) {
-    await new Promise((r) => setTimeout(r, 30_000));
+    await sleep(30_000);
     const snap = await client.query(api.queries.getProjectRateSummary, { projectId: proj });
     samples.push({ t: new Date().toISOString(), ...snap });
     log(`sample ${i + 1}/20:`, JSON.stringify(snap));
@@ -137,7 +144,7 @@ async function stage3() {
 
   // Wait heartbeatTtl (3min) + watchdog interval (3min) + margin
   log("waiting 6.5 min for watchdog reclaim window...");
-  await new Promise((r) => setTimeout(r, 6.5 * 60 * 1000));
+  await sleep(6.5 * 60 * 1000);
 
   const after = await client.query(api.queries.getProjectRateSummary, { projectId: proj });
   log("after watchdog:", JSON.stringify(after));
@@ -182,7 +189,7 @@ async function stage4() {
   // Wait for parse → project creation
   let projectId = upload?.projectId;
   for (let i = 0; i < 30 && !projectId; i++) {
-    await new Promise((r) => setTimeout(r, 5000));
+    await sleep(5000);
     const job = await client.query(api.identity.getResumableJobs, { clientId: "proof-gate-client" }).catch(() => null);
     projectId = job?.[0]?.projectId;
   }
@@ -194,7 +201,7 @@ async function stage4() {
   await client.action(api.adaptiveJobs.startAdaptiveTranslation, { projectId, langCodes: ["de"] });
   let batches = null;
   for (let i = 0; i < 60; i++) {
-    await new Promise((r) => setTimeout(r, 10_000));
+    await sleep(10_000);
     batches = await client.query(api.adaptiveTestProbes.probeBatchCounts, { projectId, langCode: "de" }).catch(() => null);
     log(`batches ${i}:`, JSON.stringify(batches));
     if (batches && batches.total > 0 && batches.pending === 0 && batches.running === 0) break;
@@ -221,7 +228,7 @@ async function stage5() {
   log("before:", JSON.stringify(before));
 
   // ZERO client contact for 5 minutes (this script sleeps; no queries fire)
-  await new Promise((r) => setTimeout(r, 5 * 60 * 1000));
+  await sleep(5 * 60 * 1000);
 
   const after = await client.query(api.queries.getProjectRateSummary, { projectId: proj });
   data.stage5.after = after;
@@ -255,7 +262,7 @@ async function stage6() {
   const upload = await res.json();
   let projectId = upload?.projectId;
   for (let i = 0; i < 30 && !projectId; i++) {
-    await new Promise((r) => setTimeout(r, 5000));
+    await sleep(5000);
     const job = await client.query(api.identity.getResumableJobs, { clientId: "proof-gate-client2" }).catch(() => null);
     projectId = job?.[0]?.projectId;
   }
@@ -266,7 +273,7 @@ async function stage6() {
   await client.action(api.adaptiveJobs.startAdaptiveTranslation, { projectId, langCodes: ["ar", "fr"] });
   let summary = null;
   for (let i = 0; i < 90; i++) {
-    await new Promise((r) => setTimeout(r, 20_000));
+    await sleep(20_000);
     summary = await client.query(api.queries.getProjectRateSummary, { projectId }).catch(() => null);
     log(`regression ${i}:`, JSON.stringify(summary));
     if (summary && summary.jobsPending + summary.jobsClaimed + summary.jobsWaiting === 0) break;

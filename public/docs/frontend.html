@@ -24,7 +24,7 @@ td code{color:#00e5ff}
 <body>
 <p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
 <h1>Frontend</h1>
-<p class="meta">React components, state, hooks, CSS &middot; generated 2026-09-18 14:44 UTC</p>
+<p class="meta">React components, state, hooks, CSS &middot; generated 2026-09-18 17:55 UTC</p>
 
 <h2>1. Entry &amp; Routing (src/main.tsx)</h2>
 <pre><code>import { StrictMode, useState, useCallback, useEffect } from "react";
@@ -38,8 +38,11 @@ import { lazy, Suspense } from "react";
 const Overview = lazy(() =&gt; import("./pages/Overview.tsx"));
 
 import "./index.css";
+import { resolveConvexUrl } from "./lib/convexUrl";
 
-const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL!);
+// Deployment migration: resolveConvexUrl overrides a stale/paused deployment
+// URL baked into the build env (see src/lib/convexUrl.ts).
+const convex = new ConvexReactClient(resolveConvexUrl(import.meta.env.VITE_CONVEX_URL));
 
 /** Hash-based routing: #/overview → docs dashboard, everything else → Translator */
 function useHashRoute(): string {

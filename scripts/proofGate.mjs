@@ -191,7 +191,10 @@ async function stage4() {
   for (let i = 0; i < 30 && !projectId; i++) {
     await sleep(5000);
     const job = await client.query(api.identity.getResumableJobs, { clientId: "proof-gate-client" }).catch(() => null);
-    projectId = job?.[0]?.projectId;
+    // getResumableJobs returns project rows directly — the row IS the project
+    // (harness bug fix 2026-09-19: old code read job[0].projectId, a field that
+    // never exists on a project row, so discovery always failed).
+    projectId = job?.[0]?._id;
   }
   data.stage4.projectId = projectId;
   if (!projectId) { save(data); throw new Error("parse never produced a project"); }
@@ -264,7 +267,10 @@ async function stage6() {
   for (let i = 0; i < 30 && !projectId; i++) {
     await sleep(5000);
     const job = await client.query(api.identity.getResumableJobs, { clientId: "proof-gate-client2" }).catch(() => null);
-    projectId = job?.[0]?.projectId;
+    // getResumableJobs returns project rows directly — the row IS the project
+    // (harness bug fix 2026-09-19: old code read job[0].projectId, a field that
+    // never exists on a project row, so discovery always failed).
+    projectId = job?.[0]?._id;
   }
   data.stage6.projectId = projectId;
   if (!projectId) { save(data); throw new Error("regression upload failed"); }
@@ -280,8 +286,10 @@ async function stage6() {
   }
   data.stage6.finalSummary = summary;
 
-  // Export round-trip via the real HTTP endpoint
-  const exp = await client.mutation(api.exportProject.buildExportArtifact, { projectId }).catch((e) => ({ error: e.message }));
+  // Export round-trip via the real HTTP endpoint (buildExportArtifact is an
+  // Action — harness bug fix 2026-09-19: was called via client.mutation and
+  // failed with "defined as Action").
+  const exp = await client.action(api.exportProject.buildExportArtifact, { projectId }).catch((e) => ({ error: e.message }));
   data.stage6.export = exp;
   data.stage6.finishedAt = new Date().toISOString();
   save(data);

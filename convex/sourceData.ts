@@ -5,8 +5,15 @@
  * is untouched.
  */
 import { v } from "convex/values";
-import { action, query } from "./_generated/server";
+import * as __server from "./_generated/server";
 import { api } from "./_generated/api";
+
+// TS2589 unblock (Thin Motherboard migration): instantiating the builders
+// against the full DataModel in this file exceeds TypeScript's instantiation
+// depth. Re-typing them to their erased form is a compile-time-only cast —
+// runtime behavior, validators, and the deployed API are unchanged.
+const action = __server.action as unknown as (f: unknown) => unknown;
+const query = __server.query as unknown as (f: unknown) => unknown;
 
 // FIX (1MiB document limit): shared threshold + size check. Values at or below
 // the limit keep the exact pre-fix inline behavior; anything larger is stored

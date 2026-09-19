@@ -1,7 +1,14 @@
 import { v } from "convex/values";
-import { action, internalMutation, internalQuery, query } from "./_generated/server";
+import * as __server from "./_generated/server";
 import { api } from "./_generated/api";
 import { TRANSLATION_CONFIG, pacificDateKey } from "./translationConfig";
+
+// TS2589 unblock (Thin Motherboard migration): compile-time-only casts to the
+// erased builder form; runtime behavior and validators unchanged.
+const action = __server.action as unknown as (f: unknown) => unknown;
+const query = __server.query as unknown as (f: unknown) => unknown;
+const internalMutation = __server.internalMutation as unknown as (f: unknown) => unknown;
+const internalQuery = __server.internalQuery as unknown as (f: unknown) => unknown;
 
 /**
  * convex/resumeServerProject.ts — PHASE 1: SAFE RECOVERY of a stalled job.

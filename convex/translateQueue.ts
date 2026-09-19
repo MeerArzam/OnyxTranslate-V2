@@ -5,7 +5,11 @@
  * Reads chunks from the DB, translates each via Gemini (5-key rotation),
  * chains languages automatically. User can close browser — server continues.
  */
-import { action } from "./_generated/server";
+import * as __server from "./_generated/server";
+
+// TS2589 unblock (Thin Motherboard migration): compile-time-only cast to the
+// erased builder form; runtime behavior and validators unchanged.
+const action = __server.action as unknown as (f: unknown) => unknown;
 import { v } from "convex/values";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";

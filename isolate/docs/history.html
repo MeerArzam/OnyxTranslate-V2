@@ -24,7 +24,7 @@ td code{color:#00e5ff}
 <body>
 <p class="meta"><a href="/docs/index.html">&larr; Docs index</a> &middot; <a href="/">&larr; OnyxTranslate app</a></p>
 <h1>Change Log</h1>
-<p class="meta">Reconstructed from verifiable code evidence &middot; generated 2026-09-18 14:44 UTC</p>
+<p class="meta">Reconstructed from verifiable code evidence &middot; generated 2026-09-19 15:27 UTC</p>
 
 <p class="note">Provenance: the original audit/report .md files (AUDIT_REPORT,
 EXHAUSTIVE_AUDIT_REPORT, VERIFICATION_REPORT, MIGRATION_REGRESSION_REPORT, …) were removed
@@ -336,6 +336,7 @@ reports. Quota-free probes (estimator, pair parser, backoff, limiter refusal at 
 idempotent enqueue) ship in <code>adaptiveTestProbes.ts</code> + <code>scripts/verifyAdaptivePipeline.mjs</code>.
 Measured RPM/429/retry counts and the honest 92×20 projection (1,840 calls ≈ 184 min floor at 10 rpm; pair
 merge can roughly halve it; 2–4h plausible, NOT guaranteed) require a real run — pending deployment resume.</li>
+<li><strong>Deployment migration (2026-09-18)</strong>: the platform deployment (<code>successful-iguana-419</code>) auto-paused with no user-side resume path — Convex pause skips crons and rejects every function call, the direct mechanism behind the 2026-09-16 freeze. The project was migrated to the owner-controlled deployment <code>trustworthy-clownfish-652</code> in the user's own Convex account: all functions pushed, all 5 Gemini keys migrated, frontend switched via the <code>src/lib/convexUrl.ts</code> runtime shim (stale baked env overridden). Proof gates then ran LIVE on the new deployment: T2/T3/T4/T5/T6 PASS, T1 mechanism PASS; T1 completion + T8 remain blocked ONLY by the Google free-tier quota pool (429 "exceeded your current quota" — valid auth proven by the 400-bad-key vs 429-deployment-key control probe). Forensic probe <code>convex/forensicProbe.ts</code> + <code>scripts/p0Forensic.mjs</code> deployed to capture the frozen 14/92 project's per-job state the moment functions run. Harness wait-scale (WSCALE) added to <code>scripts/proofGate.mjs</code> — client sleeps compressed, server work real. Gemini model default fixed to <code>gemini-3.6-flash</code> via <code>GEMINI_MODEL</code> — the retired model name probed earlier had produced a misleading 404 on top of the quota 429s.</li>
 </ul>
 
 <hr>

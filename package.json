@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "format": "prettier --write .",
+    "preinstall": "bun pm cache rm >/dev/null 2>&1 || rm -rf $HOME/.bun/install/cache 2>/dev/null || true",
     "preview": "vite preview"
   },
   "dependencies": {

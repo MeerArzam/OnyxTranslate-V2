@@ -36,6 +36,8 @@ import type * as queries from "../queries.js";
 import type * as renderPdfCore from "../renderPdfCore.js";
 import type * as resumeServerProject from "../resumeServerProject.js";
 import type * as sourceData from "../sourceData.js";
+import type * as textPdf from "../textPdf.js";
+import type * as textPdfState from "../textPdfState.js";
 import type * as translateContent from "../translateContent.js";
 import type * as translateImage from "../translateImage.js";
 import type * as translateQueue from "../translateQueue.js";
@@ -80,6 +82,8 @@ declare const fullApi: ApiFromModules<{
   renderPdfCore: typeof renderPdfCore;
   resumeServerProject: typeof resumeServerProject;
   sourceData: typeof sourceData;
+  textPdf: typeof textPdf;
+  textPdfState: typeof textPdfState;
   translateContent: typeof translateContent;
   translateImage: typeof translateImage;
   translateQueue: typeof translateQueue;

@@ -2,7 +2,7 @@
 // Convex requires actions for the Node runtime. The dispatcher (real fetches)
 // is the Node action; everything here runs on the default V8 runtime.
 import { v } from "convex/values";
-import { internalMutation, internalQuery, action, internalAction } from "./_generated/server";
+import { internalMutation, internalQuery, action, internalAction, mutation } from "./_generated/server";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { assembleWithBoundaryRepair, filterGeneratedArtifacts } from "./languageRules";
@@ -1056,6 +1056,207 @@ export const flushJobResults = internalMutation({
     });
 
     return { writes };
+  },
+});
+
+/**
+ * Crash-race reconcile: a job whose chunk is ALREADY done in the chunks table
+ * must never be re-translated. The worker path (flush → complete) can lose the
+ * claimToken race against reclaimStaleJobs (flush persists the chunk, reclaim
+ * re-pends the job, then completeJobs drops the late result as stale). This
+ * mutation heals that state with ZERO Gemini calls: any in-flight job whose
+ * chunk row is done is marked done verbatim, then the SAME completion
+ * detection / assembly / PDF scheduling from flushJobResults runs for every
+ * affected language. Idempotent — safe to call repeatedly.
+ */
+export const reconcileDoneChunks = mutation({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const proj = (await ctx.db.get(args.projectId)) as
+      | { translationIntelligenceMode?: string; pdfStorageId?: string }
+      | null;
+    if (!proj) throw new Error("Project not found");
+    const contractMode = proj.translationIntelligenceMode === "gemini_contract";
+
+    const allJobs = (await ctx.db
+      .query("translationJobs")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect()) as JobDoc[];
+
+    // 1) Heal jobs whose chunk is already done (the flush/reclaim race).
+    let reconciled = 0;
+    const healedLangs = new Set<string>();
+    for (const job of allJobs) {
+      if (job.status === "done" || job.status === "failed" || job.status === "needs_review") continue;
+      const chunk = (await ctx.db
+        .query("chunks")
+        .withIndex("by_project_lang", (q) =>
+          q
+            .eq("projectId", args.projectId)
+            .eq("langCode", job.langCode)
+            .eq("chunkIndex", job.chunkIndex),
+        )
+        .first()) as { status: string; translatedText?: string } | null;
+      if (!chunk || chunk.status !== "done" || !chunk.translatedText) continue;
+      await ctx.db.patch(job._id, {
+        status: "done",
+        resultText: chunk.translatedText,
+        completedAt: now,
+        claimToken: undefined,
+        lastError: undefined,
+        nextRetryAt: undefined,
+      });
+      reconciled++;
+      healedLangs.add(job.langCode);
+    }
+
+    // 2) Re-run flushJobResults' completion detection for healed languages.
+    const pdfScheduled: string[] = [];
+    for (const langCode of healedLangs) {
+      const allChunks = await ctx.db
+        .query("chunks")
+        .withIndex("by_project_lang", (q) =>
+          q.eq("projectId", args.projectId).eq("langCode", langCode),
+        )
+        .collect();
+      const doneCount = allChunks.filter(
+        (c: { status: string }) => c.status === "done",
+      ).length;
+      const flaggedCount = allJobs.filter(
+        (j) => j.status === "needs_review" && j.langCode === langCode,
+      ).length;
+      const translations = await ctx.db
+        .query("translations")
+        .withIndex("by_project_lang", (q) =>
+          q.eq("projectId", args.projectId).eq("langCode", langCode),
+        )
+        .collect();
+      const translation = translations[0];
+      if (!translation) continue;
+      const total = Math.max(translation.totalChunks, allChunks.length);
+      if (doneCount + flaggedCount >= total && total > 0) {
+        const ordered = allChunks.sort(
+          (a: { chunkIndex: number }, b: { chunkIndex: number }) =>
+            a.chunkIndex - b.chunkIndex,
+        );
+        const mergedText = contractMode
+          ? assembleContractChunks(
+              ordered.map((c: { translatedText?: string }) => c.translatedText || ""),
+            )
+          : assembleWithBoundaryRepair(
+              ordered.map((c: { translatedText?: string }) => c.translatedText || ""),
+            );
+        let finalText = mergedText;
+        if (!contractMode) {
+          finalText = filterGeneratedArtifacts(mergedText).text;
+        }
+        await ctx.db.patch(translation._id, {
+          status: "generating_pdf",
+          completedChunks: doneCount,
+          totalChunks: total,
+          mergedText: finalText,
+          pdfGenerating: true,
+          lastChunkAt: now,
+        });
+        await ctx.scheduler.runAfter(0, api.adaptiveJobs.generateLanguagePdf, {
+          projectId: args.projectId,
+          langCode,
+          translationId: translation._id,
+          mergedText: finalText,
+        });
+        pdfScheduled.push(langCode);
+      } else {
+        await ctx.db.patch(translation._id, {
+          status: "in_progress",
+          completedChunks: doneCount,
+          totalChunks: total,
+          lastChunkAt: now,
+        });
+      }
+    }
+
+    // 2.5) Pasted-text recovery: the overlay renderer skips projects with no
+    // source PDF (complete, no artifact). Render the text PDF itself so the
+    // pipeline always ends in a downloadable artifact.
+    const scheduledTextPdf: string[] = [];
+    if (!proj.pdfStorageId) {
+      const allTranslations = (await ctx.db
+        .query("translations")
+        .withIndex("by_project_lang", (q) => q.eq("projectId", args.projectId))
+        .collect()) as Array<{
+        _id: Id<"translations">;
+        langCode: string;
+        status: string;
+        pdfUrl?: string;
+        pdfGenerating?: boolean;
+      }>;
+      for (const t of allTranslations) {
+        if (t.status !== "complete" || t.pdfUrl || t.pdfGenerating) continue;
+        await ctx.db.patch(t._id, { pdfGenerating: true });
+        await ctx.scheduler.runAfter(0, api.textPdf.generateTextPdf, {
+          projectId: args.projectId,
+          translationId: t._id,
+          langCode: t.langCode,
+        });
+        scheduledTextPdf.push(t.langCode);
+      }
+    }
+
+    // 3) Refresh project-level counters (same law as flushJobResults).
+    const freshJobs = (await ctx.db
+      .query("translationJobs")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect()) as JobDoc[];
+    const doneJobs = freshJobs.filter((j) => j.status === "done").length;
+    const flaggedJobs = freshJobs.filter((j) => j.status === "needs_review").length;
+    const failedJobs = freshJobs.filter((j) => j.status === "failed").length;
+    await ctx.db.patch(args.projectId, {
+      completedTranslationJobs: doneJobs,
+      failedTranslationJobs: failedJobs,
+      totalTranslationJobs: Math.max(freshJobs.length, doneJobs),
+      lastSuccessfulActivityAt: now,
+    });
+
+    return { reconciled, pdfScheduled, scheduledTextPdf };
+  },
+});
+
+/**
+ * Pasted-text projects have no source PDF to overlay; the overlay renderer
+ * short-circuits (complete, no artifact). This schedules the text renderer
+ * (convex/textPdf.ts) for a language whose translation row is complete with
+ * no artifact yet. Called from generateTranslatedPdf's adaptive pasted-text
+ * branch and from reconcileDoneChunks' pasted-text recovery step.
+ */
+export const scheduleTextPdfIfPasted = internalMutation({
+  args: { projectId: v.id("projects"), langCode: v.string() },
+  handler: async (ctx, args) => {
+    const project = await ctx.db.get(args.projectId);
+    if (!project || (project as { pdfStorageId?: string }).pdfStorageId) {
+      return { scheduled: false, reason: "not_pasted_or_missing" };
+    }
+    const translations = (await ctx.db
+      .query("translations")
+      .withIndex("by_project_lang", (q) =>
+        q.eq("projectId", args.projectId).eq("langCode", args.langCode),
+      )
+      .collect()) as Array<{
+      _id: Id<"translations">;
+      status: string;
+      pdfUrl?: string;
+      pdfGenerating?: boolean;
+    }>;
+    const row = translations[0];
+    if (!row || row.status !== "complete") return { scheduled: false, reason: "not_complete" };
+    if (row.pdfUrl || row.pdfGenerating) return { scheduled: false, reason: "already_has_or_inflight" };
+    await ctx.db.patch(row._id, { pdfGenerating: true });
+    await ctx.scheduler.runAfter(0, api.textPdf.generateTextPdf, {
+      projectId: args.projectId,
+      translationId: row._id,
+      langCode: args.langCode,
+    });
+    return { scheduled: true };
   },
 });
 

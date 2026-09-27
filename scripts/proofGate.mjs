@@ -19,7 +19,7 @@ import { api } from "../convex/_generated/api.js";
 
 // Deployment migration 2026-09-18: default to the owner-controlled
 // deployment (old platform deployment successful-iguana-419 is retired/paused).
-const URL = process.env.CONVEX_URL || "https://trustworthy-clownfish-652.convex.cloud";
+const URL = process.env.CONVEX_URL || "https://quixotic-tapir-141.convex.cloud";
 const client = new ConvexHttpClient(URL);
 const stage = (process.argv.find((a) => a.startsWith("--stage=")) || "--stage=1").split("=")[1];
 const RESULTS = "/tmp/onyx/proof-results.json";

@@ -1,5 +1,6 @@
-.env.local
-.env.keys
+.env*
+!.env.example
 node_modules
 dist
 src/convex/_generated
+convex/_generated

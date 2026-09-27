@@ -75,6 +75,14 @@ export const generateTranslatedPdf = action({
         completedAt: Date.now(),
       });
       if (args.finalizeChain === false) {
+        // ADAPTIVE path + pasted text: no source PDF to overlay — render the
+        // translation itself as a clean text PDF (same font/RTL stack) so the
+        // pipeline still ends in a downloadable artifact, then ZIP-finalize.
+        const sched = await ctx.runMutation(api.adaptiveJobs.scheduleTextPdfIfPasted, {
+          projectId: args.projectId,
+          langCode: args.langCode,
+        });
+        void sched;
         return { skipped: true, url: undefined, storageId: undefined };
       }
       if (args.nextLangCode) {

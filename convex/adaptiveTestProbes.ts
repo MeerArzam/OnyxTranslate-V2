@@ -17,6 +17,113 @@ import {
   computeBackoffDelayMs,
 } from "./translationConfig";
 
+/** Read-only per-job evidence for gate harnesses (T2/T8 attempts/reclaimCount assertions). */
+export const probeJobsByProject = query({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const jobs = await ctx.db
+      .query("translationJobs")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
+    return {
+      jobs: jobs.map((j) => ({
+        _id: j._id,
+        langCode: j.langCode,
+        chunkIndex: j.chunkIndex,
+        status: j.status,
+        attempts: j.attempts,
+        reclaimCount: j.reclaimCount,
+        idempotencyKey: j.idempotencyKey,
+        requestGroupId: j.requestGroupId,
+      })),
+    };
+  },
+});
+
+/** T1: claim the same chunk twice inside one transaction — the 2nd claim must be refused. */
+export const probeDoubleClaim = mutation({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const cand = (await ctx.runQuery(api.adaptiveJobs.findNextClaimable, {
+      projectId: args.projectId,
+    })) as { jobId: unknown; langCode: string; chunkIndex: number } | null;
+    if (!cand) return { first: null, second: null, skipped: true };
+    const claimArgs = {
+      projectId: args.projectId,
+      langCode: cand.langCode,
+      chunkIndex: cand.chunkIndex,
+      promptOverheadChars: 8000,
+    };
+    const first = (await ctx.runMutation(api.adaptiveJobs.claimJobPair, claimArgs)) as { kind: string } | null;
+    const second = (await ctx.runMutation(api.adaptiveJobs.claimJobPair, claimArgs)) as { kind: string } | null;
+    return { first: first ? first.kind : null, second: second ? second.kind : null, skipped: false };
+  },
+});
+
+/** T8: claim a job, age its heartbeat past TTL (simulated pause), then run the REAL reclaim. */
+export const probeExpireLease = mutation({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const cand = (await ctx.runQuery(api.adaptiveJobs.findNextClaimable, {
+      projectId: args.projectId,
+    })) as { jobId: unknown; langCode: string; chunkIndex: number } | null;
+    if (!cand) return { skipped: true };
+    const claim = (await ctx.runMutation(api.adaptiveJobs.claimJobPair, {
+      projectId: args.projectId,
+      langCode: cand.langCode,
+      chunkIndex: cand.chunkIndex,
+      promptOverheadChars: 8000,
+    })) as { kind: string } | null;
+    if (!claim) return { skipped: true, reason: "claim-refused" };
+    const claimed = (await ctx.db
+      .query("translationJobs")
+      .withIndex("by_project_lang_chunk", (q) =>
+        q.eq("projectId", args.projectId).eq("langCode", cand.langCode).eq("chunkIndex", cand.chunkIndex),
+      )
+      .first()) as { _id: unknown; attempts: number } | null;
+    if (!claimed) return { skipped: true, reason: "row-not-found" };
+    const attemptsBefore = claimed.attempts;
+    // Simulated pause: expire the lease while claimed.
+    await ctx.db.patch(claimed._id as never, {
+      heartbeatAt: Date.now() - TRANSLATION_CONFIG.heartbeatTtlMs - 1000,
+    });
+    const reclaimed = (await ctx.runMutation(api.adaptiveJobs.reclaimStaleJobs, {
+      projectId: args.projectId,
+    })) as { reclaimed: number };
+    const after = (await ctx.db.get(claimed._id as never)) as { status: string; attempts: number; reclaimCount?: number };
+    return {
+      skipped: false,
+      claimKind: claim.kind,
+      statusAfter: after.status,
+      attemptsBefore,
+      attemptsAfter: after.attempts,
+      reclaimCount: after.reclaimCount ?? 0,
+      reclaimed: reclaimed.reclaimed,
+    };
+  },
+});
+
+/** T2 helper: age ALL claimed jobs past the heartbeat TTL (simulated worker death clock). */
+export const probeAgeHeartbeat = mutation({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const claimed = await ctx.db
+      .query("translationJobs")
+      .withIndex("by_project_status", (q) =>
+        q.eq("projectId", args.projectId).eq("status", "claimed"),
+      )
+      .collect();
+    let aged = 0;
+    for (const j of claimed) {
+      await ctx.db.patch(j._id, {
+        heartbeatAt: Date.now() - TRANSLATION_CONFIG.heartbeatTtlMs - 1000,
+      });
+      aged++;
+    }
+    return { aged };
+  },
+});
+
 /**
  * convex/adaptiveTestProbes.ts — P13 verification probes.
  *

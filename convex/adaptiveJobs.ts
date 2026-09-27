@@ -404,7 +404,14 @@ export const claimJobPair = internalMutation({
 
     if (pairDisabled || !TRANSLATION_CONFIG.pairMergeEnabled) {
       await claimA();
-      return { kind: "single", job: { ...jobA, status: "claimed" } };
+      // FIX: return the POST-claim snapshot. The pre-claim spread carried the
+      // OLD claimToken (undefined → ""), so completeJobs / failJobForRetry /
+      // heartbeat token guards silently no-op'd forever (attempts frozen at 0,
+      // successes dropped as "stale claims", endless TTL reclaim loop).
+      return {
+        kind: "single",
+        job: { ...jobA, status: "claimed", claimedAt: now, heartbeatAt: now, claimToken: tokenA },
+      };
     }
 
     // B exists and is pending AND the safe estimate fits → claim as a pair
@@ -447,15 +454,19 @@ export const claimJobPair = internalMutation({
       return {
         kind: "pair",
         jobs: [
-          { ...jobA, status: "claimed", requestGroupId },
-          { ...jobB, status: "claimed", requestGroupId },
+          { ...jobA, status: "claimed", claimedAt: now, heartbeatAt: now, claimToken: tokenA, requestGroupId },
+          { ...jobB, status: "claimed", claimedAt: now, heartbeatAt: now, claimToken: tokenB, requestGroupId },
         ],
         requestGroupId,
       };
     }
 
     await claimA();
-    return { kind: "single", job: { ...jobA, status: "claimed" } };
+    // FIX: post-claim snapshot (same law as the first single branch).
+    return {
+      kind: "single",
+      job: { ...jobA, status: "claimed", claimedAt: now, heartbeatAt: now, claimToken: tokenA },
+    };
   },
 });
 

@@ -24,12 +24,16 @@ export const TRANSLATION_CONFIG = {
 
   // ── Liveness / deadlines ──
   heartbeatTtlMs: 3 * 60 * 1000,
-  actionSafetyDeadlineMs: 20 * 1000,
+  // 3.5-flash is a THINKING model (thought_signature in probe response):
+  // real translation calls exceed 20s, so the tick deadline + 5s per-call
+  // floor caused pure timeouts (lastError:"timeout", attempts 4→5). Raised
+  // 2026-09-27 for thinking-model latency.
+  actionSafetyDeadlineMs: 90 * 1000,
   watchdogIntervalMs: 3 * 60 * 1000,
   dispatcherIntervalMs: 15 * 1000,
 
   // ── Retries / backoff ──
-  maxAttempts: 6,
+  maxAttempts: 10,
   max429AttemptsBeforeWorkerReduction: 3,
   maxConsecutive429TicksBeforeHalvingWorkers: 2,
 

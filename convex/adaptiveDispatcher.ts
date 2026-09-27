@@ -230,7 +230,7 @@ async function callWithKeyRotation(
       key,
       systemPrompt,
       userContent,
-      Math.max(5000, Math.min(60_000, deadlineAt - Date.now())),
+      Math.max(75_000, deadlineAt - Date.now()),
     );
     if (r.ok) return r;
     last = r;

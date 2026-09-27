@@ -95,4 +95,31 @@ Migration shim `src/lib/convexUrl.ts` now targets **`https://quixotic-tapir-141.
 and filters the stale `successful-iguana-419` (paused) and `trustworthy-clownfish-652`
 (plan-disabled) deployments. Typecheck: `bunx tsc -b --noEmit` clean.
 
+## FINAL PROOF — real Gemini end-to-end (2026-09-27, post-fixes)
+
+126-word text → Urdu, project `kd7c7ya0eebxk74xq0qt7kbred8f71py`:
+
+| Metric | Value |
+|--------|-------|
+| Chunks done | **1/1** (`status:done`, 822-char Urdu merge) |
+| Real Gemini success | attempt **6/10** (`gemini-3.5-flash` via openai-compat endpoint) |
+| Elapsed | start 12:04:59Z → PDF 17:24:23Z (dominated by a live Google-side 503 "high demand" storm on 3.6-flash + shared free-pool 429s; active work ~35 min across reclaim/retry cycles, 23 watchdog revivals — every recovery path gate-tested above did its real job) |
+| Token usage | not persisted in chunk rows (`usage:null`); ~2.3k output chars observed |
+| PDF | **HTTP 200, 222,299 bytes, magic `%PDF-` verified** → https://quixotic-tapir-141.convex.cloud/api/storage/1fe526ed-c408-4a3b-94e3-1c4bb66e01e7 |
+| End state | translation ur `complete` 1/1 · project `complete` · ZIP finalized |
+
+### Production bugs found and fixed by this run (convex/adaptiveJobs.ts, adaptiveDispatcher.ts, translationConfig.ts)
+
+1. **`claimJobPair` returned the PRE-claim job snapshot** — `claimToken` was always
+   `""` in the worker, so `completeJobs`, `failJobForRetry`, and `heartbeat` token
+   guards silently no-op'd forever: successes dropped as "stale claims", attempts
+   frozen at 0 through 61 request cycles, endless TTL reclaim loop. THE root cause
+   of the two-day stall. Fixed: post-claim snapshot with the real token.
+2. **3.5-flash is a thinking model** — 20s tick deadline / 5s call floor produced
+   pure timeouts. Fixed: deadline 90s, per-call floor 75s, maxAttempts 10.
+3. **Model fallback** — gemini-3.6-flash free bucket drained (429 storm); verified
+   gemini-3.5-flash 200 on the same keys → default flipped (GEMINI_MODEL env wins).
+4. Prior session: flush/reclaim crash-race self-heal (`reconcileDoneChunks`) and
+   pasted-text PDF rendering (`convex/textPdf.ts` + `textPdfState.ts`).
+
 **STOP — 672-page book re-launch only after user verification.**

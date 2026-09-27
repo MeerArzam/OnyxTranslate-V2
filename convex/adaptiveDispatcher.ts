@@ -64,7 +64,10 @@ type Claimed =
 
 const GEMINI_ENDPOINT =
   "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+// Model fallback: gemini-3.6-flash free-tier bucket drained (429 storm),
+// sibling gemini-3.5-flash verified 200 on the same keys (2026-09-27).
+// GEMINI_MODEL env var still overrides this fallback when set.
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
 
 // Latin-script targets (English-echo check is meaningless for these).
 const LATIN_TARGETS = new Set([

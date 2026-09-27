@@ -23,6 +23,51 @@ export const runGeminiProbe = action({
   },
 });
 
+//** Dispatcher-shaped probe: variable prompt size + max_tokens to test quota-reservation behavior. */
+export const probeShapedRequest = action({
+  args: {
+    model: v.optional(v.string()),
+    promptChars: v.optional(v.number()),
+    maxTokens: v.optional(v.number()),
+  },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    const key = process.env.Gemini_API_Key_1;
+    if (!key) return { ok: false, reason: "no key" };
+    const model = args.model || "gemini-3.5-flash";
+    const promptChars = args.promptChars ?? 2000;
+    const filler = "Translate this sample text to Urdu and keep paragraph breaks: ".repeat(
+      Math.ceil(promptChars / 62),
+    ).slice(0, promptChars);
+    const resp = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: "You are a translator." },
+            { role: "user", content: filler },
+          ],
+          max_tokens: args.maxTokens ?? 4000,
+        }),
+      },
+    );
+    const body = (await resp.text()).slice(0, 250);
+    return { httpStatus: resp.status, model, promptChars, maxTokens: args.maxTokens ?? 4000, body };
+  },
+});
+
+/** Reveal the deployment's GEMINI_MODEL env value (model NAME only, no secrets). */
+export const probeModelEnv = action({
+  args: {},
+  returns: v.any(),
+  handler: async () => {
+    return { geminiModelEnv: process.env.GEMINI_MODEL ?? null };
+  },
+});
+
 /** Direct-call the pasted-text PDF renderer so its errors surface synchronously (scheduled action died silently). */
 export const runTextPdfDirect = action({
   args: { projectId: v.id("projects"), langCode: v.string() },

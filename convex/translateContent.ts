@@ -26,7 +26,9 @@ import { runQA } from "../src/lib/translator/qa";
 
 const GEMINI_ENDPOINT =
   "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+// Model fallback: gemini-3.6-flash free-tier bucket drained; gemini-3.5-flash
+// verified 200 on the same keys (2026-09-27). GEMINI_MODEL env overrides.
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
 const CHUNK_SIZE = 2500;
 // FIX 5: Convex actions time out; cap fresh Gemini translations per run and
 // continue in a fresh scheduled run (completed chunks are always skipped).

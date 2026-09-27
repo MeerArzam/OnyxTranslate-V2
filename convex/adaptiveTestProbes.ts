@@ -40,6 +40,21 @@ export const probeJobsByProject = query({
   },
 });
 
+/** Full raw job row (diagnosis): includes heartbeat, claim, error fields. */
+export const probeJobRaw = query({
+  args: { projectId: v.id("projects"), chunkIndex: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const jobs = await ctx.db
+      .query("translationJobs")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
+    const pick = args.chunkIndex !== undefined
+      ? jobs.filter((j) => j.chunkIndex === args.chunkIndex)
+      : jobs;
+    return { jobs: pick };
+  },
+});
+
 /** T1: claim the same chunk twice inside one transaction — the 2nd claim must be refused. */
 export const probeDoubleClaim = mutation({
   args: { projectId: v.id("projects") },
